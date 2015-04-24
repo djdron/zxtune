@@ -11,7 +11,7 @@ LINKER_END_GROUP ?= -Wl,'-)'
 
 #set options according to mode
 ifdef release
-CXX_MODE_FLAGS = -O2 -DNDEBUG -funroll-loops -finline-functions
+CXX_MODE_FLAGS = -O2 -DNDEBUG
 else
 CXX_MODE_FLAGS = -O0
 endif
@@ -21,9 +21,9 @@ ifdef profile
 CXX_MODE_FLAGS += -pg
 LD_MODE_FLAGS += -pg
 else
-CXX_MODE_FLAGS += -fdata-sections -ffunction-sections
+#CXX_MODE_FLAGS += -fdata-sections -ffunction-sections
 ifdef release
-LD_MODE_FLAGS += -Wl,-x
+#LD_MODE_FLAGS += -Wl,-x
 endif
 endif
 
@@ -46,10 +46,9 @@ DEFINITIONS = $(defines) $($(platform)_definitions)
 INCLUDES = $(sort $(include_dirs) $($(platform)_include_dirs))
 
 #setup flags
-CCFLAGS = -mmacosx-version-min=10.8 -g $(CXX_MODE_FLAGS) $(cxx_flags) $($(platform).cxx.flags) $($(platform).$(arch).cxx.flags) \
+CCFLAGS = -g $(CXX_MODE_FLAGS) $(cxx_flags) $($(platform).cxx.flags) $($(platform).$(arch).cxx.flags) \
+	-pipe -funsigned-char -fno-strict-aliasing \
 	$(addprefix -D,$(DEFINITIONS) $($(platform).definitions) $($(platform).$(arch).definitions)) \
-	-funsigned-char -fno-strict-aliasing \
-	-W -Wall -Wextra -pipe \
 	$(addprefix -I,$(INCLUDES))
 
 CXXFLAGS = $(CCFLAGS) -stdlib=libc++ -ansi -fvisibility=hidden -fvisibility-inlines-hidden

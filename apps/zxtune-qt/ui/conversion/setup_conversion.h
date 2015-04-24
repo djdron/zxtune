@@ -14,7 +14,7 @@
 #include "playlist/supp/data.h"
 #include "playlist/supp/conversion.h"
 //qt includes
-#include <QtGui/QDialog>
+#include <QtWidgets/QDialog>
 
 namespace UI
 {

@@ -40,11 +40,11 @@
 #include <boost/bind.hpp>
 //qt includes
 #include <QtCore/QUrl>
-#include <QtGui/QApplication>
+#include <QtWidgets/QApplication>
 #include <QtGui/QCloseEvent>
 #include <QtGui/QDesktopServices>
-#include <QtGui/QMessageBox>
-#include <QtGui/QToolBar>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QToolBar>
 //text includes
 #include "text/text.h"
 

@@ -153,7 +153,7 @@ namespace Product
 {
   const Release& ThisRelease()
   {
-    static const CurrentRelease CURRENT;
+	static const CurrentRelease CURRENT = CurrentRelease();
     return CURRENT;
   }
 

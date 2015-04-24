@@ -40,15 +40,16 @@
 #include <boost/algorithm/string/replace.hpp>
 //qt includes
 #include <QtCore/QUrl>
-#include <QtGui/QApplication>
+#include <QtCore/QMimeData>
+#include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
 #include <QtGui/QDragEnterEvent>
-#include <QtGui/QHeaderView>
-#include <QtGui/QInputDialog>
+#include <QtWidgets/QHeaderView>
+#include <QtWidgets/QInputDialog>
 #include <QtGui/QKeyEvent>
-#include <QtGui/QProgressBar>
-#include <QtGui/QProxyModel>
-#include <QtGui/QVBoxLayout>
+#include <QtWidgets/QProgressBar>
+#include "uiproxymodel.h"
+#include <QtWidgets/QVBoxLayout>
 
 namespace
 {
@@ -171,11 +172,11 @@ namespace
     mutable Strings::Template::Ptr TemplateData;
   };
 
-  class RetranslateModel : public QProxyModel
+  class RetranslateModel : public UiHelpers::UIProxyModel
   {
   public:
     explicit RetranslateModel(Playlist::Model& model)
-      : QProxyModel(&model)
+	  : UIProxyModel(&model)
       , Delegate(model)
     {
       setModel(&model);
@@ -194,7 +195,7 @@ namespace
       {
         return GetHeaderText(section);
       }
-      return QProxyModel::headerData(section, orientation, role);
+	  return UIProxyModel::headerData(section, orientation, role);
     }
 
     virtual QVariant data(const QModelIndex& index, int role) const
@@ -210,7 +211,7 @@ namespace
       }
       else
       {
-        return QProxyModel::data(index, role);
+		return UIProxyModel::data(index, role);
       }
     }
 

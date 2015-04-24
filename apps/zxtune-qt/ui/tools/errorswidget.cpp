@@ -17,7 +17,7 @@
 //std includes
 #include <list>
 //qt includes
-#include <QtGui/QLabel>
+#include <QtWidgets/QLabel>
 #include <QtGui/QPainter>
 
 namespace

@@ -17,6 +17,7 @@
 //qt includes
 #include <QtCore/QString>
 #include <QtCore/QMetaType>
+#include <QtCore/QObject>
 
 inline QString ToQString(const String& str)
 {

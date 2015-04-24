@@ -615,9 +615,10 @@ namespace
     {
       if (changes)
       {
-        emit IndicesChanged(changes);
-        reset();
-      }
+		emit IndicesChanged(changes);
+		beginResetModel();
+		endResetModel();
+	  }
     }
 
     virtual void OnProgress(uint_t current)

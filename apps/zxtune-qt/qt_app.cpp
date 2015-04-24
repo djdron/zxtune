@@ -19,7 +19,7 @@
 #include <platform/application.h>
 #include <platform/version/api.h>
 //qt includes
-#include <QtGui/QApplication>
+#include <QtWidgets/QApplication>
 //text includes
 #include "text/text.h"
 

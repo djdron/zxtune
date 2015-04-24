@@ -25,7 +25,7 @@
 //boost includes
 #include <boost/bind.hpp>
 //qt includes
-#include <QtGui/QRadioButton>
+#include <QtWidgets/QRadioButton>
 
 namespace
 {

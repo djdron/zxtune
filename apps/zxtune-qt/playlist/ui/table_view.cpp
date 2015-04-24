@@ -23,8 +23,8 @@
 #include <boost/make_shared.hpp>
 //qt includes
 #include <QtGui/QContextMenuEvent>
-#include <QtGui/QHeaderView>
-#include <QtGui/QMenu>
+#include <QtWidgets/QHeaderView>
+#include <QtWidgets/QMenu>
 
 namespace
 {
@@ -56,8 +56,8 @@ namespace
       setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
       setHighlightSections(false);
       setTextElideMode(Qt::ElideRight);
-      setMovable(true);
-      setClickable(true);
+	  setSectionsMovable(true);
+	  setSectionsClickable(true);
       const QFontMetrics fontMetrics(font);
       resizeSection(Playlist::Model::COLUMN_TYPE, fontMetrics.width(TYPE_TEXT));
       resizeSection(Playlist::Model::COLUMN_DISPLAY_NAME, DISPLAYNAME_WIDTH);
@@ -142,7 +142,7 @@ namespace
         verHeader->setDefaultAlignment(Qt::AlignRight | Qt::AlignVCenter);
         const QFontMetrics fontMetrics(Font);
         verHeader->setDefaultSectionSize(verHeader->minimumSectionSize()/*fontMetrics.height()*/);
-        verHeader->setResizeMode(QHeaderView::Fixed);
+		verHeader->setSectionResizeMode(QHeaderView::Fixed);
       }
 
       //signals

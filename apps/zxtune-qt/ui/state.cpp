@@ -23,13 +23,13 @@
 #include <boost/mem_fn.hpp>
 //qt includes
 #include <QtCore/QByteArray>
-#include <QtGui/QAbstractButton>
-#include <QtGui/QComboBox>
-#include <QtGui/QDialog>
-#include <QtGui/QFileDialog>
-#include <QtGui/QHeaderView>
-#include <QtGui/QMainWindow>
-#include <QtGui/QTabWidget>
+#include <QtWidgets/QAbstractButton>
+#include <QtWidgets/QComboBox>
+#include <QtWidgets/QDialog>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QHeaderView>
+#include <QtWidgets/QMainWindow>
+#include <QtWidgets/QTabWidget>
 
 namespace
 {

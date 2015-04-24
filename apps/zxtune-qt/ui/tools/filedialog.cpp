@@ -16,7 +16,7 @@
 //boost includes
 #include <boost/make_shared.hpp>
 //qt includes
-#include <QtGui/QFileDialog>
+#include <QtWidgets/QFileDialog>
 
 namespace
 {

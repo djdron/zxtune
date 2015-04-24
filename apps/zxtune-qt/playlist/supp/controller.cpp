@@ -21,7 +21,7 @@
 //boost includes
 #include <boost/make_shared.hpp>
 //qt includes
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QMessageBox>
 
 namespace
 {

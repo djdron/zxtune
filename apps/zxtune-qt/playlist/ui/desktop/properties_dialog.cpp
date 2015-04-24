@@ -28,11 +28,11 @@
 #include <boost/make_shared.hpp>
 #include <boost/ref.hpp>
 //qt includes
-#include <QtGui/QAbstractButton>
-#include <QtGui/QComboBox>
-#include <QtGui/QLabel>
-#include <QtGui/QLineEdit>
-#include <QtGui/QToolButton>
+#include <QtWidgets/QAbstractButton>
+#include <QtWidgets/QComboBox>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QToolButton>
 
 namespace
 {

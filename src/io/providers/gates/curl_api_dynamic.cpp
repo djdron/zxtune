@@ -150,7 +150,7 @@ namespace IO
   {
     Api::Ptr LoadDynamicApi()
     {
-      static const CurlName NAME;
+      static const CurlName NAME = CurlName();
       const Platform::SharedLibrary::Ptr lib = Platform::SharedLibrary::Load(NAME);
       return boost::make_shared<DynamicApi>(lib);
     }

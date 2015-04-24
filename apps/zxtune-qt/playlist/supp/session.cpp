@@ -63,14 +63,14 @@ namespace
   template<class T>
   QString BuildPlaylistFileName(const T& val)
   {
-    return QString::fromAscii("%1.xspf").arg(val);
+	return QString::fromLatin1("%1.xspf").arg(val);
   }
 
   class FiledSession : public Playlist::Session
   {
   public:
     FiledSession()
-      : Directory(QDesktopServices::storageLocation(QDesktopServices::DataLocation))
+	  : Directory(QStandardPaths::writableLocation(QStandardPaths::DataLocation))
     {
       const QLatin1String dirPath(Text::PLAYLISTS_DIR);
       Require(Directory.mkpath(dirPath));

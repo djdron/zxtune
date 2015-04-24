@@ -27,7 +27,7 @@
 #include <boost/range/end.hpp>
 #include <boost/range/size.hpp>
 //qt includes
-#include <QtGui/QRadioButton>
+#include <QtWidgets/QRadioButton>
 
 namespace
 {

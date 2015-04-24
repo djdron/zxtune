@@ -12,7 +12,10 @@ host=macos
 LINKER_BEGIN_GROUP=
 LINKER_END_GROUP=
 
-macos_libraries += $(foreach lib,$(libraries.boost),boost_$(lib))
+$(platform)_include_dirs += /opt/local/include
+$(platform)_libraries_dirs += /opt/local/lib
 
-CXX_PLATFORM_FLAGS += $(addprefix -FQt,$(libraries.qt))
-LD_PLATFORM_FLAGS += $(addprefix -framework Qt,$(libraries.qt))
+$(platform)_libraries += $(foreach lib,$(libraries.boost),boost_$(lib)-mt)
+
+$(platform).cxx.flags += $(addprefix -FQt,$(libraries.qt))
+$(platform).ld.flags += $(addprefix -framework Qt,$(libraries.qt))

@@ -56,7 +56,7 @@ namespace
     void* const Handle;
   };
   
-  const std::string SUFFIX(".so");
+  const std::string SUFFIX(".dylib");
   
   std::string BuildLibraryFilename(const std::string& name)
   {

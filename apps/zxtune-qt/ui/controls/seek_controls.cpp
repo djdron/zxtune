@@ -18,7 +18,7 @@
 #include <contract.h>
 //qt includes
 #include <QtGui/QCursor>
-#include <QtGui/QToolTip>
+#include <QtWidgets/QToolTip>
 
 namespace
 {

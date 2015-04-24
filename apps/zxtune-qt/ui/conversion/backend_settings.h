@@ -14,7 +14,7 @@
 #include <types.h>
 #include <parameters/container.h>
 //qt includes
-#include <QtGui/QWidget>
+#include <QtWidgets/QWidget>
 
 namespace UI
 {

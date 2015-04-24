@@ -11,7 +11,7 @@
 #pragma once
 
 //qt includes
-#include <QtGui/QProxyStyle>
+#include <QtWidgets/QProxyStyle>
 
 namespace UI
 {

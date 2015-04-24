@@ -222,10 +222,10 @@ namespace
 
   const Codepage* GuessCodepage(const std::string& str)
   {
-    static const CP866Codepage CP866;
-    static const CP1251Codepage CP1251;
-    static const CP1252Codepage CP1252;
-    static const CP1250Codepage CP1250;
+    static const CP866Codepage CP866 = CP866Codepage();
+    static const CP1251Codepage CP1251 = CP1251Codepage();
+    static const CP1252Codepage CP1252 = CP1252Codepage();
+    static const CP1250Codepage CP1250 = CP1250Codepage();
     static const std::size_t CODEPAGES_COUNT = 4;
     //assume cp1252 has higher priority
     static const Codepage* const CODEPAGES[CODEPAGES_COUNT] = {&CP866, &CP1251, &CP1250, &CP1252};

@@ -230,6 +230,8 @@ endif()
 # Example binaries
 #============================================================================
 
+if(FALSE)
+
 add_executable(example test/example.c)
 target_link_libraries(example zlib)
 add_test(example example)
@@ -247,3 +249,5 @@ if(HAVE_OFF64_T)
     target_link_libraries(minigzip64 zlib)
     set_target_properties(minigzip64 PROPERTIES COMPILE_FLAGS "-D_FILE_OFFSET_BITS=64")
 endif()
+
+endif(FALSE)

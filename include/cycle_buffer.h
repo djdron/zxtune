@@ -12,6 +12,7 @@
 
 //std includes
 #include <cstring>
+#include <algorithm>
 //boost includes
 #include <boost/noncopyable.hpp>
 

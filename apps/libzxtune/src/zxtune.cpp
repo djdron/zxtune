@@ -280,7 +280,8 @@ ZXTuneHandle ZXTune_OpenModule(ZXTuneHandle data)
   try
   {
     const Binary::Container::Ptr src = ContainersCache::Instance().Get(data);
-    const Module::Holder::Ptr result = Module::Open(*src);
+	Parameters::Accessor::Ptr params = Parameters::Container::Create();
+    const Module::Holder::Ptr result = Module::Open(*params, *src);
     return ModulesCache::Instance().Add(result);
   }
   catch (const Error&)

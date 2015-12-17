@@ -7,3 +7,4 @@ add_definitions(-DHAVE_CONFIG_H)
 include_directories("../../../../3rdparty/sidplayfp")
 
 add_library(core_plugins_players ${SRCS_CXX} ${SRCS_H})
+set_property(TARGET core_plugins_players PROPERTY FOLDER "core")

@@ -28,3 +28,4 @@ endif ()
 
 set(z80ex_sources z80ex.c)
 add_library(z80ex STATIC ${z80ex_sources})
+set_property(TARGET z80ex PROPERTY FOLDER "3rdparty")

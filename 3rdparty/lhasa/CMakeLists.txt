@@ -23,3 +23,4 @@ set(SRCS_C "lib/crc16.c"
 file(GLOB SRCS_H "lib/public/*.h")
 
 add_library(lhasa ${SRCS_C} ${SRCS_H})
+set_property(TARGET lhasa PROPERTY FOLDER "3rdparty")

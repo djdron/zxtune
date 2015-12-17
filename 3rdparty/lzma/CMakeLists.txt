@@ -23,3 +23,4 @@ set(SRCS_C "C/7zArcIn.c"
 file(GLOB SRCS_H "C/*.h")
 
 add_library(lzma ${SRCS_C} ${SRCS_H})
+set_property(TARGET lzma PROPERTY FOLDER "3rdparty")

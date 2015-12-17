@@ -15,3 +15,4 @@ file(GLOB SRCS_H "sidplayfp/*.h" "sidplayfp/c64/*.h" "sidplayfp/c64/CIA/*.h" "si
 	"builders/resid-builder/resid/*.h")
 
 add_library(sidplayfp ${SRCS_CXX} ${SRCS_H})
+set_property(TARGET sidplayfp PROPERTY FOLDER "3rdparty")

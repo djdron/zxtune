@@ -86,3 +86,4 @@ set(SRCS_C_CXX "gme/blargg_common.cpp"
 file(GLOB SRCS_H "gme/*.h")
 
 add_library(gme ${SRCS_C_CXX} ${SRCS_H})
+set_property(TARGET gme PROPERTY FOLDER "3rdparty")

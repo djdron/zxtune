@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 2.8.11 FATAL_ERROR)
 
 project(libzxtune)
 
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 include_directories("../../../lib/boost_1_59_0")
 add_definitions(-DHAVE_BOOST)
 add_definitions(-DNO_DEBUG_LOGS)
@@ -57,3 +59,4 @@ set(SRCS_H "zxtune.h")
 add_library(zxtune MODULE ${SRCS_CXX} ${SRCS_H})
 add_dependencies(zxtune gme hvl lhasa lzma sidplayfp snesspc xmp z80ex analysis binary binary_format core core_plugins_archives_stub core_plugins_containers_stub core_plugins_players dbg devices_aym devices_beeper devices_dac devices_fm devices_saa devices_z80 formats_chiptune formats_packed formats_multitrack l10n_stub parameters platform_version sound strings tools)
 target_link_libraries(zxtune gme hvl lhasa lzma sidplayfp snesspc xmp z80ex analysis binary binary_format core core_plugins_archives_stub core_plugins_containers_stub core_plugins_players dbg devices_aym devices_beeper devices_dac devices_fm devices_saa devices_z80 formats_chiptune formats_packed formats_multitrack l10n_stub parameters platform_version sound strings tools ${ZLIB_LIBRARIES})
+set_property(TARGET zxtune PROPERTY FOLDER "apps")

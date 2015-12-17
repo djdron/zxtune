@@ -37,3 +37,4 @@ set(SRCS_C "src/virtual.c" "src/format.c" "src/misc.c" "src/period.c" "src/playe
 file(GLOB SRCS_H "src/*.h" "src/depackers/*.h" "src/loaders/*.h" "src/loaders/prowizard/*.h")
 
 add_library(xmp ${SRCS_C} ${SRCS_H})
+set_property(TARGET xmp PROPERTY FOLDER "3rdparty")

@@ -21,6 +21,7 @@
 #include <formats/packed.h>
 //std includes
 #include <cstring>
+#include <iterator>
 //boost includes
 #include <boost/make_shared.hpp>
 //text includes

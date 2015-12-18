@@ -36,5 +36,14 @@ set(SRCS_C "src/virtual.c" "src/format.c" "src/misc.c" "src/period.c" "src/playe
 
 file(GLOB SRCS_H "src/*.h" "src/depackers/*.h" "src/loaders/*.h" "src/loaders/prowizard/*.h")
 
+if(WIN32)
+add_definitions(-Dinline=__inline -D_USE_MATH_DEFINES -DPATH_MAX=1024)
+include_directories("src/win32")
+file(GLOB SRCSWIN32_H "src/win32/*.h")
+file(GLOB SRCSWIN32_C "src/win32/*.c")
+list(APPEND SRCS_H ${SRCSWIN32_H})
+list(APPEND SRCS_C ${SRCSWIN32_C})
+endif(WIN32)
+
 add_library(xmp ${SRCS_C} ${SRCS_H})
 set_property(TARGET xmp PROPERTY FOLDER "3rdparty")

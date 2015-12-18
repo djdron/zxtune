@@ -4,7 +4,7 @@ project(libzxtune)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-include_directories("../../../lib/boost_1_59_0")
+include_directories("../../../lib/boost_1_60_0")
 add_definitions(-DHAVE_BOOST)
 add_definitions(-DNO_DEBUG_LOGS)
 
@@ -12,7 +12,12 @@ include_directories("../..")
 include_directories("../../include")
 include_directories("../../src")
 
-set(CMAKE_CXX_FLAGS "-Wno-unused-local-typedef")
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4018 /wd4244 /wd4800 /wd4996")
+set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} /wd4018 /wd4090")
+else()
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedef")
+endif()
 
 find_package(ZLIB REQUIRED)
 include_directories(${ZLIB_INCLUDE_DIRS})

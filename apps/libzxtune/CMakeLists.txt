@@ -5,7 +5,7 @@ project(libzxtune)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 find_package(Boost REQUIRED)
-include_directories(${BOOST_INCLUDEDIR})
+include_directories(${Boost_INCLUDE_DIRS})
 add_definitions(-DHAVE_BOOST)
 add_definitions(-DNO_DEBUG_LOGS)
 
@@ -66,5 +66,5 @@ set(LIBS gme hvl lhasa lzma sidplayfp snesspc xmp z80ex analysis binary binary_f
 
 add_library(zxtune MODULE ${SRCS_CXX} ${SRCS_H})
 add_dependencies(zxtune ${LIBS})
-target_link_libraries(zxtune ${ZLIB_LIBRARIES} ${LIBS})
+target_link_libraries(zxtune ${LIBS} ${ZLIB_LIBRARIES})
 set_property(TARGET zxtune PROPERTY FOLDER "apps")

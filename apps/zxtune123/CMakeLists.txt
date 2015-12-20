@@ -5,7 +5,8 @@ project(zxtune123)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 find_package(Boost REQUIRED COMPONENTS thread program_options system filesystem)
-include_directories(${BOOST_INCLUDEDIR})
+include_directories(${Boost_INCLUDE_DIRS})
+link_directories(${Boost_LIBRARY_DIRS})
 add_definitions(-DHAVE_BOOST)
 add_definitions(-DNO_DEBUG_LOGS)
 

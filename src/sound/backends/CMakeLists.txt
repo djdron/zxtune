@@ -1,12 +1,20 @@
 project(libsound_backends)
 
+include_directories("../../../3rdparty")
+
 file(GLOB SRCS_CXX "backend_impl.cpp" "file_backend.cpp" "service.cpp" "volume_control.cpp" "null_backend.cpp" "wav_backend.cpp" "text/backends.cpp")
 file(GLOB SRCS_H "*.h" "text/backends.h")
 
+if(WIN32)
+set(SUPPORT_WAVEOUT 1)
+set(SUPPORT_DIRECTSOUND 1)
+set(SUPPORT_SDL 0)
+else(WIN32)
 set(SUPPORT_WAVEOUT 0)
 set(SUPPORT_DIRECTSOUND 0)
-set(SUPPORT_ALSA 0)
 set(SUPPORT_SDL 1)
+endif(WIN32)
+set(SUPPORT_ALSA 0)
 set(SUPPORT_PULSEAUDIO 0)
 set(SUPPORT_OSS 0)
 

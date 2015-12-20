@@ -15,6 +15,8 @@
 #include <error_tools.h>
 //library includes
 #include <l10n/api.h>
+//std includes
+#include <iterator>
 //boost includes
 #include <boost/make_shared.hpp>
 //platform includes

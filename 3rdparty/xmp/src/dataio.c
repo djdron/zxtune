@@ -9,7 +9,7 @@
 #include "common.h"
 
 
-inline uint8 read8(FILE *f)
+uint8 read8(FILE *f)
 {
 	return (uint8)fgetc(f);
 }
@@ -87,7 +87,7 @@ uint32 read32b(FILE *f)
 
 
 
-inline void write8(FILE *f, uint8 b)
+void write8(FILE *f, uint8 b)
 {
 	fputc(b, f);
 }

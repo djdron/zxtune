@@ -39,7 +39,7 @@ static inline double round(double val)
 #endif
 
 /* Get period from note */
-inline double note_to_period(int n, int f, int type)
+double note_to_period(int n, int f, int type)
 {
     double d = (double)n + (double)f / 128;
 

@@ -21,6 +21,8 @@
 //std includes
 #include <cassert>
 
+static bool StringEmpty(const std::string& s) { return s.empty(); }
+
 namespace
 {
   Strings::Array SplitPath(const String& str, Char separator)
@@ -29,7 +31,7 @@ namespace
     Strings::Array parts;
     boost::algorithm::split(parts, str, boost::algorithm::is_any_of(delimiter), boost::algorithm::token_compress_on);
     const Strings::Array::iterator newEnd = std::remove_if(parts.begin(), parts.end(),
-      std::mem_fun_ref(&String::empty));
+      StringEmpty);
     return Strings::Array(parts.begin(), newEnd);
   }
 

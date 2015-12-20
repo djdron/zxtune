@@ -43,6 +43,8 @@
 
 #define FILE_TAG DAEDAE2A
 
+static bool StringEmpty(const std::string& s) { return s.empty(); }
+
 namespace
 {
   const Debug::Stream Dbg("zxtune123::Sound");
@@ -79,7 +81,7 @@ namespace
     {
       Strings::Map optimized;
       std::remove_copy_if(options.begin(), options.end(), std::inserter(optimized, optimized.end()),
-        boost::bind(&String::empty, boost::bind(&Strings::Map::value_type::second, _1)));
+        boost::bind(StringEmpty, boost::bind(&Strings::Map::value_type::second, _1)));
       if (!optimized.empty())
       {
         Parameters::Convert(optimized, *Params);

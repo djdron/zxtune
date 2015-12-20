@@ -237,7 +237,7 @@ namespace Sound
   {
     Api::Ptr LoadDynamicApi()
     {
-      static const LameName NAME;
+      static const LameName NAME = LameName();
       const Platform::SharedLibrary::Ptr lib = Platform::SharedLibrary::Load(NAME);
       return boost::make_shared<DynamicApi>(lib);
     }

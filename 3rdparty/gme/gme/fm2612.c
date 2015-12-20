@@ -2636,20 +2636,21 @@ int ym2612_get_state(void *chip, int* clockrate, int *attenuations, int *periods
 {
 	static const unsigned slotMap[8]={ 0x08,0x08,0x08,0x08,0x0c,0x0e,0x0e,0x0f };
 	YM2612 *F2612 = (YM2612 *)chip;
-
-	*clockrate = F2612->OPN.ST.clock;
 	int inChan = 0;
 	int outChan = 0;
+
+	*clockrate = F2612->OPN.ST.clock;
 	for (inChan = 0; inChan < 6; ++inChan)
 	{
 		FM_CH* ch = F2612->CH + inChan;
+		unsigned algo;
+		unsigned att = 0;
+		unsigned div = 0;
 		if (ch->Muted)
 		{
 			continue;
 		}
-		const unsigned algo = slotMap[ch->ALGO&7];
-		unsigned att = 0;
-		unsigned div = 0;
+		algo = slotMap[ch->ALGO&7];
 		if(algo&1)
 		{
 			att += ch->SLOT[SLOT1].vol_out; div++;
@@ -2668,10 +2669,10 @@ int ym2612_get_state(void *chip, int* clockrate, int *attenuations, int *periods
 		}
 		if (div && att < MAX_ATT_INDEX * div)
 		{
-			attenuations[outChan] = att / div;
 			const int octave = ch->block_fnum >> 11;
 			const int counter = ch->block_fnum & 0x7ff;
 			const int prescaler = (6 * 24) << (11 + SIN_BITS);
+			attenuations[outChan] = att / div;
 			if (counter != 0)
 			{
 				periods[outChan] = prescaler / (counter << octave);

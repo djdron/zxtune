@@ -82,5 +82,5 @@ set(LIBS gme hvl lhasa lzma sidplayfp snesspc unrar xmp z80ex analysis async bin
 
 add_executable(zxtune123 ${SRCS_CXX})
 add_dependencies(zxtune123 ${LIBS})
-target_link_libraries(zxtune123 ${LIBS} ${ZLIB_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(zxtune123 ${LIBS} ${LIBS} ${ZLIB_LIBRARIES} ${Boost_LIBRARIES} ${CMAKE_DL_LIBS})
 set_property(TARGET zxtune123 PROPERTY FOLDER "apps")

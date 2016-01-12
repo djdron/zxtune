@@ -84,13 +84,13 @@ inline std::string ToStdString(const String& str)
 //! #pragma pack(pop)
 //! #endif
 //! @endcode
-#if defined __GNUC__
-#define PACK_PRE
-#define PACK_POST __attribute__ ((packed))
-#elif defined _MSC_VER
+#if defined(_MSC_VER) || defined(__MINGW32__)
 #define PACK_PRE
 #define PACK_POST
 #define USE_PRAGMA_PACK
+#elif defined __GNUC__
+#define PACK_PRE
+#define PACK_POST __attribute__ ((packed))
 #else
 #define PACK_PRE
 #define PACK_POST

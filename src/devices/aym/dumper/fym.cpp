@@ -13,19 +13,19 @@
 //common includes
 #include <byteorder.h>
 #include <contract.h>
+#include <make_ptr.h>
 //library includes
 #include <binary/compress.h>
 #include <binary/data_builder.h>
-//boost includes
-#include <boost/make_shared.hpp>
 //std includes
 #include <algorithm>
 #include <iterator>
+#include <utility>
 
-namespace
+namespace Devices
 {
-  using namespace Devices::AYM;
-
+namespace AYM
+{
 #ifdef USE_PRAGMA_PACK
 #pragma pack(push,1)
 #endif
@@ -45,17 +45,17 @@ namespace
   {
   public:
     explicit FYMBuilder(FYMDumperParameters::Ptr params)
-      : Params(params)
+      : Params(std::move(params))
       , Delegate(CreateRawDumpBuilder())
     {
     }
 
-    virtual void Initialize()
+    void Initialize() override
     {
       return Delegate->Initialize();
     }
 
-    virtual void GetResult(Dump& data) const
+    void GetResult(Dump& data) const override
     {
       Dump rawDump;
       Delegate->GetResult(rawDump);
@@ -91,7 +91,7 @@ namespace
       Binary::Compression::Zlib::Compress(result, data);
     }
 
-    virtual void WriteFrame(uint_t framesPassed, const Registers& state, const Registers& update)
+    void WriteFrame(uint_t framesPassed, const Registers& state, const Registers& update) override
     {
       return Delegate->WriteFrame(framesPassed, state, update);
     }
@@ -99,16 +99,11 @@ namespace
     const FYMDumperParameters::Ptr Params;
     const FramedDumpBuilder::Ptr Delegate;
   };
-}
 
-namespace Devices
-{
-  namespace AYM
+  Dumper::Ptr CreateFYMDumper(FYMDumperParameters::Ptr params)
   {
-    Dumper::Ptr CreateFYMDumper(FYMDumperParameters::Ptr params)
-    {
-      const FramedDumpBuilder::Ptr builder = boost::make_shared<FYMBuilder>(params);
-      return CreateDumper(params, builder);
-    }
+    const FramedDumpBuilder::Ptr builder = MakePtr<FYMBuilder>(params);
+    return CreateDumper(params, builder);
   }
+}
 }

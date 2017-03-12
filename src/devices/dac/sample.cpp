@@ -8,15 +8,18 @@
 *
 **/
 
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <devices/dac/sample_factories.h>
 //std includes
 #include <cmath>
+#include <cstring>
 #include <numeric>
-//boost includes
-#include <boost/make_shared.hpp>
 
-namespace
+namespace Devices
+{
+namespace DAC
 {
   const uint_t NO_RMS = uint_t(-1);
 
@@ -35,8 +38,8 @@ namespace
 
   inline Sound::Sample::Type FromU8(uint8_t inSample)
   {
-    BOOST_STATIC_ASSERT(Sound::Sample::MID == 0);
-    BOOST_STATIC_ASSERT(Sound::Sample::MAX == 32767);
+    static_assert(Sound::Sample::MID == 0, "Sample should be signed");
+    static_assert(Sound::Sample::MAX == 32767, "Sample should be 16-bit");
     return (Sound::Sample::Type(inSample) - 128) * 256;
   }
 
@@ -50,6 +53,7 @@ namespace
     return AYVolumeTab[inSample >> 4];
   }
 }
+}
 
 namespace Devices
 {
@@ -58,26 +62,27 @@ namespace Devices
     class BaseSample : public Sample
     {
     public:
-      BaseSample(Binary::Data::Ptr content, std::size_t loop)
-        : Content(content)
-        , StartValue(static_cast<const uint8_t*>(content->Start()))
-        , SizeValue(content->Size())
+      BaseSample(const Binary::Data& content, std::size_t loop)
+        : Content(new uint8_t[content.Size()])
+        , StartValue(Content.get())
+        , SizeValue(content.Size())
         , LoopValue(loop)
         , RmsValue(NO_RMS)
       {
+        std::memcpy(Content.get(), content.Start(), SizeValue);
       }
 
-      virtual std::size_t Size() const
+      std::size_t Size() const override
       {
         return SizeValue;
       }
 
-      virtual std::size_t Loop() const
+      std::size_t Loop() const override
       {
         return LoopValue;
       }
 
-      virtual uint_t Rms() const
+      uint_t Rms() const override
       {
         if (RmsValue == NO_RMS)
         {
@@ -92,7 +97,7 @@ namespace Devices
         return RmsValue;
       }
     protected:
-      const Binary::Data::Ptr Content;
+      const std::unique_ptr<uint8_t[]> Content;
       const uint8_t* const StartValue;
       const std::size_t SizeValue;
       const std::size_t LoopValue;
@@ -102,12 +107,12 @@ namespace Devices
     class U8Sample : public BaseSample
     {
     public:
-      U8Sample(Binary::Data::Ptr content, std::size_t loop)
+      U8Sample(const Binary::Data& content, std::size_t loop)
         : BaseSample(content, loop)
       {
       }
 
-      virtual Sound::Sample::Type Get(std::size_t pos) const
+      Sound::Sample::Type Get(std::size_t pos) const override
       {
         return pos < SizeValue
           ? FromU8(StartValue[pos])
@@ -118,12 +123,12 @@ namespace Devices
     class U4Sample : public BaseSample
     {
     public:
-      U4Sample(Binary::Data::Ptr content, std::size_t loop)
+      U4Sample(const Binary::Data& content, std::size_t loop)
         : BaseSample(content, loop)
       {
       }
 
-      virtual Sound::Sample::Type Get(std::size_t pos) const
+      Sound::Sample::Type Get(std::size_t pos) const override
       {
         return pos < SizeValue
           ? FromU4Lo(StartValue[pos])
@@ -134,12 +139,12 @@ namespace Devices
     class U4PackedSample : public BaseSample
     {
     public:
-      U4PackedSample(Binary::Data::Ptr content, std::size_t loop)
+      U4PackedSample(const Binary::Data& content, std::size_t loop)
         : BaseSample(content, loop)
       {
       }
 
-      virtual Sound::Sample::Type Get(std::size_t pos) const
+      Sound::Sample::Type Get(std::size_t pos) const override
       {
         if (pos < SizeValue * 2)
         {
@@ -154,25 +159,25 @@ namespace Devices
         }
       }
 
-      virtual std::size_t Size() const
+      std::size_t Size() const override
       {
         return SizeValue * 2;
       }
     };
 
-    Sample::Ptr CreateU8Sample(Binary::Data::Ptr content, std::size_t loop)
+    Sample::Ptr CreateU8Sample(const Binary::Data& content, std::size_t loop)
     {
-      return boost::make_shared<U8Sample>(content, loop);
+      return MakePtr<U8Sample>(content, loop);
     }
 
-    Sample::Ptr CreateU4Sample(Binary::Data::Ptr content, std::size_t loop)
+    Sample::Ptr CreateU4Sample(const Binary::Data& content, std::size_t loop)
     {
-      return boost::make_shared<U4Sample>(content, loop);
+      return MakePtr<U4Sample>(content, loop);
     }
 
-    Sample::Ptr CreateU4PackedSample(Binary::Data::Ptr content, std::size_t loop)
+    Sample::Ptr CreateU4PackedSample(const Binary::Data& content, std::size_t loop)
     {
-      return boost::make_shared<U4PackedSample>(content, loop);
+      return MakePtr<U4PackedSample>(content, loop);
     }
   }
 }

@@ -10,6 +10,8 @@
 
 //local includes
 #include "language.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <l10n/control.h>
 //std includes
@@ -17,8 +19,6 @@
 #include <set>
 //boost includes
 #include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/weak_ptr.hpp>
 //qt includes
 #include <QtCore/QCoreApplication>
 #include <QtCore/QLocale>
@@ -29,7 +29,7 @@ namespace
   class QtTranslationLibrary : public L10n::Library
   {
   public:
-    virtual void AddTranslation(const L10n::Translation& trans)
+    void AddTranslation(const L10n::Translation& trans) override
     {
       static const std::string QM_FILE("qm");
 
@@ -40,7 +40,7 @@ namespace
       Translations[trans.Language].insert(DumpPtr(new Dump(trans.Data)));
     }
 
-    virtual void SelectTranslation(const std::string& translation)
+    void SelectTranslation(const std::string& translation) override
     {
       UnloadTranslators();
       const LangToDumpsSetMap::const_iterator it = Translations.find(translation);
@@ -51,7 +51,7 @@ namespace
       L10n::Library::Instance().SelectTranslation(translation);
     }
 
-    virtual L10n::Vocabulary::Ptr GetVocabulary(const std::string& /*domain*/) const
+    L10n::Vocabulary::Ptr GetVocabulary(const std::string& /*domain*/) const override
     {
       return L10n::Vocabulary::Ptr();
     }
@@ -63,10 +63,10 @@ namespace
       return res;
     }
   private:
-    typedef boost::shared_ptr<const Dump> DumpPtr;
+    typedef std::shared_ptr<const Dump> DumpPtr;
     typedef std::set<DumpPtr> DumpsSet;
     typedef std::map<std::string, DumpsSet> LangToDumpsSetMap;
-    typedef boost::shared_ptr<QTranslator> TranslatorPtr;
+    typedef std::shared_ptr<QTranslator> TranslatorPtr;
     typedef std::set<TranslatorPtr> TranslatorsSet;
 
     void UnloadTranslators()
@@ -85,7 +85,7 @@ namespace
 
     static TranslatorPtr CreateTranslator(DumpPtr dump)
     {
-      const TranslatorPtr res = boost::make_shared<QTranslator>();
+      const TranslatorPtr res = std::make_shared<QTranslator>();
       res->load(&dump->front(), static_cast<int>(dump->size()));
       return res;
     }
@@ -102,7 +102,7 @@ namespace
       L10n::LoadTranslationsFromResources(Lib);
     }
 
-    virtual QStringList GetAvailable() const
+    QStringList GetAvailable() const override
     {
       const std::vector<std::string> lng = Lib.EnumerateLanguages();
       QStringList res;
@@ -111,14 +111,14 @@ namespace
       return res;
     }
 
-    virtual QString GetSystem() const
+    QString GetSystem() const override
     {
       QString curLang = QLocale::system().name();
       curLang.truncate(curLang.lastIndexOf(QLatin1Char('_')));//$(lang)_$(country)
       return curLang;
     }
 
-    virtual void Set(const QString& lang)
+    void Set(const QString& lang) override
     {
       if (lang != Lang)
       {
@@ -139,12 +139,12 @@ namespace UI
   Language::Ptr Language::Create()
   {
     //use slight caching to prevent heavy parsing
-    static boost::weak_ptr<Language> instance;
+    static std::weak_ptr<Language> instance;
     if (Language::Ptr res = instance.lock())
     {
       return res;
     }
-    const Language::Ptr res = boost::make_shared<LanguageInResources>();
+    const Language::Ptr res = MakePtr<LanguageInResources>();
     instance = res;
     return res;
   }

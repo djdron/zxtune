@@ -10,14 +10,18 @@
 
 //local includes
 #include "dac_plugin.h"
-#include "dac_base.h"
-#include "dac_parameters.h"
 #include "core/plugins/players/plugin.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <core/plugin_attrs.h>
+#include <module/players/dac/dac_base.h>
+#include <module/players/dac/dac_parameters.h>
 #include <sound/mixer_factory.h>
+//std includes
+#include <utility>
 
-namespace
+namespace Module
 {
   template<unsigned Channels>
   Devices::DAC::Chip::Ptr CreateChip(Parameters::Accessor::Ptr params, Sound::Receiver::Ptr target)
@@ -41,29 +45,26 @@ namespace
       return Devices::DAC::Chip::Ptr();
     };
   }
-}
 
-namespace Module
-{
   class DACHolder : public Holder
   {
   public:
     explicit DACHolder(DAC::Chiptune::Ptr chiptune)
-      : Tune(chiptune)
+      : Tune(std::move(chiptune))
     {
     }
 
-    virtual Information::Ptr GetModuleInformation() const
+    Information::Ptr GetModuleInformation() const override
     {
       return Tune->GetInformation();
     }
 
-    virtual Parameters::Accessor::Ptr GetModuleProperties() const
+    Parameters::Accessor::Ptr GetModuleProperties() const override
     {
       return Tune->GetProperties();
     }
 
-    virtual Renderer::Ptr CreateRenderer(Parameters::Accessor::Ptr params, Sound::Receiver::Ptr target) const
+    Renderer::Ptr CreateRenderer(Parameters::Accessor::Ptr params, Sound::Receiver::Ptr target) const override
     {
       const Sound::RenderParameters::Ptr renderParams = Sound::RenderParameters::Create(params);
       const DAC::DataIterator::Ptr iterator = Tune->CreateDataIterator();
@@ -79,15 +80,15 @@ namespace Module
   {
   public:
     explicit DACFactory(DAC::Factory::Ptr delegate)
-      : Delegate(delegate)
+      : Delegate(std::move(delegate))
     {
     }
 
-    virtual Holder::Ptr CreateModule(const Parameters::Accessor& /*params*/, const Binary::Container& data, PropertiesBuilder& properties) const
+    Holder::Ptr CreateModule(const Parameters::Accessor& /*params*/, const Binary::Container& data, Parameters::Container::Ptr properties) const override
     {
       if (const DAC::Chiptune::Ptr chiptune = Delegate->CreateChiptune(data, properties))
       {
-        return boost::make_shared<DACHolder>(chiptune);
+        return MakePtr<DACHolder>(chiptune);
       }
       else
       {
@@ -103,7 +104,7 @@ namespace ZXTune
 {
   PlayerPlugin::Ptr CreatePlayerPlugin(const String& id, Formats::Chiptune::Decoder::Ptr decoder, Module::DAC::Factory::Ptr factory)
   {
-    const Module::Factory::Ptr modFactory = boost::make_shared<Module::DACFactory>(factory);
+    const Module::Factory::Ptr modFactory = MakePtr<Module::DACFactory>(factory);
     const uint_t caps = Capabilities::Module::Type::TRACK | Capabilities::Module::Device::DAC;
     return CreatePlayerPlugin(id, caps, decoder, modFactory);
   }

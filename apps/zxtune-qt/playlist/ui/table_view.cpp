@@ -16,11 +16,9 @@
 #include "ui/utils.h"
 //common includes
 #include <contract.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
-//boost includes
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
 //qt includes
 #include <QtGui/QContextMenuEvent>
 #include <QtWidgets/QHeaderView>
@@ -31,8 +29,6 @@ namespace
   const Debug::Stream Dbg("Playlist::UI::TableView");
 
   //Options
-  const QLatin1String FONT_FAMILY("Arial");
-  const int_t FONT_SIZE = 8;
   const QLatin1String TYPE_TEXT("WWWW");
   const int_t DISPLAYNAME_WIDTH = 320;
   const QLatin1String DURATION_TEXT("77:77.77");
@@ -47,18 +43,16 @@ namespace
   class TableHeader : public QHeaderView
   {
   public:
-    TableHeader(QAbstractItemModel& model, const QFont& font)
-      : QHeaderView(Qt::Horizontal)
+    explicit TableHeader(QWidget& parent)
+      : QHeaderView(Qt::Horizontal, &parent)
     {
       setObjectName(QLatin1String("Columns_v2"));
-      setModel(&model);
-      setFont(font);
       setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
       setHighlightSections(false);
       setTextElideMode(Qt::ElideRight);
 	  setSectionsMovable(true);
 	  setSectionsClickable(true);
-      const QFontMetrics fontMetrics(font);
+      const QFontMetrics fontMetrics(font());
       resizeSection(Playlist::Model::COLUMN_TYPE, fontMetrics.width(TYPE_TEXT));
       resizeSection(Playlist::Model::COLUMN_DISPLAY_NAME, DISPLAYNAME_WIDTH);
       resizeSection(Playlist::Model::COLUMN_DURATION, fontMetrics.width(DURATION_TEXT));
@@ -78,9 +72,9 @@ namespace
     }
 
     //QWidget's virtuals
-    virtual void contextMenuEvent(QContextMenuEvent* event)
+    void contextMenuEvent(QContextMenuEvent* event) override
     {
-      const std::auto_ptr<QMenu> menu = CreateMenu();
+      const std::unique_ptr<QMenu> menu = CreateMenu();
       if (QAction* res = menu->exec(event->globalPos()))
       {
         const QVariant data = res->data();
@@ -90,9 +84,9 @@ namespace
       event->accept();
     }
   private:
-    std::auto_ptr<QMenu> CreateMenu()
+    std::unique_ptr<QMenu> CreateMenu()
     {
-      std::auto_ptr<QMenu> result(new QMenu(this));
+      std::unique_ptr<QMenu> result(new QMenu(this));
       QAbstractItemModel* const md = model();
       for (int idx = 0, lim = count(); idx != lim; ++idx)
       {
@@ -112,12 +106,10 @@ namespace
     TableViewImpl(QWidget& parent, const Playlist::Item::StateCallback& callback,
       QAbstractItemModel& model)
       : Playlist::UI::TableView(parent)
-      , Font(FONT_FAMILY, FONT_SIZE)
     {
       //setup self
       setSortingEnabled(true);
       setItemDelegate(Playlist::UI::TableViewItem::Create(*this, callback));
-      setFont(Font);
       setMinimumSize(256, 128);
       //setup ui
       setAcceptDrops(true);
@@ -133,50 +125,49 @@ namespace
       setGridStyle(Qt::NoPen);
       setWordWrap(false);
       setCornerButtonEnabled(false);
+
       //setup dynamic ui
-      setHorizontalHeader(new TableHeader(model, Font));
-      setModel(&model);
+      setHorizontalHeader(new TableHeader(*this));
       if (QHeaderView* const verHeader = verticalHeader())
       {
-        verHeader->setFont(Font);
         verHeader->setDefaultAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        const QFontMetrics fontMetrics(Font);
-        verHeader->setDefaultSectionSize(verHeader->minimumSectionSize()/*fontMetrics.height()*/);
 		verHeader->setSectionResizeMode(QHeaderView::Fixed);
       }
-
+      setModel(&model);
+      
       //signals
       Require(connect(this, SIGNAL(activated(const QModelIndex&)), SLOT(ActivateItem(const QModelIndex&))));
 
       Dbg("Created at %1%", this);
     }
 
-    virtual ~TableViewImpl()
+    ~TableViewImpl() override
     {
       Dbg("Destroyed at %1%", this);
     }
 
-    virtual Playlist::Model::IndexSetPtr GetSelectedItems() const
+    Playlist::Model::IndexSet::Ptr GetSelectedItems() const override
     {
       const QItemSelectionModel* const selection = selectionModel();
       const QModelIndexList& items = selection->selectedRows();
-      const boost::shared_ptr<Playlist::Model::IndexSet> result = boost::make_shared<Playlist::Model::IndexSet>();
-      std::for_each(items.begin(), items.end(),
-                    boost::bind(boost::mem_fn<std::pair<Playlist::Model::IndexSet::iterator, bool>, Playlist::Model::IndexSet, const Playlist::Model::IndexSet::value_type&>(&Playlist::Model::IndexSet::insert), result.get(),
-          boost::bind(&QModelIndex::row, _1)));
+      const Playlist::Model::IndexSet::RWPtr result = MakeRWPtr<Playlist::Model::IndexSet>();
+      for (const auto& item : items)
+      {
+        result->insert(item.row());
+      }
       return result;
     }
 
-    virtual void SelectItems(const Playlist::Model::IndexSet& indices)
+    void SelectItems(const Playlist::Model::IndexSet& indices) override
     {
       setEnabled(true);
       QAbstractItemModel* const curModel = model();
       QItemSelectionModel* const selectModel = selectionModel();
       QItemSelection selection;
-      for (Playlist::Model::IndexSet::const_iterator it = indices.begin(), lim = indices.end(); it != lim; ++it)
+      for (auto index : indices)
       {
-        const QModelIndex left = curModel->index(*it, 0);
-        const QModelIndex right = curModel->index(*it, Playlist::Model::COLUMNS_COUNT - 1);
+        const QModelIndex left = curModel->index(index, 0);
+        const QModelIndex right = curModel->index(index, Playlist::Model::COLUMNS_COUNT - 1);
         const QItemSelection sel(left, right);
         selection.merge(sel, QItemSelectionModel::Select);
       }
@@ -187,19 +178,19 @@ namespace
       }
     }
 
-    virtual void MoveToTableRow(unsigned index)
+    void MoveToTableRow(unsigned index) override
     {
       QAbstractItemModel* const curModel = model();
       const QModelIndex idx = curModel->index(index, 0);
       scrollTo(idx, QAbstractItemView::EnsureVisible);
     }
 
-    virtual void SelectItems(Playlist::Model::IndexSetPtr indices)
+    void SelectItems(Playlist::Model::IndexSet::Ptr indices) override
     {
       return SelectItems(*indices);
     }
 
-    virtual void ActivateItem(const QModelIndex& index)
+    void ActivateItem(const QModelIndex& index) override
     {
       if (index.isValid())
       {
@@ -209,7 +200,7 @@ namespace
     }
     
     //Qt natives
-    virtual void keyboardSearch(const QString& search)
+    void keyboardSearch(const QString& search) override
     {
       QAbstractItemView::keyboardSearch(search);
       const QItemSelectionModel* const selection = selectionModel();
@@ -222,8 +213,6 @@ namespace
         scrollTo(items.first(), QAbstractItemView::EnsureVisible);
       }
     }
-  private:
-    QFont Font;
   };
 
   class TableViewItemImpl : public Playlist::UI::TableViewItem
@@ -237,7 +226,7 @@ namespace
     {
     }
 
-    virtual void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
     {
       QStyleOptionViewItem fixedOption(option);
       FillItemStyle(index, fixedOption);
@@ -321,7 +310,7 @@ namespace Playlist
 
     TableView* TableView::Create(QWidget& parent, const Item::StateCallback& callback, QAbstractItemModel& model)
     {
-      REGISTER_METATYPE(Playlist::Model::IndexSetPtr);
+      REGISTER_METATYPE(Playlist::Model::IndexSet::Ptr);
       return new TableViewImpl(parent, callback, model);
     }
   }

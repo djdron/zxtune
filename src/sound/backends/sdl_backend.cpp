@@ -17,6 +17,7 @@
 //common includes
 #include <byteorder.h>
 #include <error_tools.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
 #include <l10n/api.h>
@@ -25,9 +26,8 @@
 #include <sound/backends_parameters.h>
 #include <sound/render_params.h>
 #include <sound/sound_parameters.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/thread/condition_variable.hpp>
+//std includes
+#include <condition_variable>
 //text includes
 #include "text/backends.h"
 
@@ -85,10 +85,10 @@ namespace Sdl
 
     void AddData(Chunk& buffer)
     {
-      boost::mutex::scoped_lock locker(BufferMutex);
+      std::unique_lock<std::mutex> lock(BufferMutex);
       while (FillIter->BytesToPlay)
       {
-        PlayedEvent.wait(locker);
+        PlayedEvent.wait(lock);
       }
       FillIter->Data.swap(buffer);
       FillIter->BytesToPlay = FillIter->Data.size() * sizeof(FillIter->Data.front());
@@ -98,13 +98,13 @@ namespace Sdl
 
     void GetData(uint8_t* stream, uint_t len)
     {
-      boost::mutex::scoped_lock locker(BufferMutex);
+      std::unique_lock<std::mutex> lock(BufferMutex);
       while (len)
       {
         //wait for data
         while (!PlayIter->BytesToPlay)
         {
-          FilledEvent.wait(locker);
+          FilledEvent.wait(lock);
         }
         const uint_t inBuffer = PlayIter->Data.size() * sizeof(PlayIter->Data.front());
         const uint_t toCopy = std::min<uint_t>(len, PlayIter->BytesToPlay);
@@ -135,8 +135,8 @@ namespace Sdl
       return Buffers.size();
     }
   private:
-    boost::mutex BufferMutex;
-    boost::condition_variable FilledEvent, PlayedEvent;
+    std::mutex BufferMutex;
+    std::condition_variable FilledEvent, PlayedEvent;
     struct Buffer
     {
       Buffer() : BytesToPlay()
@@ -292,7 +292,7 @@ namespace Sdl
 
     virtual BackendWorker::Ptr CreateWorker(Parameters::Accessor::Ptr params, Module::Holder::Ptr /*holder*/) const
     {
-      return boost::make_shared<BackendWorker>(SdlApi, params);
+      return MakePtr<BackendWorker>(SdlApi, params);
     }
   private:
     const Api::Ptr SdlApi;
@@ -309,7 +309,7 @@ namespace Sound
       const Sdl::Api::Ptr api = Sdl::LoadDynamicApi();
       const SDL_version* const vers = api->SDL_Linked_Version();
       Dbg("Detected SDL %1%.%2%.%3%", unsigned(vers->major), unsigned(vers->minor), unsigned(vers->patch));
-      const BackendWorkerFactory::Ptr factory = boost::make_shared<Sdl::BackendWorkerFactory>(api);
+      const BackendWorkerFactory::Ptr factory = MakePtr<Sdl::BackendWorkerFactory>(api);
       storage.Register(Sdl::ID, Sdl::DESCRIPTION, Sdl::CAPABILITIES, factory);
     }
     catch (const Error& e)

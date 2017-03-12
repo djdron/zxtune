@@ -13,10 +13,9 @@
 //common includes
 #include <contract.h>
 #include <error_tools.h>
+#include <make_ptr.h>
 //library includes
 #include <l10n/api.h>
-//boost includes
-#include <boost/make_shared.hpp>
 //platform includes
 #include <dlfcn.h>
 
@@ -25,17 +24,22 @@
 namespace
 {
   const L10n::TranslateFunctor translate = L10n::TranslateFunctor("platform");
+}
 
-  class LinuxSharedLibrary : public Platform::SharedLibrary
+namespace Platform
+{
+namespace Details
+{
+  class LinuxSharedLibrary : public SharedLibrary
   {
   public:
     explicit LinuxSharedLibrary(void* handle)
       : Handle(handle)
     {
-      Require(Handle != 0);
+      Require(Handle != nullptr);
     }
 
-    virtual ~LinuxSharedLibrary()
+    ~LinuxSharedLibrary() override
     {
       if (Handle)
       {
@@ -43,7 +47,7 @@ namespace
       }
     }
 
-    virtual void* GetSymbol(const std::string& name) const
+    void* GetSymbol(const std::string& name) const override
     {
       if (void* res = ::dlsym(Handle, name.c_str()))
       {
@@ -62,37 +66,32 @@ namespace
   {
     return "lib" + name + SUFFIX;
   }
-}
 
-namespace Platform
-{
-  namespace Details
+  Error LoadSharedLibrary(const std::string& fileName, SharedLibrary::Ptr& res)
   {
-    Error LoadSharedLibrary(const std::string& fileName, SharedLibrary::Ptr& res)
+    if (void* handle = ::dlopen(fileName.c_str(), RTLD_LAZY))
     {
-      if (void* handle = ::dlopen(fileName.c_str(), RTLD_LAZY))
-      {
-        res = boost::make_shared<LinuxSharedLibrary>(handle);
-        return Error();
-      }
-      return MakeFormattedError(THIS_LINE,
-        translate("Failed to load shared object '%1%' (%2%)."), FromStdString(fileName), FromStdString(::dlerror()));
+      res = MakePtr<LinuxSharedLibrary>(handle);
+      return Error();
     }
-      
-    std::string GetSharedLibraryFilename(const std::string& name)
-    {
-      return name.find(SUFFIX) == name.npos
-        ? BuildLibraryFilename(name)
-        : name;
-    }
-
-    std::vector<std::string> GetSharedLibraryFilenames(const SharedLibrary::Name& name)
-    {
-      std::vector<std::string> res;
-      res.push_back(GetSharedLibraryFilename(name.Base()));
-      const std::vector<std::string>& alternatives = name.PosixAlternatives();
-      std::transform(alternatives.begin(), alternatives.end(), std::back_inserter(res), std::ptr_fun(&GetSharedLibraryFilename));
-      return res;
-    }
+    return MakeFormattedError(THIS_LINE,
+      translate("Failed to load shared object '%1%' (%2%)."), FromStdString(fileName), FromStdString(::dlerror()));
   }
+    
+  std::string GetSharedLibraryFilename(const std::string& name)
+  {
+    return name.find(SUFFIX) == name.npos
+      ? BuildLibraryFilename(name)
+      : name;
+  }
+
+  std::vector<std::string> GetSharedLibraryFilenames(const SharedLibrary::Name& name)
+  {
+    std::vector<std::string> res;
+    res.push_back(GetSharedLibraryFilename(name.Base()));
+    const std::vector<std::string>& alternatives = name.PosixAlternatives();
+    std::copy(alternatives.begin(), alternatives.end(), std::back_inserter(res));
+    return res;
+  }
+}
 }

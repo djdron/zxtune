@@ -16,8 +16,6 @@
 //std includes
 #include <algorithm>
 #include <cassert>
-//boost includes
-#include <boost/range/end.hpp>
 
 namespace
 {
@@ -34,7 +32,7 @@ namespace
   class Codepage
   {
   public:
-    virtual ~Codepage() {}
+    virtual ~Codepage() = default;
     
     virtual int_t GetWeight(uint8_t symbol) const = 0;
     virtual uint_t Translate(uint8_t symbol) const = 0;
@@ -51,7 +49,11 @@ namespace
   class CP866Codepage : public Codepage
   {
   public:
-    virtual int_t GetWeight(uint8_t s) const
+    CP866Codepage()
+    {
+    }
+
+    int_t GetWeight(uint8_t s) const override
     {
       return (0x20 <= s && s <= 0x40)
           || (0x80 <= s && s <= 0xaf)
@@ -59,7 +61,7 @@ namespace
       ;
     }
 
-    virtual uint_t Translate(uint8_t s) const
+    uint_t Translate(uint8_t s) const override
     {
       assert(0 != GetWeight(s));
       if (0x80 <= s && s <= 0xaf)
@@ -93,14 +95,18 @@ namespace
   class CP1251Codepage : public Codepage
   {
   public:
-    virtual int_t GetWeight(uint8_t s) const
+    CP1251Codepage()
+    {
+    }
+
+    int_t GetWeight(uint8_t s) const override
     {
       return (0x20 <= s && s <= 0x40)
           || (0xc0 <= s)
       ;
     }
     
-    virtual uint_t Translate(uint8_t s) const
+    uint_t Translate(uint8_t s) const override
     {
       assert(0 != GetWeight(s));
       return 0xc0 <= s
@@ -112,13 +118,17 @@ namespace
   class CP1252Codepage : public Codepage
   {
   public:
-    virtual int_t GetWeight(uint8_t s) const
+    CP1252Codepage()
+    {
+    }
+
+    int_t GetWeight(uint8_t s) const override
     {
       return (0x20 <= s && s <= 0x7f)
           || Decoded(s) != 0;
     }
     
-    virtual uint_t Translate(uint8_t s) const
+    uint_t Translate(uint8_t s) const override
     {
       if (const uint_t d = Decoded(s))
       {
@@ -153,13 +163,17 @@ namespace
   class CP1250Codepage : public Codepage
   {
   public:
-    virtual int_t GetWeight(uint8_t s) const
+    CP1250Codepage()
+    {
+    }
+
+    int_t GetWeight(uint8_t s) const override
     {
       return (0x20 <= s && s <= 0x7f)
           || Decoded(s) != 0;
     }
     
-    virtual uint_t Translate(uint8_t s) const
+    uint_t Translate(uint8_t s) const override
     {
       if (const uint_t d = Decoded(s))
       {
@@ -213,9 +227,9 @@ namespace
   {
     assert(!str.empty());
     Weight result;
-    for (std::string::const_iterator it = str.begin(), lim = str.end(); it != lim; ++it)
+    for (auto c : str)
     {
-      result.Add(cp.GetWeight(*it));
+      result.Add(cp.GetWeight(c));
     }
     return result;
   }
@@ -252,17 +266,17 @@ namespace
         looses[cp] = 0;
       }
     }
-    if (const std::size_t maxStraight = *std::max_element(straights, boost::end(straights)))
+    if (const std::size_t maxStraight = *std::max_element(straights, std::end(straights)))
     {
       return CODEPAGES[maxStraight & 0xff];
     }
-    else if (const std::size_t maxLoose = *std::max_element(looses, boost::end(looses)))
+    else if (const std::size_t maxLoose = *std::max_element(looses, std::end(looses)))
     {
       return CODEPAGES[maxLoose & 0xff];
     }
     else
     {
-      return 0;
+      return nullptr;
     }
   }
   
@@ -270,9 +284,8 @@ namespace
   {
     std::string result;
     result.reserve(local.size());
-    for (std::string::const_iterator it = local.begin(), lim = local.end(); it != lim; ++it)
+    for (uint8_t sym : local)
     {
-      const uint8_t sym = *it;
       if (IsAscii(sym))
       {
         result += static_cast<std::string::value_type>(sym);

@@ -16,25 +16,21 @@
 #include <l10n/api.h>
 //boost includes
 #include <boost/bind.hpp>
-#include <boost/range/end.hpp>
 //text includes
 #include <core/text/core.h>
 
 #define FILE_TAG E8071E22
 
-namespace
-{
-  const L10n::TranslateFunctor translate = L10n::TranslateFunctor("core");
-}
-
 namespace Module
 {
+  const L10n::TranslateFunctor translate = L10n::TranslateFunctor("core");
+
   // prefix for reverted frequency tables
   const Char REVERT_TABLE_MARK = '~';
 
   struct FreqTableEntry
   {
-    const String Name;
+    const Char* const Name;
     const FrequencyTable Table;
   };
 
@@ -257,9 +253,9 @@ namespace Module
     const bool doRevert = !id.empty() && *id.begin() == REVERT_TABLE_MARK;
     const String idNormal = doRevert ? id.substr(1) : id;
     //find if table is supported
-    const FreqTableEntry* const entry = std::find_if(TABLES, boost::end(TABLES),
+    const FreqTableEntry* const entry = std::find_if(TABLES, std::end(TABLES),
       boost::bind(&FreqTableEntry::Name, _1) == idNormal);
-    if (entry == boost::end(TABLES))
+    if (entry == std::end(TABLES))
     {
       throw MakeFormattedError(THIS_LINE, translate("Invalid frequency table '%1%'."), id);
     }

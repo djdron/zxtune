@@ -16,6 +16,7 @@
 #include "gates/vorbisenc_api.h"
 //common includes
 #include <error_tools.h>
+#include <make_ptr.h>
 //library includes
 #include <binary/data_adapter.h>
 #include <debug/log.h>
@@ -26,9 +27,6 @@
 #include <sound/render_params.h>
 //std includes
 #include <algorithm>
-//boost includes
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
 //text includes
 #include "text/backends.h"
 
@@ -63,12 +61,12 @@ namespace Ogg
   class OggBitStream
   {
   public:
-    typedef boost::shared_ptr<OggBitStream> Ptr;
+    typedef std::shared_ptr<OggBitStream> Ptr;
     OggBitStream(Api::Ptr api, Binary::OutputStream::Ptr file)
-      : OggApi(api)
-      , File(file)
+      : OggApi(std::move(api))
+      , File(std::move(file))
     {
-      CheckVorbisCall(OggApi->ogg_stream_init(&Stream, std::time(0)), THIS_LINE);
+      CheckVorbisCall(OggApi->ogg_stream_init(&Stream, std::time(nullptr)), THIS_LINE);
     }
 
     ~OggBitStream()
@@ -117,10 +115,10 @@ namespace Ogg
   class MetaData
   {
   public:
-    typedef boost::shared_ptr<MetaData> Ptr;
+    typedef std::shared_ptr<MetaData> Ptr;
 
     explicit MetaData(Vorbis::Api::Ptr api)
-      : VorbisApi(api)
+      : VorbisApi(std::move(api))
     {
       VorbisApi->vorbis_comment_init(&Data);
     }
@@ -149,9 +147,9 @@ namespace Ogg
   class VorbisState
   {
   public:
-    typedef boost::shared_ptr<VorbisState> Ptr;
+    typedef std::shared_ptr<VorbisState> Ptr;
     VorbisState(Vorbis::Api::Ptr api, vorbis_info* info)
-      : VorbisApi(api)
+      : VorbisApi(std::move(api))
     {
       VorbisApi->vorbis_analysis_init(&State, info);
       VorbisApi->vorbis_block_init(&State, &Block);
@@ -187,7 +185,7 @@ namespace Ogg
       while (const int blkRes = VorbisApi->vorbis_analysis_blockout(&State, &Block))
       {
         CheckVorbisCall(blkRes, THIS_LINE);
-        CheckVorbisCall(VorbisApi->vorbis_analysis(&Block, 0), THIS_LINE);
+        CheckVorbisCall(VorbisApi->vorbis_analysis(&Block, nullptr), THIS_LINE);
         CheckVorbisCall(VorbisApi->vorbis_bitrate_addblock(&Block), THIS_LINE);
         while (const int pcktRes = VorbisApi->vorbis_bitrate_flushpacket(&State, &packet))
         {
@@ -216,10 +214,10 @@ namespace Ogg
   class VorbisInfo
   {
   public:
-    typedef boost::shared_ptr<VorbisInfo> Ptr;
+    typedef std::shared_ptr<VorbisInfo> Ptr;
     VorbisInfo(Vorbis::Api::Ptr vorbisApi, VorbisEnc::Api::Ptr vorbisEncApi)
-      : VorbisApi(vorbisApi)
-      , VorbisEncApi(vorbisEncApi)
+      : VorbisApi(std::move(vorbisApi))
+      , VorbisEncApi(std::move(vorbisEncApi))
     {
       VorbisApi->vorbis_info_init(&Data);
     }
@@ -253,31 +251,31 @@ namespace Ogg
   {
   public:
     FileStream(Vorbis::Api::Ptr api, VorbisInfo::Ptr info, OggBitStream::Ptr stream)
-      : VorbisApi(api)
-      , Info(info)
-      , Meta(boost::make_shared<MetaData>(VorbisApi))
-      , State(boost::make_shared<VorbisState>(VorbisApi, Info->Get()))
-      , Stream(stream)
+      : VorbisApi(std::move(api))
+      , Info(std::move(info))
+      , Meta(MakePtr<MetaData>(VorbisApi))
+      , State(MakePtr<VorbisState>(VorbisApi, Info->Get()))
+      , Stream(std::move(stream))
     {
       Dbg("Stream initialized");
     }
 
-    virtual void SetTitle(const String& title)
+    void SetTitle(const String& title) override
     {
       Meta->AddTag(Text::OGG_BACKEND_TITLE_TAG, title);
     }
 
-    virtual void SetAuthor(const String& author)
+    void SetAuthor(const String& author) override
     {
       Meta->AddTag(Text::OGG_BACKEND_AUTHOR_TAG, author);
     }
 
-    virtual void SetComment(const String& comment)
+    void SetComment(const String& comment) override
     {
       Meta->AddTag(Text::OGG_BACKEND_COMMENT_TAG, comment);
     }
 
-    virtual void FlushMetadata()
+    void FlushMetadata() override
     {
       ogg_packet id, meta, code;
       CheckVorbisCall(VorbisApi->vorbis_analysis_headerout(State->Get(), Meta->Get(), &id, &meta, &code), THIS_LINE);
@@ -287,13 +285,13 @@ namespace Ogg
       Stream->Flush();
     }
 
-    virtual void ApplyData(const Chunk::Ptr& data)
+    void ApplyData(Chunk::Ptr data) override
     {
       State->Encode(*data);
       State->Save(*Stream);
     }
 
-    virtual void Flush()
+    void Flush() override
     {
       State->Flush();
       State->Save(*Stream);
@@ -310,7 +308,7 @@ namespace Ogg
   {
   public:
     explicit StreamParameters(Parameters::Accessor::Ptr params)
-      : Params(params)
+      : Params(std::move(params))
     {
     }
 
@@ -364,24 +362,24 @@ namespace Ogg
   {
   public:
     FileStreamFactory(Api::Ptr oggApi, Vorbis::Api::Ptr vorbisApi, VorbisEnc::Api::Ptr vorbisEncApi, Parameters::Accessor::Ptr params)
-      : OggApi(oggApi)
-      , VorbisApi(vorbisApi)
-      , VorbisEncApi(vorbisEncApi)
-      , Params(params)
+      : OggApi(std::move(oggApi))
+      , VorbisApi(std::move(vorbisApi))
+      , VorbisEncApi(std::move(vorbisEncApi))
+      , Params(std::move(params))
     {
     }
 
-    virtual String GetId() const
+    String GetId() const override
     {
       return ID;
     }
 
-    virtual FileStream::Ptr CreateStream(Binary::OutputStream::Ptr stream) const
+    FileStream::Ptr CreateStream(Binary::OutputStream::Ptr stream) const override
     {
-      const VorbisInfo::Ptr info = boost::make_shared<VorbisInfo>(VorbisApi, VorbisEncApi);
+      const VorbisInfo::Ptr info = MakePtr<VorbisInfo>(VorbisApi, VorbisEncApi);
       SetupInfo(*info);
-      const OggBitStream::Ptr bitStream = boost::make_shared<OggBitStream>(OggApi, stream);
-      return boost::make_shared<FileStream>(VorbisApi, info, bitStream);
+      const OggBitStream::Ptr bitStream = MakePtr<OggBitStream>(OggApi, stream);
+      return MakePtr<FileStream>(VorbisApi, info, bitStream);
     }
   private:
     void SetupInfo(VorbisInfo& info) const
@@ -416,15 +414,15 @@ namespace Ogg
   {
   public:
     BackendWorkerFactory(Api::Ptr oggApi, Vorbis::Api::Ptr vorbisApi, VorbisEnc::Api::Ptr vorbisEncApi)
-      : OggApi(oggApi)
-      , VorbisApi(vorbisApi)
-      , VorbisEncApi(vorbisEncApi)
+      : OggApi(std::move(oggApi))
+      , VorbisApi(std::move(vorbisApi))
+      , VorbisEncApi(std::move(vorbisEncApi))
     {
     }
 
-    virtual BackendWorker::Ptr CreateWorker(Parameters::Accessor::Ptr params, Module::Holder::Ptr /*holder*/) const
+    BackendWorker::Ptr CreateWorker(Parameters::Accessor::Ptr params, Module::Holder::Ptr /*holder*/) const override
     {
-      const FileStreamFactory::Ptr factory = boost::make_shared<FileStreamFactory>(OggApi, VorbisApi, VorbisEncApi, params);
+      const FileStreamFactory::Ptr factory = MakePtr<FileStreamFactory>(OggApi, VorbisApi, VorbisEncApi, params);
       return CreateFileBackendWorker(params, factory);
     }
   private:
@@ -445,7 +443,7 @@ namespace Sound
       const Vorbis::Api::Ptr vorbisApi = Vorbis::LoadDynamicApi();
       const VorbisEnc::Api::Ptr vorbisEncApi = VorbisEnc::LoadDynamicApi();
       Dbg("Detected Vorbis library %1%", vorbisApi->vorbis_version_string());
-      const BackendWorkerFactory::Ptr factory = boost::make_shared<Ogg::BackendWorkerFactory>(oggApi, vorbisApi, vorbisEncApi);
+      const BackendWorkerFactory::Ptr factory = MakePtr<Ogg::BackendWorkerFactory>(oggApi, vorbisApi, vorbisEncApi);
       storage.Register(Ogg::ID, Ogg::DESCRIPTION, CAP_TYPE_FILE, factory);
     }
     catch (const Error& e)

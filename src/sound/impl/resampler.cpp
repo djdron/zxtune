@@ -10,12 +10,13 @@
 
 //common includes
 #include <contract.h>
+#include <make_ptr.h>
 //library includes
 #include <math/fixedpoint.h>
 #include <sound/chunk_builder.h>
 #include <sound/resampler.h>
-//boost includes
-#include <boost/make_shared.hpp>
+
+#include <utility>
 
 namespace Sound
 {
@@ -43,13 +44,13 @@ namespace Sound
   {
   public:
     Upsampler(uint_t freqIn, uint_t freqOut, Receiver::Ptr delegate)
-      : Delegate(delegate)
+      : Delegate(std::move(delegate))
       , Step(freqIn, freqOut)
     {
       Require(freqIn < freqOut);
     }
     
-    virtual void ApplyData(const Chunk::Ptr& data)
+    void ApplyData(Chunk::Ptr data) override
     {
       ChunkBuilder builder;
       builder.Reserve(1 + (FixedStep(data->size()) / Step).Round());
@@ -77,10 +78,10 @@ namespace Sound
         }
         builder.Add(Interpolate(Prev, Position, next));
       }
-      Delegate->ApplyData(builder.GetResult());
+      Delegate->ApplyData(builder.CaptureResult());
     }
     
-    virtual void Flush()
+    void Flush() override
     {
       Delegate->Flush();
     }
@@ -95,13 +96,13 @@ namespace Sound
   {
   public:
     Downsampler(uint_t freqIn, uint_t freqOut, Receiver::Ptr delegate)
-      : Delegate(delegate)
+      : Delegate(std::move(delegate))
       , Step(freqOut, freqIn)
     {
       Require(freqIn > freqOut);
     }
 
-    virtual void ApplyData(const Chunk::Ptr& data)
+    void ApplyData(Chunk::Ptr data) override
     {
       ChunkBuilder builder;
       builder.Reserve(1 + (Step * data->size()).Round());
@@ -121,10 +122,10 @@ namespace Sound
         }
         Prev = next;
       }
-      Delegate->ApplyData(builder.GetResult());
+      Delegate->ApplyData(builder.CaptureResult());
     }
 
-    virtual void Flush()
+    void Flush() override
     {
       Delegate->Flush();
     }
@@ -143,11 +144,11 @@ namespace Sound
     }
     else if (inFreq < outFreq)
     {
-      return boost::make_shared<Upsampler>(inFreq, outFreq, delegate);
+      return MakePtr<Upsampler>(inFreq, outFreq, delegate);
     }
     else
     {
-      return boost::make_shared<Downsampler>(inFreq, outFreq, delegate);
+      return MakePtr<Downsampler>(inFreq, outFreq, delegate);
     }
   }
 }

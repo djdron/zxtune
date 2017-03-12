@@ -8,29 +8,28 @@
 *
 **/
 
+//local includes
+#include "core/plugins/player_plugins_registrator.h"
+#include "core/plugins/players/plugin.h"
 //common includes
 #include <contract.h>
-//local includes
-#include "core/plugins/registrator.h"
-#include "core/plugins/players/plugin.h"
 //library includes
 #include <binary/format_factories.h>
 #include <core/core_parameters.h>
 #include <core/plugin_attrs.h>
 #include <formats/chiptune/container.h>
+#include <module/players/properties_helper.h>
 #include <parameters/tracking_helper.h>
 #include <sound/chunk_builder.h>
 #include <sound/render_params.h>
 #include <sound/sound_parameters.h>
 #include <time/stamp.h>
+//std includes
+#include <utility>
 //3rdparty includes
 #define BUILDING_STATIC
 #include <3rdparty/xmp/include/xmp.h>
 #include <3rdparty/xmp/src/xmp_private.h>
-//boost includes
-#include <boost/ref.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/range/end.hpp>
 
 namespace Module
 {
@@ -98,7 +97,7 @@ namespace Xmp
   class Context : public BaseContext
   {
   public:
-    typedef boost::shared_ptr<Context> Ptr;
+    typedef std::shared_ptr<Context> Ptr;
 
     Context(const Binary::Container& rawData, const struct format_loader* loader)
     {
@@ -116,45 +115,45 @@ namespace Xmp
   class Information : public Module::Information
   {
   public:
-    typedef boost::shared_ptr<const Information> Ptr;
+    typedef std::shared_ptr<const Information> Ptr;
 
-    Information(const xmp_module& module, TimeType duration)
-      : Info(module)
+    Information(xmp_module module, TimeType duration)
+      : Info(std::move(module))
       , Frames(duration.Get() / GetFrameDuration().Get())
     {
     }
 
-    virtual uint_t PositionsCount() const
+    uint_t PositionsCount() const override
     {
       return Info.len;
     }
 
-    virtual uint_t LoopPosition() const
+    uint_t LoopPosition() const override
     {
       return Info.rst;
     }
 
-    virtual uint_t PatternsCount() const
+    uint_t PatternsCount() const override
     {
       return Info.pat;
     }
 
-    virtual uint_t FramesCount() const
+    uint_t FramesCount() const override
     {
       return Frames;
     }
 
-    virtual uint_t LoopFrame() const
+    uint_t LoopFrame() const override
     {
       return 0;//TODO
     }
 
-    virtual uint_t ChannelsCount() const
+    uint_t ChannelsCount() const override
     {
       return Info.chn;
     }
 
-    virtual uint_t Tempo() const
+    uint_t Tempo() const override
     {
       return Info.spd;
     }
@@ -179,7 +178,7 @@ namespace Xmp
     const int Frames;
   };
 
-  typedef boost::shared_ptr<xmp_frame_info> StatePtr;
+  typedef std::shared_ptr<xmp_frame_info> StatePtr;
 
   class TrackState : public Module::TrackState
   {
@@ -187,46 +186,46 @@ namespace Xmp
     TrackState(Information::Ptr info, StatePtr state)
       : PatternSizes(info->GetPatternSizes())
       , FrameDuration(info->GetFrameDuration())
-      , State(state)
+      , State(std::move(state))
     {
     }
 
-    virtual uint_t Position() const
+    uint_t Position() const override
     {
       return State->pos;
     }
 
-    virtual uint_t Pattern() const
+    uint_t Pattern() const override
     {
       return State->pattern;
     }
 
-    virtual uint_t PatternSize() const
+    uint_t PatternSize() const override
     {
       return PatternSizes[State->pattern];
     }
 
-    virtual uint_t Line() const
+    uint_t Line() const override
     {
       return State->row;
     }
 
-    virtual uint_t Tempo() const
+    uint_t Tempo() const override
     {
       return State->speed;
     }
 
-    virtual uint_t Quirk() const
+    uint_t Quirk() const override
     {
       return State->frame;//???
     }
 
-    virtual uint_t Frame() const
+    uint_t Frame() const override
     {
       return TimeType(State->time).Get() / FrameDuration.Get();
     }
 
-    virtual uint_t Channels() const
+    uint_t Channels() const override
     {
       return State->virt_used;//????
     }
@@ -241,11 +240,11 @@ namespace Xmp
   public:
     Analyzer(uint_t channels, StatePtr state)
       : Channels(channels)
-      , State(state)
+      , State(std::move(state))
     {
     }
 
-    virtual void GetState(std::vector<ChannelState>& channels) const
+    std::vector<ChannelState> GetState() const override
     {
       //difference between libxmp and regular spectrum formats is 2 octaves
       const int C2OFFSET = 24;
@@ -264,7 +263,7 @@ namespace Xmp
           result.push_back(chan);
         }
       }
-      channels.swap(result);
+      return result;
     }
   private:
     const uint_t Channels;
@@ -275,44 +274,41 @@ namespace Xmp
   {
   public:
     Renderer(Context::Ptr ctx, Sound::Receiver::Ptr target, Parameters::Accessor::Ptr params, Information::Ptr info)
-      : Ctx(ctx)
+      : Ctx(std::move(ctx))
       , State(new xmp_frame_info())
-      , Target(target)
+      , Target(std::move(target))
       , Params(params)
-      , SoundParams(Sound::RenderParameters::Create(params))
-      , Track(boost::make_shared<TrackState>(info, State))
-      , Analysis(boost::make_shared<Analyzer>(info->ChannelsCount(), State))
+      , SoundParams(Sound::RenderParameters::Create(std::move(params)))
+      , Track(MakePtr<TrackState>(info, State))
+      , Analysis(MakePtr<Analyzer>(info->ChannelsCount(), State))
       , FrameDuration(info->GetFrameDuration())
-      , SoundFreq()
-      , Looped(false)
+      , SoundFreq(SoundParams->SoundFreq())
+      , Looped(SoundParams->Looped())
     {
-      const Sound::RenderParameters::Ptr soundParams = Sound::RenderParameters::Create(params);
-      SoundFreq = soundParams->SoundFreq();
-      Looped = soundParams->Looped();
       Ctx->Call(&::xmp_start_player, static_cast<int>(SoundFreq), 0);
     }
 
-    virtual ~Renderer()
+    ~Renderer() override
     {
       Ctx->Call(&::xmp_end_player);
     }
 
-    virtual TrackState::Ptr GetTrackState() const
+    TrackState::Ptr GetTrackState() const override
     {
       return Track;
     }
 
-    virtual Analyzer::Ptr GetAnalyzer() const
+    Analyzer::Ptr GetAnalyzer() const override
     {
       return Analysis;
     }
 
-    virtual bool RenderFrame()
+    bool RenderFrame() override
     {
-      BOOST_STATIC_ASSERT(Sound::Sample::CHANNELS == 2);
-      BOOST_STATIC_ASSERT(Sound::Sample::BITS == 16);
-      BOOST_STATIC_ASSERT(Sound::Sample::MID == 0);
-      BOOST_STATIC_ASSERT(sizeof(Sound::Sample) == 4);
+      static_assert(Sound::Sample::CHANNELS == 2, "Incompatible sound channels count");
+      static_assert(Sound::Sample::BITS == 16, "Incompatible sound bits count");
+      static_assert(Sound::Sample::MID == 0, "Incompatible sound sample type");
+      static_assert(sizeof(Sound::Sample) == 4, "Incompatible sound sample size");
 
       try
       {
@@ -325,7 +321,7 @@ namespace Xmp
           const std::size_t samples = bytes / sizeof(Sound::Sample);
           builder.Reserve(samples);
           std::memcpy(builder.Allocate(samples), State->buffer, bytes);
-          Target->ApplyData(builder.GetResult());
+          Target->ApplyData(builder.CaptureResult());
         }
         return Looped || State->loop_count == 0;
       }
@@ -335,13 +331,13 @@ namespace Xmp
       }
     }
 
-    virtual void Reset()
+    void Reset() override
     {
       Params.Reset();
       Ctx->Call(&::xmp_restart_module);
     }
 
-    virtual void SetPosition(uint_t frame)
+    void SetPosition(uint_t frame) override
     {
       Ctx->Call(&::xmp_seek_time, static_cast<int>(FrameDuration.Get() * frame));
     }
@@ -356,10 +352,8 @@ namespace Xmp
           Ctx->Call(&::xmp_end_player);
           Ctx->Call(&::xmp_start_player, static_cast<int>(SoundFreq), 0);
         }
-        Parameters::IntType val = 0;
-        Params->FindValue(Parameters::ZXTune::Sound::LOOPED, val);
-        Looped = val != 0;
-        val = Parameters::ZXTune::Core::DAC::INTERPOLATION_DEFAULT;
+        Looped = SoundParams->Looped();
+        Parameters::IntType val = Parameters::ZXTune::Core::DAC::INTERPOLATION_DEFAULT;
         Params->FindValue(Parameters::ZXTune::Core::DAC::INTERPOLATION, val);
         const int interpolation = val != Parameters::ZXTune::Core::DAC::INTERPOLATION_NO ? XMP_INTERP_SPLINE : XMP_INTERP_LINEAR;
         Ctx->Call(&::xmp_set_player, int(XMP_PLAYER_INTERP), interpolation);
@@ -382,25 +376,25 @@ namespace Xmp
   {
   public:
     explicit Holder(Context::Ptr ctx, const xmp_module_info& modInfo, TimeType duration, Parameters::Accessor::Ptr props)
-      : Ctx(ctx)
-      , Info(boost::make_shared<Information>(boost::cref(*modInfo.mod), duration))
-      , Properties(props)
+      : Ctx(std::move(ctx))
+      , Info(MakePtr<Information>(*modInfo.mod, duration))
+      , Properties(std::move(props))
     {
     }
 
-    virtual Module::Information::Ptr GetModuleInformation() const
+    Module::Information::Ptr GetModuleInformation() const override
     {
       return Info;
     }
 
-    virtual Parameters::Accessor::Ptr GetModuleProperties() const
+    Parameters::Accessor::Ptr GetModuleProperties() const override
     {
       return Properties;
     }
 
-    virtual Renderer::Ptr CreateRenderer(Parameters::Accessor::Ptr params, Sound::Receiver::Ptr target) const
+    Renderer::Ptr CreateRenderer(Parameters::Accessor::Ptr params, Sound::Receiver::Ptr target) const override
     {
-      return boost::make_shared<Renderer>(Ctx, target, params, Info);
+      return MakePtr<Renderer>(Ctx, target, params, Info);
     }
   private:
     const Context::Ptr Ctx;
@@ -412,12 +406,12 @@ namespace Xmp
   class Format : public Binary::Format
   {
   public:
-    virtual bool Match(const Binary::Data& /*data*/) const
+    bool Match(const Binary::Data& /*data*/) const override
     {
       return true;
     }
 
-    virtual std::size_t NextMatchOffset(const Binary::Data& data) const
+    std::size_t NextMatchOffset(const Binary::Data& data) const override
     {
       return data.Size();
     }
@@ -435,27 +429,27 @@ namespace Xmp
   public:
     explicit Decoder(const PluginDescription& desc)
       : Desc(desc)
-      , Fmt(Desc.Format ? Binary::CreateMatchOnlyFormat(Desc.Format) : boost::make_shared<Format>())
+      , Fmt(Desc.Format ? Binary::CreateMatchOnlyFormat(Desc.Format) : MakePtr<Format>())
     {
     }
 
-    virtual String GetDescription() const
+    String GetDescription() const override
     {
       return xmp_get_loader_name(Desc.Loader);
     }
 
 
-    virtual Binary::Format::Ptr GetFormat() const
+    Binary::Format::Ptr GetFormat() const override
     {
       return Fmt;
     }
 
-    virtual bool Check(const Binary::Container& rawData) const
+    bool Check(const Binary::Container& rawData) const override
     {
       return Fmt->Match(rawData);
     }
 
-    virtual Formats::Chiptune::Container::Ptr Decode(const Binary::Container& /*rawData*/) const
+    Formats::Chiptune::Container::Ptr Decode(const Binary::Container& /*rawData*/) const override
     {
       return Formats::Chiptune::Container::Ptr();//TODO
     }
@@ -463,6 +457,20 @@ namespace Xmp
     const PluginDescription& Desc;
     const Binary::Format::Ptr Fmt;
   };
+  
+  void ParseStrings(const xmp_module& mod, PropertiesHelper& props)
+  {
+    Strings::Array strings;
+    for (uint_t idx = 0; idx < mod.smp; ++idx)
+    {
+      strings.push_back(FromStdString(mod.xxs[idx].name));
+    }
+    for (uint_t idx = 0; idx < mod.ins; ++idx)
+    {
+      strings.push_back(FromStdString(mod.xxi[idx].name));
+    }
+    props.SetStrings(strings);
+  }
 
   class Factory : public Module::Factory
   {
@@ -472,28 +480,30 @@ namespace Xmp
     {
     }
 
-    virtual Module::Holder::Ptr CreateModule(const Parameters::Accessor& /*params*/, const Binary::Container& rawData, PropertiesBuilder& propBuilder) const
+    Module::Holder::Ptr CreateModule(const Parameters::Accessor& /*params*/, const Binary::Container& rawData, Parameters::Container::Ptr properties) const override
     {
       try
       {
-        const Context::Ptr ctx = boost::make_shared<Context>(rawData, Desc.Loader);
+        const Context::Ptr ctx = MakePtr<Context>(rawData, Desc.Loader);
         xmp_module_info modInfo;
         ctx->Call(&::xmp_get_module_info, &modInfo);
         xmp_frame_info frmInfo;
         ctx->Call(&::xmp_get_frame_info, &frmInfo);
 
-        propBuilder.SetTitle(FromStdString(modInfo.mod->name));
-        propBuilder.SetAuthor(FromStdString(modInfo.mod->author));
-        propBuilder.SetProgram(FromStdString(modInfo.mod->type));
+        PropertiesHelper props(*properties);
+        props.SetTitle(FromStdString(modInfo.mod->name));
+        props.SetAuthor(FromStdString(modInfo.mod->author));
+        props.SetProgram(FromStdString(modInfo.mod->type));
         if (const char* comment = modInfo.comment)
         {
-          propBuilder.SetComment(FromStdString(comment));
+          props.SetComment(FromStdString(comment));
         }
+        ParseStrings(*modInfo.mod, props);
         const Binary::Container::Ptr data = rawData.GetSubcontainer(0, modInfo.size);
         const Formats::Chiptune::Container::Ptr source = Formats::Chiptune::CreateCalculatingCrcContainer(data, 0, modInfo.size);
-        propBuilder.SetSource(*source);
+        props.SetSource(*source);
 
-        return boost::make_shared<Holder>(ctx, boost::cref(modInfo), TimeType(frmInfo.total_time), propBuilder.GetResult());
+        return MakePtr<Holder>(ctx, modInfo, TimeType(frmInfo.total_time), properties);
       }
       catch (const std::exception&)
       {
@@ -999,12 +1009,10 @@ namespace ZXTune
   void RegisterXMPPlugins(PlayerPluginsRegistrator& registrator)
   {
     const uint_t CAPS = Capabilities::Module::Type::TRACK | Capabilities::Module::Device::DAC;
-    for (const Module::Xmp::PluginDescription* it = Module::Xmp::PLUGINS; it != boost::end(Module::Xmp::PLUGINS); ++it)
+    for (const auto& desc : Module::Xmp::PLUGINS)
     {
-      const Module::Xmp::PluginDescription& desc = *it;
-
-      const Formats::Chiptune::Decoder::Ptr decoder = boost::make_shared<Module::Xmp::Decoder>(desc);
-      const Module::Factory::Ptr factory = boost::make_shared<Module::Xmp::Factory>(desc);
+      const Formats::Chiptune::Decoder::Ptr decoder = MakePtr<Module::Xmp::Decoder>(desc);
+      const Module::Factory::Ptr factory = MakePtr<Module::Xmp::Factory>(desc);
       const PlayerPlugin::Ptr plugin = CreatePlayerPlugin(FromStdString(desc.Id), CAPS, decoder, factory);
       registrator.RegisterPlugin(plugin);
     }

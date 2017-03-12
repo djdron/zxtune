@@ -13,26 +13,23 @@
 //std includes
 #include <algorithm>
 #include <iterator>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/range/end.hpp>
+#include <make_ptr.h>
 
-namespace
+namespace Devices
 {
-  using namespace Devices::AYM;
-
-  // command codes
-  enum Codes
-  {
-    INTERRUPT = 0xff,
-    SKIP_INTS = 0xfe,
-    END_MUS = 0xfd
-  };
-
+namespace AYM
+{
   class PSGDumpBuilder : public FramedDumpBuilder
   {
   public:
-    virtual void Initialize()
+    enum CommandCodes
+    {
+      INTERRUPT = 0xff,
+      SKIP_INTS = 0xfe,
+      END_MUS = 0xfd
+    };
+
+    void Initialize() override
     {
       static const uint8_t HEADER[] =
       {
@@ -42,16 +39,16 @@ namespace
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,//padding
         END_MUS
       };
-      BOOST_STATIC_ASSERT(sizeof(HEADER) == 16 + 1);
-      Data.assign(HEADER, boost::end(HEADER));
+      static_assert(sizeof(HEADER) == 16 + 1, "Invalid header layout");
+      Data.assign(HEADER, std::end(HEADER));
     }
 
-    virtual void GetResult(Dump& data) const
+    void GetResult(Dump& data) const override
     {
       data = Data;
     }
 
-    virtual void WriteFrame(uint_t framesPassed, const Registers& /*state*/, const Registers& update)
+    void WriteFrame(uint_t framesPassed, const Registers& /*state*/, const Registers& update) override
     {
       assert(framesPassed);
 
@@ -83,16 +80,11 @@ namespace
   private:
     Dump Data;
   };
-}
 
-namespace Devices
-{
-  namespace AYM
+  Dumper::Ptr CreatePSGDumper(DumperParameters::Ptr params)
   {
-    Dumper::Ptr CreatePSGDumper(DumperParameters::Ptr params)
-    {
-      const FramedDumpBuilder::Ptr builder = boost::make_shared<PSGDumpBuilder>();
-      return CreateDumper(params, builder);
-    }
+    const FramedDumpBuilder::Ptr builder = MakePtr<PSGDumpBuilder>();
+    return CreateDumper(params, builder);
   }
+}
 }

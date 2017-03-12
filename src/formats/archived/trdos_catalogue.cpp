@@ -10,6 +10,8 @@
 
 //local includes
 #include "trdos_catalogue.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <binary/container_factories.h>
 #include <strings/format.h>
@@ -18,12 +20,9 @@
 #include <numeric>
 //boost includes
 #include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
 
-namespace
+namespace TRDos
 {
-  using namespace TRDos;
-
   bool AreFilesMergeable(const File& lh, const File& rh)
   {
     const std::size_t firstSize = lh.GetSize();
@@ -70,7 +69,7 @@ namespace
   class MultiFile : public File
   {
   public:
-    typedef boost::shared_ptr<MultiFile> Ptr;
+    typedef std::shared_ptr<MultiFile> Ptr;
 
     virtual bool Merge(File::Ptr other) = 0;
 
@@ -80,28 +79,28 @@ namespace
   class FixedNameFile : public File
   {
   public:
-    FixedNameFile(const String& newName, File::Ptr delegate)
-      : FixedName(newName)
-      , Delegate(delegate)
+    FixedNameFile(String newName, File::Ptr delegate)
+      : FixedName(std::move(newName))
+      , Delegate(std::move(delegate))
     {
     }
 
-    virtual String GetName() const
+    String GetName() const override
     {
       return FixedName;
     }
 
-    virtual std::size_t GetSize() const
+    std::size_t GetSize() const override
     {
       return Delegate->GetSize();
     }
 
-    virtual Binary::Container::Ptr GetData() const
+    Binary::Container::Ptr GetData() const override
     {
       return Delegate->GetData();
     }
 
-    virtual std::size_t GetOffset() const
+    std::size_t GetOffset() const override
     {
       return Delegate->GetOffset();
     }
@@ -113,8 +112,8 @@ namespace
   class NamesGenerator
   {
   public:
-    explicit NamesGenerator(const String& name)
-      : Name(name)
+    explicit NamesGenerator(String name)
+      : Name(std::move(name))
       , Idx(1)
     {
     }
@@ -148,38 +147,38 @@ namespace
   public:
     template<class T>
     CommonCatalogue(Binary::Container::Ptr data, T from, T to)
-      : Delegate(data)
+      : Delegate(std::move(data))
       , Files(from, to)
     {
       assert(Delegate);
     }
 
     //Binary::Container
-    virtual const void* Start() const
+    const void* Start() const override
     {
       return Delegate->Start();
     }
 
-    virtual std::size_t Size() const
+    std::size_t Size() const override
     {
       return Delegate->Size();
     }
 
-    virtual Binary::Container::Ptr GetSubcontainer(std::size_t offset, std::size_t size) const
+    Binary::Container::Ptr GetSubcontainer(std::size_t offset, std::size_t size) const override
     {
       return Delegate->GetSubcontainer(offset, size);
     }
 
     //Archive::Container
-    virtual void ExploreFiles(const Formats::Archived::Container::Walker& walker) const
+    void ExploreFiles(const Formats::Archived::Container::Walker& walker) const override
     {
-      for (FilesList::const_iterator it = Files.begin(), lim = Files.end(); it != lim; ++it)
+      for (const auto& file : Files)
       {
-        walker.OnFile(**it);
+        walker.OnFile(*file);
       }
     }
 
-    virtual Formats::Archived::File::Ptr FindFile(const String& name) const
+    Formats::Archived::File::Ptr FindFile(const String& name) const override
     {
       const FilesList::const_iterator it = std::find_if(Files.begin(), Files.end(), boost::bind(&File::GetName, _1) == name);
       if (it == Files.end())
@@ -189,7 +188,7 @@ namespace
       return *it;
     }
 
-    virtual uint_t CountFiles() const
+    uint_t CountFiles() const override
     {
       return static_cast<uint_t>(Files.size());
     }
@@ -203,13 +202,13 @@ namespace
   class BaseCatalogueBuilder : public CatalogueBuilder
   {
   public:
-    virtual void SetRawData(Binary::Container::Ptr data)
+    void SetRawData(Binary::Container::Ptr data) override
     {
       Data = data;
       std::for_each(Files.begin(), Files.end(), boost::bind(&MultiFile::SetContainer, _1, Data));
     }
 
-    virtual void AddFile(File::Ptr newOne)
+    void AddFile(File::Ptr newOne) override
     {
       if (!Merge(newOne))
       {
@@ -217,11 +216,11 @@ namespace
       }
     }
 
-    virtual Formats::Archived::Container::Ptr GetResult() const
+    Formats::Archived::Container::Ptr GetResult() const override
     {
       if (Data && !Files.empty())
       {
-        return Formats::Archived::Container::Ptr(new CommonCatalogue(Data, Files.begin(), Files.end()));
+        return MakePtr<CommonCatalogue>(Data, Files.begin(), Files.end());
       }
       else
       {
@@ -257,7 +256,7 @@ namespace
         const String newName = gen();
         if (!HasFile(newName))
         {
-          return boost::make_shared<FixedNameFile>(newName, newOne);
+          return MakePtr<FixedNameFile>(newName, newOne);
         }
       }
     }
@@ -276,30 +275,30 @@ namespace
   class GenericFile : public File
   {
   public:
-    GenericFile(Binary::Container::Ptr data, const String& name, std::size_t off, std::size_t size)
-      : Data(data)
-      , Name(name)
+    GenericFile(Binary::Container::Ptr data, String name, std::size_t off, std::size_t size)
+      : Data(std::move(data))
+      , Name(std::move(name))
       , Offset(off)
       , Size(size)
     {
     }
 
-    virtual String GetName() const
+    String GetName() const override
     {
       return Name;
     }
 
-    virtual std::size_t GetSize() const
+    std::size_t GetSize() const override
     {
       return Size;
     }
 
-    virtual Binary::Container::Ptr GetData() const
+    Binary::Container::Ptr GetData() const override
     {
       return Data;
     }
 
-    virtual std::size_t GetOffset() const
+    std::size_t GetOffset() const override
     {
       return Offset;
     }
@@ -318,12 +317,12 @@ namespace
       Subfiles.push_back(delegate);
     }
 
-    virtual String GetName() const
+    String GetName() const override
     {
       return Subfiles.front()->GetName();
     }
 
-    virtual std::size_t GetSize() const
+    std::size_t GetSize() const override
     {
       return 1 == Subfiles.size()
         ? Subfiles.front()->GetSize()
@@ -331,17 +330,16 @@ namespace
           boost::bind(std::plus<std::size_t>(), _1, boost::bind(&File::GetSize, _2)));
     }
 
-    virtual Binary::Container::Ptr GetData() const
+    Binary::Container::Ptr GetData() const override
     {
       if (1 == Subfiles.size())
       {
         return Subfiles.front()->GetData();
       }
-      std::auto_ptr<Dump> res(new Dump(GetSize()));
+      std::unique_ptr<Dump> res(new Dump(GetSize()));
       uint8_t* dst = &res->front();
-      for (FilesList::const_iterator it = Subfiles.begin(), lim = Subfiles.end(); it != lim; ++it)
+      for (const auto& file : Subfiles)
       {
-        const File::Ptr file = *it;
         const Binary::Container::Ptr data = file->GetData();
         if (!data)
         {
@@ -352,15 +350,15 @@ namespace
         std::memcpy(dst, data->Start(), size);
         dst += size;
       }
-      return Binary::CreateContainer(res);
+      return Binary::CreateContainer(std::move(res));
     }
 
-    virtual std::size_t GetOffset() const
+    std::size_t GetOffset() const override
     {
       return Subfiles.front()->GetOffset();
     }
 
-    virtual bool Merge(File::Ptr rh)
+    bool Merge(File::Ptr rh) override
     {
       if (AreFilesMergeable(*Subfiles.back(), *rh))
       {
@@ -370,7 +368,7 @@ namespace
       return false;
     }
 
-    virtual void SetContainer(Binary::Container::Ptr /*data*/)
+    void SetContainer(Binary::Container::Ptr /*data*/) override
     {
     }
   private:
@@ -381,9 +379,9 @@ namespace
   class GenericCatalogueBuilder : public BaseCatalogueBuilder
   {
   public:
-    virtual MultiFile::Ptr CreateMultiFile(File::Ptr inFile)
+    MultiFile::Ptr CreateMultiFile(File::Ptr inFile) override
     {
-      return boost::make_shared<GenericMultiFile>(inFile);
+      return MakePtr<GenericMultiFile>(inFile);
     }
   };
 
@@ -391,30 +389,30 @@ namespace
   class FlatFile : public File
   {
   public:
-    FlatFile(const String& name, std::size_t off, std::size_t size)
-      : Name(name)
+    FlatFile(String name, std::size_t off, std::size_t size)
+      : Name(std::move(name))
       , Offset(off)
       , Size(size)
     {
     }
 
-    virtual String GetName() const
+    String GetName() const override
     {
       return Name;
     }
 
-    virtual std::size_t GetSize() const
+    std::size_t GetSize() const override
     {
       return Size;
     }
 
-    virtual Binary::Container::Ptr GetData() const
+    Binary::Container::Ptr GetData() const override
     {
       assert(!"Should not be called");
       return Binary::Container::Ptr();
     }
 
-    virtual std::size_t GetOffset() const
+    std::size_t GetOffset() const override
     {
       return Offset;
     }
@@ -433,27 +431,27 @@ namespace
     {
     }
 
-    virtual String GetName() const
+    String GetName() const override
     {
       return Delegate->GetName();
     }
 
-    virtual std::size_t GetSize() const
+    std::size_t GetSize() const override
     {
       return Size;
     }
 
-    virtual Binary::Container::Ptr GetData() const
+    Binary::Container::Ptr GetData() const override
     {
       return Data->GetSubcontainer(GetOffset(), Size);
     }
 
-    virtual std::size_t GetOffset() const
+    std::size_t GetOffset() const override
     {
       return Delegate->GetOffset();
     }
 
-    virtual bool Merge(File::Ptr rh)
+    bool Merge(File::Ptr rh) override
     {
       if (AreFilesMergeable(*this, *rh))
       {
@@ -463,7 +461,7 @@ namespace
       return false;
     }
 
-    virtual void SetContainer(Binary::Container::Ptr data)
+    void SetContainer(Binary::Container::Ptr data) override
     {
       Data = data;
     }
@@ -477,32 +475,29 @@ namespace
   class FlatCatalogueBuilder : public BaseCatalogueBuilder
   {
   public:
-    virtual MultiFile::Ptr CreateMultiFile(File::Ptr inFile)
+    MultiFile::Ptr CreateMultiFile(File::Ptr inFile) override
     {
-      return boost::make_shared<FlatMultiFile>(inFile);
+      return MakePtr<FlatMultiFile>(inFile);
     }
   };
-}
 
-namespace TRDos
-{
   File::Ptr File::Create(Binary::Container::Ptr data, const String& name, std::size_t off, std::size_t size)
   {
-    return boost::make_shared<GenericFile>(data, name, off, size);
+    return MakePtr<GenericFile>(data, name, off, size);
   }
 
   File::Ptr File::CreateReference(const String& name, std::size_t off, std::size_t size)
   {
-    return boost::make_shared<FlatFile>(name, off, size);
+    return MakePtr<FlatFile>(name, off, size);
   }
 
   CatalogueBuilder::Ptr CatalogueBuilder::CreateGeneric()
   {
-    return CatalogueBuilder::Ptr(new GenericCatalogueBuilder());
+    return MakePtr<GenericCatalogueBuilder>();
   }
 
   CatalogueBuilder::Ptr CatalogueBuilder::CreateFlat()
   {
-    return CatalogueBuilder::Ptr(new FlatCatalogueBuilder());
+    return MakePtr<FlatCatalogueBuilder>();
   }
 }

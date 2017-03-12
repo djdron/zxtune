@@ -12,6 +12,7 @@
 #include "backend_impl.h"
 //common includes
 #include <error_tools.h>
+#include <make_ptr.h>
 #include <pointers.h>
 //library includes
 #include <async/worker.h>
@@ -19,9 +20,8 @@
 #include <l10n/api.h>
 #include <sound/render_params.h>
 #include <sound/sound_parameters.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/ref.hpp>
+//std includes
+#include <atomic>
 
 #define FILE_TAG B3D60DB5
 
@@ -41,12 +41,12 @@ namespace Sound
     {
     }
 
-    virtual void ApplyData(const Chunk::Ptr& chunk)
+    void ApplyData(Chunk::Ptr chunk) override
     {
-      Worker.FrameFinish(chunk);
+      Worker.FrameFinish(std::move(chunk));
     }
 
-    virtual void Flush()
+    void Flush() override
     {
     }
   private:
@@ -57,42 +57,42 @@ namespace Sound
   {
   public:
     CallbackOverWorker(BackendCallback::Ptr delegate, BackendWorker::Ptr worker)
-      : Delegate(delegate)
-      , Worker(worker)
+      : Delegate(std::move(delegate))
+      , Worker(std::move(worker))
     {
     }
 
-    virtual void OnStart()
+    void OnStart() override
     {
       Worker->Startup();
       Delegate->OnStart();
     }
 
-    virtual void OnFrame(const Module::TrackState& state)
+    void OnFrame(const Module::TrackState& state) override
     {
       Worker->FrameStart(state);
       Delegate->OnFrame(state);
     }
 
-    virtual void OnStop()
+    void OnStop() override
     {
       Worker->Shutdown();
       Delegate->OnStop();
     }
 
-    virtual void OnPause()
+    void OnPause() override
     {
       Worker->Pause();
       Delegate->OnPause();
     }
 
-    virtual void OnResume()
+    void OnResume() override
     {
       Worker->Resume();
       Delegate->OnResume();
     }
 
-    virtual void OnFinish()
+    void OnFinish() override
     {
       Delegate->OnFinish();
     }
@@ -105,41 +105,41 @@ namespace Sound
   {
   public:
     RendererWrapper(Module::Renderer::Ptr delegate, BackendCallback::Ptr callback)
-      : Delegate(delegate)
-      , Callback(callback)
+      : Delegate(std::move(delegate))
+      , Callback(std::move(callback))
       , State(Delegate->GetTrackState())
       , SeekRequest(NO_SEEK)
     {
     }
 
-    virtual Module::TrackState::Ptr GetTrackState() const
+    Module::TrackState::Ptr GetTrackState() const override
     {
       return State;
     }
 
-    virtual Module::Analyzer::Ptr GetAnalyzer() const
+    Module::Analyzer::Ptr GetAnalyzer() const override
     {
       return Delegate->GetAnalyzer();
     }
 
-    virtual bool RenderFrame()
+    bool RenderFrame() override
     {
-      if (SeekRequest != NO_SEEK)
+      const uint_t request = SeekRequest.exchange(NO_SEEK);
+      if (request != NO_SEEK)
       {
-        Delegate->SetPosition(SeekRequest);
-        SeekRequest = NO_SEEK;
+        Delegate->SetPosition(request);
       }
       Callback->OnFrame(*State);
       return Delegate->RenderFrame();
     }
 
-    virtual void Reset()
+    void Reset() override
     {
       SeekRequest = NO_SEEK;
       Delegate->Reset();
     }
 
-    virtual void SetPosition(uint_t frame)
+    void SetPosition(uint_t frame) override
     {
       SeekRequest = frame;
     }
@@ -148,21 +148,20 @@ namespace Sound
     const Module::Renderer::Ptr Delegate;
     const BackendCallback::Ptr Callback;
     const Module::TrackState::Ptr State;
-    //TODO: use atomic variable
-    volatile uint_t SeekRequest;
+    std::atomic<uint_t> SeekRequest;
   };
 
   class AsyncWrapper : public Async::Worker
   {
   public:
     AsyncWrapper(BackendCallback::Ptr callback, Module::Renderer::Ptr render)
-      : Callback(callback)
-      , Render(render)
+      : Callback(std::move(callback))
+      , Render(std::move(render))
       , Playing(false)
     {
     }
 
-    virtual void Initialize()
+    void Initialize() override
     {
       try
       {
@@ -188,7 +187,7 @@ namespace Sound
       }
     }
 
-    virtual void Finalize()
+    void Finalize() override
     {
       try
       {
@@ -203,7 +202,7 @@ namespace Sound
       }
     }
 
-    virtual void Suspend()
+    void Suspend() override
     {
       try
       {
@@ -217,7 +216,7 @@ namespace Sound
       }
     }
 
-    virtual void Resume() 
+    void Resume() override 
     {
       try
       {
@@ -231,7 +230,7 @@ namespace Sound
       }
     }
 
-    virtual void ExecuteCycle()
+    void ExecuteCycle() override
     {
       RenderFrame();
       if (IsFinished())
@@ -240,7 +239,7 @@ namespace Sound
       }
     }
 
-    virtual bool IsFinished() const
+    bool IsFinished() const override
     {
       return !Playing;
     }
@@ -253,34 +252,33 @@ namespace Sound
     const BackendWorker::Ptr Delegate;
     const BackendCallback::Ptr Callback;
     const Module::Renderer::Ptr Render;
-    //TODO: atomic variable
-    volatile bool Playing;
+    std::atomic<bool> Playing;
   };
 
   class StubBackendCallback : public BackendCallback
   {
   public:
-    virtual void OnStart()
+    void OnStart() override
     {
     }
 
-    virtual void OnFrame(const Module::TrackState& /*state*/)
+    void OnFrame(const Module::TrackState& /*state*/) override
     {
     }
 
-    virtual void OnStop()
+    void OnStop() override
     {
     }
 
-    virtual void OnPause()
+    void OnPause() override
     {
     }
 
-    virtual void OnResume()
+    void OnResume() override
     {
     }
 
-    virtual void OnFinish()
+    void OnFinish() override
     {
     }
   };
@@ -289,29 +287,29 @@ namespace Sound
   {
     static StubBackendCallback STUB;
     const BackendCallback::Ptr cb = callback ? callback : MakeSingletonPointer(STUB);
-    return boost::make_shared<CallbackOverWorker>(cb, worker);
+    return MakePtr<CallbackOverWorker>(cb, worker);
   }
 
   class ControlInternal : public PlaybackControl
   {
   public:
     ControlInternal(Async::Job::Ptr job, Module::Renderer::Ptr renderer)
-      : Job(job)
-      , Renderer(renderer)
+      : Job(std::move(job))
+      , Renderer(std::move(renderer))
     {
     }
 
-    virtual void Play()
+    void Play() override
     {
       Job->Start();
     }
 
-    virtual void Pause()
+    void Pause() override
     {
       Job->Pause();
     }
 
-    virtual void Stop()
+    void Stop() override
     {
       try
       {
@@ -323,7 +321,7 @@ namespace Sound
       }
     }
 
-    virtual void SetPosition(uint_t frame)
+    void SetPosition(uint_t frame) override
     {
       try
       {
@@ -335,7 +333,7 @@ namespace Sound
       }
     }
 
-    virtual State GetCurrentState() const
+    State GetCurrentState() const override
     {
       return Job->IsActive()
         ? (Job->IsPaused() ? PAUSED : STARTED)
@@ -350,28 +348,28 @@ namespace Sound
   {
   public:
     BackendInternal(BackendWorker::Ptr worker, Module::Renderer::Ptr renderer, Async::Job::Ptr job)
-      : Worker(worker)
+      : Worker(std::move(worker))
       , Renderer(renderer)
-      , Control(boost::make_shared<ControlInternal>(job, renderer))
+      , Control(MakePtr<ControlInternal>(job, renderer))
     {
     }
 
-    virtual Module::TrackState::Ptr GetTrackState() const
+    Module::TrackState::Ptr GetTrackState() const override
     {
       return Renderer->GetTrackState();
     }
 
-    virtual Module::Analyzer::Ptr GetAnalyzer() const
+    Module::Analyzer::Ptr GetAnalyzer() const override
     {
       return Renderer->GetAnalyzer();
     }
 
-    virtual PlaybackControl::Ptr GetPlaybackControl() const
+    PlaybackControl::Ptr GetPlaybackControl() const override
     {
       return Control;
     }
 
-    virtual VolumeControl::Ptr GetVolumeControl() const
+    VolumeControl::Ptr GetVolumeControl() const override
     {
       return Worker->GetVolumeControl();
     }
@@ -386,12 +384,12 @@ namespace Sound
 {
   Backend::Ptr CreateBackend(Parameters::Accessor::Ptr params, Module::Holder::Ptr holder, BackendCallback::Ptr origCallback, BackendWorker::Ptr worker)
   {
-    const Receiver::Ptr target = boost::make_shared<BufferRenderer>(boost::ref(*worker));
+    const Receiver::Ptr target = MakePtr<BufferRenderer>(*worker);
     const Module::Renderer::Ptr origRenderer = holder->CreateRenderer(params, target);
     const BackendCallback::Ptr callback = CreateCallback(origCallback, worker);
-    const Module::Renderer::Ptr renderer = boost::make_shared<RendererWrapper>(origRenderer, callback);
-    const Async::Worker::Ptr asyncWorker = boost::make_shared<AsyncWrapper>(callback, renderer);
+    const Module::Renderer::Ptr renderer = MakePtr<RendererWrapper>(origRenderer, callback);
+    const Async::Worker::Ptr asyncWorker = MakePtr<AsyncWrapper>(callback, renderer);
     const Async::Job::Ptr job = Async::CreateJob(asyncWorker);
-    return boost::make_shared<BackendInternal>(worker, renderer, job);
+    return MakePtr<BackendInternal>(worker, renderer, job);
   }
 }

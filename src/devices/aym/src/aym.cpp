@@ -11,15 +11,17 @@
 //local includes
 #include "psg.h"
 #include "soundchip.h"
-//boost includes
-#include <boost/make_shared.hpp>
+//common includes
+#include <make_ptr.h>
+//std includes
+#include <utility>
 
 namespace Devices
 {
 namespace AYM
 {
-  BOOST_STATIC_ASSERT(Registers::TOTAL == 14);
-  BOOST_STATIC_ASSERT(sizeof(Registers) == 16);
+  static_assert(Registers::TOTAL == 14, "Invalid registers count");
+  static_assert(sizeof(Registers) == 16, "Invalid layout");
 
   struct Traits
   {
@@ -31,7 +33,7 @@ namespace AYM
 
   Chip::Ptr CreateChip(ChipParameters::Ptr params, MixerType::Ptr mixer, Sound::Receiver::Ptr target)
   {
-    return boost::make_shared<SoundChip<Traits> >(params, mixer, target);
+    return MakePtr<SoundChip<Traits> >(params, mixer, target);
   }
 }
 }

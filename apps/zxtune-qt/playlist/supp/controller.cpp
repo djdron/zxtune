@@ -16,10 +16,9 @@
 //common includes
 #include <contract.h>
 #include <error.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
-//boost includes
-#include <boost/make_shared.hpp>
 //qt includes
 #include <QtWidgets/QMessageBox>
 
@@ -29,7 +28,7 @@ namespace
 
   unsigned Randomized(unsigned idx, unsigned total)
   {
-    ::srand(::time(0) * idx);
+    ::srand(::time(nullptr) * idx);
     return ::rand() % total;
   }
 
@@ -48,51 +47,51 @@ namespace
         SLOT(UpdateIndices(Playlist::Model::OldToNewIndexMap::Ptr))));
     }
 
-    virtual unsigned GetIndex() const
+    unsigned GetIndex() const override
     {
       return Index;
     }
 
-    virtual Playlist::Item::State GetState() const
+    Playlist::Item::State GetState() const override
     {
       return State;
     }
 
-    virtual bool Next(unsigned playorderMode)
+    bool Next(unsigned playorderMode) override
     {
       return
         Index != NO_INDEX &&
         Navigate(Index + 1, playorderMode);
     }
 
-    virtual bool Prev(unsigned playorderMode)
+    bool Prev(unsigned playorderMode) override
     {
       return
         Index != NO_INDEX &&
         Navigate(int(Index) - 1, playorderMode);
     }
 
-    virtual void SetState(Playlist::Item::State state)
+    void SetState(Playlist::Item::State state) override
     {
       State = state;
     }
 
-    virtual void Select(unsigned idx)
+    void Select(unsigned idx) override
     {
       Activate(idx);
     }
     
-    virtual void Reset()
+    void Reset() override
     {
       Reset(0);
     }
 
-    virtual void Reset(unsigned idx)
+    void Reset(unsigned idx) override
     {
       SelectItem(idx);
     }
 
-    virtual void UpdateIndices(Playlist::Model::OldToNewIndexMap::Ptr remapping)
+    void UpdateIndices(Playlist::Model::OldToNewIndexMap::Ptr remapping) override
     {
       Dbg("Iterator: index changed.");
       if (NO_INDEX == Index)
@@ -199,19 +198,19 @@ namespace
       Dbg("Created at %1%", this);
     }
 
-    virtual ~ControllerImpl()
+    ~ControllerImpl() override
     {
       Dbg("Destroyed at %1%", this);
 
       Scanner->Stop();
     }
 
-    virtual QString GetName() const
+    QString GetName() const override
     {
       return Name;
     }
 
-    virtual void SetName(const QString& name)
+    void SetName(const QString& name) override
     {
       if (name != Name)
       {
@@ -220,29 +219,29 @@ namespace
       }
     }
 
-    virtual Playlist::Scanner::Ptr GetScanner() const
+    Playlist::Scanner::Ptr GetScanner() const override
     {
       return Scanner;
     }
 
-    virtual Playlist::Model::Ptr GetModel() const
+    Playlist::Model::Ptr GetModel() const override
     {
       return Model;
     }
 
-    virtual Playlist::Item::Iterator::Ptr GetIterator() const
+    Playlist::Item::Iterator::Ptr GetIterator() const override
     {
       return Iterator;
     }
 
-    virtual void Shutdown()
+    void Shutdown() override
     {
       Dbg("Shutdown at %1%", this);
       Scanner->Stop();
       Model->CancelLongOperation();
     }
 
-    virtual void ShowNotification(Playlist::TextNotification::Ptr notification)
+    void ShowNotification(Playlist::TextNotification::Ptr notification) override
     {
       QMessageBox msgBox(QMessageBox::Information,
         notification->Category(), notification->Text(),
@@ -271,6 +270,6 @@ namespace Playlist
   Controller::Ptr Controller::Create(const QString& name, Playlist::Item::DataProvider::Ptr provider)
   {
     REGISTER_METATYPE(Playlist::TextNotification::Ptr);
-    return boost::make_shared<ControllerImpl>(name, provider);
+    return MakePtr<ControllerImpl>(name, provider);
   }
 }

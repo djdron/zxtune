@@ -13,11 +13,13 @@
 //common includes
 #include <contract.h>
 #include <data_streaming.h>
+#include <make_ptr.h>
 //library includes
 #include <async/activity.h>
 #include <async/progress.h>
 #include <async/sized_queue.h>
 //std includes
+#include <algorithm>
 #include <list>
 
 namespace Async
@@ -29,25 +31,25 @@ namespace Async
     DataReceiver(std::size_t workersCount, std::size_t queueSize, typename ::DataReceiver<T>::Ptr delegate)
       : QueueObject(SizedQueue<T>::Create(queueSize))
       , Statistic(Progress::Create())
-      , Delegate(delegate)
+      , Delegate(std::move(delegate))
     {
       StartAll(workersCount);
     }
 
-    virtual ~DataReceiver()
+    ~DataReceiver() override
     {
       QueueObject->Reset();
       WaitAll();
     }
 
-    virtual void ApplyData(const T& data)
+    void ApplyData(T data) override
     {
       CheckWorkersAvailable();
       Statistic->Produce(1);
-      QueueObject->Add(data);
+      QueueObject->Add(std::move(data));
     }
 
-    virtual void Flush()
+    void Flush() override
     {
       CheckWorkersAvailable();
       //may not flush queue
@@ -58,13 +60,13 @@ namespace Async
     static typename ::DataReceiver<T>::Ptr Create(std::size_t workersCount, std::size_t queueSize, typename ::DataReceiver<T>::Ptr delegate)
     {
       return workersCount
-        ? boost::make_shared<DataReceiver>(workersCount, queueSize, delegate)
+        ? MakePtr<DataReceiver>(workersCount, queueSize, delegate)
         : delegate;
     }
   private:
     void StartAll(std::size_t count)
     {
-      const typename Operation::Ptr op = boost::make_shared<TransceiveOperation>(QueueObject, Statistic, Delegate);
+      const typename Operation::Ptr op = MakePtr<TransceiveOperation>(QueueObject, Statistic, Delegate);
       while (Activities.size() < count)
       {
         const Activity::Ptr act = Activity::Create(op);
@@ -93,9 +95,9 @@ namespace Async
 
     void CheckWorkersAvailable()
     {
-      if (Activities.end() == std::find_if(Activities.begin(), Activities.end(), boost::mem_fn(&Activity::IsExecuted)))
+      if (Activities.end() == std::find_if(Activities.begin(), Activities.end(), std::mem_fn(&Activity::IsExecuted)))
       {
-        const std::list<Error>& errors = WaitAll();
+        const auto& errors = WaitAll();
         throw errors.empty()
           ? Error()//TODO
           : *errors.begin();
@@ -106,22 +108,22 @@ namespace Async
     {
     public:
       TransceiveOperation(typename Queue<T>::Ptr queue, Progress::Ptr stat, typename DataReceiver<T>::Ptr target)
-        : QueueObject(queue)
-        , Statistic(stat)
-        , Target(target)
+        : QueueObject(std::move(queue))
+        , Statistic(std::move(stat))
+        , Target(std::move(target))
       {
       }
 
-      virtual void Prepare()
+      void Prepare() override
       {
       }
 
-      virtual void Execute()
+      void Execute() override
       {
         T val;
         while (QueueObject->Get(val))
         {
-          Target->ApplyData(val);
+          Target->ApplyData(std::move(val));
           Statistic->Consume(1);
         }
       }

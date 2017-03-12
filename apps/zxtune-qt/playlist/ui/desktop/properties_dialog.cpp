@@ -19,19 +19,18 @@
 //common includes
 #include <contract.h>
 #include <error.h>
+#include <make_ptr.h>
 //library includes
 #include <core/core_parameters.h>
-#include <core/module_attrs.h>
+#include <module/attributes.h>
 #include <parameters/merged_accessor.h>
 #include <sound/sound_parameters.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/ref.hpp>
 //qt includes
 #include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
+#include <QtGui/QTextBrowser>
 #include <QtWidgets/QToolButton>
 
 namespace
@@ -45,47 +44,47 @@ namespace
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return Merged->Version();
     }
 
-    virtual bool FindValue(const Parameters::NameType& name, Parameters::IntType& val) const
+    bool FindValue(const Parameters::NameType& name, Parameters::IntType& val) const override
     {
       return Merged->FindValue(name, val);
     }
 
-    virtual bool FindValue(const Parameters::NameType& name, Parameters::StringType& val) const
+    bool FindValue(const Parameters::NameType& name, Parameters::StringType& val) const override
     {
       return Merged->FindValue(name, val);
     }
 
-    virtual bool FindValue(const Parameters::NameType& name, Parameters::DataType& val) const
+    bool FindValue(const Parameters::NameType& name, Parameters::DataType& val) const override
     {
       return Merged->FindValue(name, val);
     }
 
-    virtual void Process(Parameters::Visitor& visitor) const
+    void Process(Parameters::Visitor& visitor) const override
     {
       return Merged->Process(visitor);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, Parameters::IntType val)
+    void SetValue(const Parameters::NameType& name, Parameters::IntType val) override
     {
       return Adjusted->SetValue(name, val);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
     {
       return Adjusted->SetValue(name, val);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::DataType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::DataType& val) override
     {
       return Adjusted->SetValue(name, val);
     }
 
-    virtual void RemoveValue(const Parameters::NameType& name)
+    void RemoveValue(const Parameters::NameType& name) override
     {
       return Adjusted->RemoveValue(name);
     }
@@ -109,7 +108,7 @@ namespace
       const Module::Holder::Ptr module = item->GetModule();
       const Parameters::Accessor::Ptr nativeProps = module->GetModuleProperties();
       const Parameters::Container::Ptr adjustedProps = item->GetAdjustedParameters();
-      Properties = boost::make_shared<ItemPropertiesContainer>(adjustedProps, nativeProps);
+      Properties = MakePtr<ItemPropertiesContainer>(adjustedProps, nativeProps);
 
       FillProperties(item->GetCapabilities());
       itemsLayout->addItem(new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding), itemsLayout->rowCount(), 0);
@@ -117,7 +116,7 @@ namespace
       Require(connect(buttons, SIGNAL(clicked(QAbstractButton*)), SLOT(ButtonClicked(QAbstractButton*))));
     }
 
-    virtual void ButtonClicked(QAbstractButton* button)
+    void ButtonClicked(QAbstractButton* button) override
     {
       switch (buttons->buttonRole(button))
       {
@@ -156,6 +155,7 @@ namespace
         const Parameters::IntegerTraits samplesFreq(SAMPLES_FREQUENCY, -1, SAMPLES_FREQUENCY_MIN, SAMPLES_FREQUENCY_MAX);
         AddIntegerProperty(Playlist::UI::PropertiesDialog::tr("Samples frequency"), samplesFreq);
       }
+      AddStrings(Module::ATTR_STRINGS);
     }
 
     void FillAymChipTypeProperty()
@@ -191,14 +191,14 @@ namespace
 
     void AddStringProperty(const QString& title, const Parameters::NameType& name)
     {
-      QLineEdit* const wid = new QLineEdit(this);
+      const auto wid = new QLineEdit(this);
       Parameters::Value* const value = Parameters::StringValue::Bind(*wid, *Properties, name, Parameters::StringType());
       AddProperty(title, wid, value);
     }
 
     void AddSetProperty(const QString& title, const Parameters::NameType& name, const QStringList& values)
     {
-      QComboBox* const wid = new QComboBox(this);
+      const auto wid = new QComboBox(this);
       wid->addItems(values);
       Parameters::Value* const value = Parameters::IntegerValue::Bind(*wid, *Properties, name, -1);
       AddProperty(title, wid, value);
@@ -206,14 +206,14 @@ namespace
 
     void AddIntegerProperty(const QString& title, const Parameters::IntegerTraits& traits)
     {
-      QLineEdit* const wid = new QLineEdit(this);
+      const auto wid = new QLineEdit(this);
       Parameters::Value* const value = Parameters::BigIntegerValue::Bind(*wid, *Properties, traits);
       AddProperty(title, wid, value);
     }
 
     void AddProperty(const QString& title, QWidget* widget, Parameters::Value* value)
     {
-      QToolButton* const resetButton = new QToolButton(this);
+      const auto resetButton = new QToolButton(this);
       resetButton->setArrowType(Qt::DownArrow);
       resetButton->setToolTip(Playlist::UI::PropertiesDialog::tr("Reset value"));
       const int row = itemsLayout->rowCount();
@@ -222,6 +222,23 @@ namespace
       itemsLayout->addWidget(resetButton, row, 2);
       Require(value->connect(this, SIGNAL(ResetToDefaults()), SLOT(Reset())));
       Require(value->connect(resetButton, SIGNAL(clicked()), SLOT(Reset())));
+    }
+    
+    void AddStrings(const Parameters::NameType& name)
+    {
+      Parameters::StringType value;
+      if (Properties->FindValue(name, value))
+      {
+        const auto strings = new QTextBrowser(this);
+        QFont font;
+        font.setFamily(QString::fromLatin1("Courier New"));
+        strings->setFont(font);
+        strings->setLineWrapMode(QTextEdit::NoWrap);
+
+        const int row = itemsLayout->rowCount();
+        itemsLayout->addWidget(strings, row, 0, 1, itemsLayout->columnCount());
+        strings->setText(ToQString(value));
+      }
     }
   private:
     Parameters::Container::Ptr Properties;
@@ -238,10 +255,10 @@ namespace Playlist
 
     PropertiesDialog::Ptr PropertiesDialog::Create(QWidget& parent, Item::Data::Ptr item)
     {
-      return boost::make_shared<PropertiesDialogImpl>(boost::ref(parent), item);
+      return MakePtr<PropertiesDialogImpl>(parent, item);
     }
 
-    void ExecutePropertiesDialog(QWidget& parent, Model::Ptr model, Model::IndexSetPtr scope)
+    void ExecutePropertiesDialog(QWidget& parent, Model::Ptr model, Model::IndexSet::Ptr scope)
     {
       if (scope->size() != 1)
       {

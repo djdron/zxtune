@@ -28,8 +28,7 @@
 //common includes
 #include <contract.h>
 #include <error.h>
-//boost includes
-#include <boost/make_shared.hpp>
+#include <make_ptr.h>
 //qt includes
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -84,7 +83,7 @@ namespace
 
   QString ModulesCount(uint_t count)
   {
-    return Playlist::UI::ItemsContextMenu::tr("%n item(s)", 0, static_cast<int>(count));
+    return Playlist::UI::ItemsContextMenu::tr("%n item(s)", nullptr, static_cast<int>(count));
   }
 
   QString QFileSystemModelTranslate(const char* msg)
@@ -163,60 +162,60 @@ namespace
       Duration.SetPeriod(Time::Milliseconds(1));
     }
 
-    virtual QString Category() const
+    QString Category() const override
     {
       return Playlist::UI::ItemsContextMenu::tr("Statistic");
     }
 
-    virtual QString Text() const
+    QString Text() const override
     {
       QStringList result;
       result.append(Playlist::UI::ItemsContextMenu::tr("Total: %1").arg(ModulesCount(Processed)));
       result.append(Playlist::UI::ItemsContextMenu::tr("Invalid: %1").arg(ModulesCount(Invalids)));
       result.append(Playlist::UI::ItemsContextMenu::tr("Total duration: %1").arg(ToQString(Duration.ToString())));
       result.append(Playlist::UI::ItemsContextMenu::tr("Total size: %1").arg(MemorySize(Size)));
-      result.append(Playlist::UI::ItemsContextMenu::tr("%n different modules' type(s)", 0, Types.size()));
-      result.append(Playlist::UI::ItemsContextMenu::tr("%n files referenced", 0, Paths.size()));
+      result.append(Playlist::UI::ItemsContextMenu::tr("%n different modules' type(s)", nullptr, Types.size()));
+      result.append(Playlist::UI::ItemsContextMenu::tr("%n files referenced", nullptr, Paths.size()));
       return result.join(LINE_BREAK);
     }
 
-    virtual QString Details() const
+    QString Details() const override
     {
       QStringList result;
-      for (std::map<String, std::size_t>::const_iterator it = Types.begin(), lim = Types.end(); it != lim; ++it)
+      for (const auto& type : Types)
       {
 		result.append(QString::fromLatin1("%1: %2")
-          .arg(ToQString(it->first)).arg(ModulesCount(it->second)));
+          .arg(ToQString(type.first)).arg(ModulesCount(type.second)));
       }
       return result.join(LINE_BREAK);
     }
 
-    virtual void AddInvalid()
+    void AddInvalid() override
     {
       ++Invalids;
     }
 
-    virtual void AddValid()
+    void AddValid() override
     {
       ++Processed;
     }
 
-    virtual void AddType(const String& type)
+    void AddType(const String& type) override
     {
       ++Types[type];
     }
 
-    virtual void AddDuration(const Time::MillisecondsDuration& duration)
+    void AddDuration(const Time::MillisecondsDuration& duration) override
     {
       Duration += duration;
     }
 
-    virtual void AddSize(std::size_t size)
+    void AddSize(std::size_t size) override
     {
       Size += size;
     }
 
-    virtual void AddPath(const String& path)
+    void AddPath(const String& path) override
     {
       Paths.insert(path);
     }
@@ -231,7 +230,7 @@ namespace
 
   Playlist::Item::StatisticTextNotification::Ptr CreateStatisticNotification()
   {
-    return boost::make_shared<StatisticNotification>();
+    return MakePtr<StatisticNotification>();
   }
 
   class ExportResult : public Playlist::Item::ConversionResultNotification
@@ -242,33 +241,33 @@ namespace
     {
     }
 
-    virtual QString Category() const
+    QString Category() const override
     {
       return Playlist::UI::ItemsContextMenu::tr("Export");
     }
 
-    virtual QString Text() const
+    QString Text() const override
     {
       return Playlist::UI::ItemsContextMenu::tr("Converted: %1<br/>Failed: %2")
         .arg(ModulesCount(Succeeds)).arg(ModulesCount(Errors.size()));
     }
 
-    virtual QString Details() const
+    QString Details() const override
     {
       return Errors.join(LINE_BREAK);
     }
 
-    virtual void AddSucceed()
+    void AddSucceed() override
     {
       ++Succeeds;
     }
 
-    virtual void AddFailedToOpen(const String& path)
+    void AddFailedToOpen(const String& path) override
     {
       Errors.append(Playlist::UI::ItemsContextMenu::tr("Failed to open '%1' for conversion").arg(ToQString(path)));
     }
 
-    virtual void AddFailedToConvert(const String& path, const Error& err)
+    void AddFailedToConvert(const String& path, const Error& err) override
     {
       Errors.append(Playlist::UI::ItemsContextMenu::tr("Failed to convert '%1': %2")
         .arg(ToQString(path)).arg(ToQStringFromLocal(err.ToString())));
@@ -280,13 +279,13 @@ namespace
 
   Playlist::Item::ConversionResultNotification::Ptr CreateConversionResultNotification()
   {
-    return boost::make_shared<ExportResult>();
+    return MakePtr<ExportResult>();
   }
 
   class ShuffleOperation : public Playlist::Item::StorageModifyOperation
   {
   public:
-    virtual void Execute(Playlist::Item::Storage& storage, Log::ProgressCallback& /*cb*/)
+    void Execute(Playlist::Item::Storage& storage, Log::ProgressCallback& /*cb*/) override
     {
       storage.Shuffle();
     }
@@ -305,27 +304,27 @@ namespace
     void Exec(const QPoint& pos)
     {
       SelectedItems = View.GetSelectedItems();
-      const std::auto_ptr<QMenu> delegate = CreateMenu();
+      const std::unique_ptr<QMenu> delegate = CreateMenu();
       delegate->exec(pos);
     }
 
-    virtual void PlaySelected() const
+    void PlaySelected() const override
     {
       assert(SelectedItems->size() == 1);
       const Playlist::Item::Iterator::Ptr iter = Controller.GetIterator();
       iter->Reset(*SelectedItems->begin());
     }
 
-    virtual void RemoveSelected() const
+    void RemoveSelected() const override
     {
       const Playlist::Model::Ptr model = Controller.GetModel();
       model->RemoveItems(SelectedItems);
     }
 
-    virtual void CropSelected() const
+    void CropSelected() const override
     {
       const Playlist::Model::Ptr model = Controller.GetModel();
-      const boost::shared_ptr<Playlist::Model::IndexSet> unselected = boost::make_shared<Playlist::Model::IndexSet>();
+      const Playlist::Model::IndexSet::RWPtr unselected = MakeRWPtr<Playlist::Model::IndexSet>();
       for (unsigned idx = 0, total = model->CountItems(); idx < total; ++idx)
       {
         if (!SelectedItems->count(idx))
@@ -336,7 +335,7 @@ namespace
       model->RemoveItems(unselected);
     }
 
-    virtual void GroupSelected() const
+    void GroupSelected() const override
     {
       const Playlist::Model::Ptr model = Controller.GetModel();
       const unsigned moveTo = *SelectedItems->begin();
@@ -349,88 +348,88 @@ namespace
       View.SelectItems(toSelect);
     }
 
-    virtual void RemoveAllDuplicates() const
+    void RemoveAllDuplicates() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectAllDuplicatesOperation();
       ExecuteRemoveOperation(op);
     }
 
-    virtual void RemoveDuplicatesOfSelected() const
+    void RemoveDuplicatesOfSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectDuplicatesOfSelectedOperation(SelectedItems);
       ExecuteRemoveOperation(op);
     }
 
-    virtual void RemoveDuplicatesInSelected() const
+    void RemoveDuplicatesInSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectDuplicatesInSelectedOperation(SelectedItems);
       ExecuteRemoveOperation(op);
     }
 
-    virtual void RemoveAllUnavailable() const
+    void RemoveAllUnavailable() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectAllUnavailableOperation();
       ExecuteRemoveOperation(op);
     }
 
-    virtual void RemoveUnavailableInSelected() const
+    void RemoveUnavailableInSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectUnavailableInSelectedOperation(SelectedItems);
       ExecuteRemoveOperation(op);
     }
 
-    virtual void SelectAllRipOffs() const
+    void SelectAllRipOffs() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectAllRipOffsOperation();
       ExecuteSelectOperation(op);
     }
 
-    virtual void SelectRipOffsOfSelected() const
+    void SelectRipOffsOfSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectRipOffsOfSelectedOperation(SelectedItems);
       ExecuteSelectOperation(op);
     }
 
-    virtual void SelectRipOffsInSelected() const
+    void SelectRipOffsInSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectRipOffsInSelectedOperation(SelectedItems);
       ExecuteSelectOperation(op);
     }
 
-    virtual void SelectSameTypesOfSelected() const
+    void SelectSameTypesOfSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectTypesOfSelectedOperation(SelectedItems);
       ExecuteSelectOperation(op);
     }
 
-    virtual void SelectSameFilesOfSelected() const
+    void SelectSameFilesOfSelected() const override
     {
       const Playlist::Item::SelectionOperation::Ptr op = Playlist::Item::CreateSelectFilesOfSelectedOperation(SelectedItems);
       ExecuteSelectOperation(op);
     }
 
-    virtual void CopyPathToClipboard() const
+    void CopyPathToClipboard() const override
     {
       const Playlist::Model::Ptr model = Controller.GetModel();
       const QStringList paths =  model->GetItemsPaths(*SelectedItems);
       QApplication::clipboard()->setText(paths.join(LINE_BREAK));
     }
 
-    virtual void ShowAllStatistic() const
+    void ShowAllStatistic() const override
     {
       const Playlist::Item::StatisticTextNotification::Ptr result = CreateStatisticNotification();
       const Playlist::Item::TextResultOperation::Ptr op = Playlist::Item::CreateCollectStatisticOperation(result);
       ExecuteNotificationOperation(op);
     }
 
-    virtual void ShowStatisticOfSelected() const
+    void ShowStatisticOfSelected() const override
     {
       const Playlist::Item::StatisticTextNotification::Ptr result = CreateStatisticNotification();
       const Playlist::Item::TextResultOperation::Ptr op = Playlist::Item::CreateCollectStatisticOperation(SelectedItems, result);
       ExecuteNotificationOperation(op);
     }
 
-    virtual void ExportAll() const
+    void ExportAll() const override
     {
       if (const Playlist::Item::Conversion::Options::Ptr params = UI::GetExportParameters(View))
       {
@@ -438,7 +437,7 @@ namespace
       }
     }
 
-    virtual void ExportSelected() const
+    void ExportSelected() const override
     {
       if (const Playlist::Item::Conversion::Options::Ptr params = UI::GetExportParameters(View))
       {
@@ -446,7 +445,7 @@ namespace
       }
     }
 
-    virtual void ConvertSelected() const
+    void ConvertSelected() const override
     {
       if (const Playlist::Item::Conversion::Options::Ptr params = UI::GetConvertParameters(View))
       {
@@ -454,7 +453,7 @@ namespace
       }
     }
     
-    virtual void SaveAsSelected() const
+    void SaveAsSelected() const override
     {
       const Playlist::Item::Data::Ptr item = GetSelectedItem();
       if (const Playlist::Item::Conversion::Options::Ptr params = UI::GetSaveAsParameters(item))
@@ -463,7 +462,7 @@ namespace
       }
     }
 
-    virtual void SelectFound() const
+    void SelectFound() const override
     {
       if (Playlist::Item::SelectionOperation::Ptr op = Playlist::UI::ExecuteSearchDialog(View))
       {
@@ -471,7 +470,7 @@ namespace
       }
     }
 
-    virtual void SelectFoundInSelected() const
+    void SelectFoundInSelected() const override
     {
       if (Playlist::Item::SelectionOperation::Ptr op = Playlist::UI::ExecuteSearchDialog(View, SelectedItems))
       {
@@ -479,41 +478,41 @@ namespace
       }
     }
 
-    virtual void ShowPropertiesOfSelected() const
+    void ShowPropertiesOfSelected() const override
     {
       Playlist::UI::ExecutePropertiesDialog(View, Controller.GetModel(), SelectedItems);
     }
 
-    virtual void ShuffleAll() const
+    void ShuffleAll() const override
     {
-      const Playlist::Item::StorageModifyOperation::Ptr op = boost::make_shared<ShuffleOperation>();
+      const Playlist::Item::StorageModifyOperation::Ptr op = MakePtr<ShuffleOperation>();
       Controller.GetModel()->PerformOperation(op);
     }
   private:
-    std::auto_ptr<QMenu> CreateMenu()
+    std::unique_ptr<QMenu> CreateMenu()
     {
       switch (const std::size_t items = SelectedItems->size())
       {
       case 0:
-        return std::auto_ptr<QMenu>(new NoItemsContextMenu(View, *this));
+        return std::unique_ptr<QMenu>(new NoItemsContextMenu(View, *this));
       case 1:
-        return std::auto_ptr<QMenu>(new SingleItemContextMenu(View, *this));
+        return std::unique_ptr<QMenu>(new SingleItemContextMenu(View, *this));
       default:
-        return std::auto_ptr<QMenu>(new MultipleItemsContextMenu(View, *this, items));
+        return std::unique_ptr<QMenu>(new MultipleItemsContextMenu(View, *this, items));
       }
     }
 
     void ExecuteRemoveOperation(Playlist::Item::SelectionOperation::Ptr op) const
     {
       const Playlist::Model::Ptr model = Controller.GetModel();
-      Require(model->connect(op.get(), SIGNAL(ResultAcquired(Playlist::Model::IndexSetPtr)), SLOT(RemoveItems(Playlist::Model::IndexSetPtr))));
+      Require(model->connect(op.get(), SIGNAL(ResultAcquired(Playlist::Model::IndexSet::Ptr)), SLOT(RemoveItems(Playlist::Model::IndexSet::Ptr))));
       model->PerformOperation(op);
     }
 
     void ExecuteSelectOperation(Playlist::Item::SelectionOperation::Ptr op) const
     {
       const Playlist::Model::Ptr model = Controller.GetModel();
-      Require(View.connect(op.get(), SIGNAL(ResultAcquired(Playlist::Model::IndexSetPtr)), SLOT(SelectItems(Playlist::Model::IndexSetPtr))));
+      Require(View.connect(op.get(), SIGNAL(ResultAcquired(Playlist::Model::IndexSet::Ptr)), SLOT(SelectItems(Playlist::Model::IndexSet::Ptr))));
       model->PerformOperation(op);
     }
 
@@ -548,7 +547,7 @@ namespace
     Playlist::UI::TableView& View;
     Playlist::Controller& Controller;
     //data
-    Playlist::Model::IndexSetPtr SelectedItems;
+    Playlist::Model::IndexSet::Ptr SelectedItems;
   };
 }
 

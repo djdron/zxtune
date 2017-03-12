@@ -14,17 +14,17 @@
 //common includes
 #include <contract.h>
 #include <pointers.h>
+#include <make_ptr.h>
 //library includes
 #include <parameters/convert.h>
 #include <parameters/merged_accessor.h>
 #include <parameters/tools.h>
 #include <parameters/tracking.h>
 //std includes
+#include <mutex>
 #include <set>
 //boost includes
 #include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/thread/mutex.hpp>
 //qt includes
 #include <QtCore/QSettings>
 //text includes
@@ -44,12 +44,12 @@ namespace
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return VersionValue;
     }
 
-    virtual bool FindValue(const NameType& name, IntType& val) const
+    bool FindValue(const NameType& name, IntType& val) const override
     {
       const Value value(Storage, name);
       if (!value.IsValid())
@@ -70,7 +70,7 @@ namespace
       return false;
     }
 
-    virtual bool FindValue(const NameType& name, StringType& val) const
+    bool FindValue(const NameType& name, StringType& val) const override
     {
       const Value value(Storage, name);
       if (!value.IsValid())
@@ -85,7 +85,7 @@ namespace
       return false;
     }
 
-    virtual bool FindValue(const NameType& name, DataType& val) const
+    bool FindValue(const NameType& name, DataType& val) const override
     {
       const Value value(Storage, name);
       if (!value.IsValid())
@@ -102,26 +102,26 @@ namespace
       return false;
     }
 
-    virtual void Process(Visitor& /*visitor*/) const
+    void Process(Visitor& /*visitor*/) const override
     {
       //TODO: implement later
     }
 
-    virtual void SetValue(const NameType& name, IntType val)
+    void SetValue(const NameType& name, IntType val) override
     {
       Value value(Storage, name);
       value.Set(QVariant(qlonglong(val)));
       ++VersionValue;
     }
 
-    virtual void SetValue(const NameType& name, const StringType& val)
+    void SetValue(const NameType& name, const StringType& val) override
     {
       Value value(Storage, name);
       value.Set(QVariant(ToQString(ConvertToString(val))));
       ++VersionValue;
     }
 
-    virtual void SetValue(const NameType& name, const DataType& val)
+    void SetValue(const NameType& name, const DataType& val) override
     {
       Value value(Storage, name);
       const QByteArray arr(val.empty() ? QByteArray() : QByteArray(safe_ptr_cast<const char*>(&val[0]), val.size()));
@@ -129,14 +129,14 @@ namespace
       ++VersionValue;
     }
 
-    virtual void RemoveValue(const NameType& name)
+    void RemoveValue(const NameType& name) override
     {
       Value val(Storage, name);
       val.Remove();
       ++VersionValue;
     }
   private:
-    typedef boost::shared_ptr<QSettings> SettingsPtr;
+    typedef std::shared_ptr<QSettings> SettingsPtr;
     typedef std::map<QString, SettingsPtr> SettingsStorage;
 
     class Value
@@ -201,7 +201,7 @@ namespace
         }
         else
         {
-          Setup = boost::make_shared<QSettings>(QLatin1String(Text::PROJECT_NAME), rootNamespace);
+          Setup = std::make_shared<QSettings>(QLatin1String(Text::PROJECT_NAME), rootNamespace);
           Storage.insert(SettingsStorage::value_type(rootNamespace, Setup));
         }
       }
@@ -220,17 +220,17 @@ namespace
   {
   public:
     explicit CachedSettingsContainer(Container::Ptr delegate)
-      : Persistent(delegate)
+      : Persistent(std::move(delegate))
       , Temporary(Container::Create())
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return Temporary->Version();
     }
 
-    virtual bool FindValue(const NameType& name, IntType& val) const
+    bool FindValue(const NameType& name, IntType& val) const override
     {
       if (Temporary->FindValue(name, val))
       {
@@ -248,7 +248,7 @@ namespace
       return false;
     }
 
-    virtual bool FindValue(const NameType& name, StringType& val) const
+    bool FindValue(const NameType& name, StringType& val) const override
     {
       if (Temporary->FindValue(name, val))
       {
@@ -266,7 +266,7 @@ namespace
       return false;
     }
 
-    virtual bool FindValue(const NameType& name, DataType& val) const
+    bool FindValue(const NameType& name, DataType& val) const override
     {
       if (Temporary->FindValue(name, val))
       {
@@ -284,33 +284,33 @@ namespace
       return false;
     }
 
-    virtual void Process(Visitor& visitor) const
+    void Process(Visitor& visitor) const override
     {
       Persistent->Process(visitor);
     }
 
-    virtual void SetValue(const NameType& name, IntType val)
+    void SetValue(const NameType& name, IntType val) override
     {
       Removed.erase(name);
       Temporary->SetValue(name, val);
       Persistent->SetValue(name, val);
     }
 
-    virtual void SetValue(const NameType& name, const StringType& val)
+    void SetValue(const NameType& name, const StringType& val) override
     {
       Removed.erase(name);
       Temporary->SetValue(name, val);
       Persistent->SetValue(name, val);
     }
 
-    virtual void SetValue(const NameType& name, const DataType& val)
+    void SetValue(const NameType& name, const DataType& val) override
     {
       Removed.erase(name);
       Temporary->SetValue(name, val);
       Persistent->SetValue(name, val);
     }
 
-    virtual void RemoveValue(const NameType& name)
+    void RemoveValue(const NameType& name) override
     {
       Removed.insert(name);
       Temporary->RemoveValue(name);
@@ -328,58 +328,58 @@ namespace
   class CompositeModifier : public Modifier
   {
   public:
-    typedef boost::shared_ptr<void> Subscription;
+    typedef std::shared_ptr<void> Subscription;
 
     Subscription Subscribe(Modifier::Ptr delegate)
     {
-      const boost::mutex::scoped_lock lock(Guard);
+      const std::lock_guard<std::mutex> lock(Guard);
       Delegates.insert(delegate);
       return Subscription(this, boost::bind(&CompositeModifier::Unsubscribe, _1, delegate));
     }
 
-    virtual void SetValue(const NameType& name, IntType val)
+    void SetValue(const NameType& name, IntType val) override
     {
-      const boost::mutex::scoped_lock lock(Guard);
-      for (ModifiersSet::const_iterator it = Delegates.begin(), lim = Delegates.end(); it != lim; ++it)
+      const std::lock_guard<std::mutex> lock(Guard);
+      for (const auto& delegate : Delegates)
       {
-        (*it)->SetValue(name, val);
+        delegate->SetValue(name, val);
       }
     }
 
-    virtual void SetValue(const NameType& name, const StringType& val)
+    void SetValue(const NameType& name, const StringType& val) override
     {
-      const boost::mutex::scoped_lock lock(Guard);
-      for (ModifiersSet::const_iterator it = Delegates.begin(), lim = Delegates.end(); it != lim; ++it)
+      const std::lock_guard<std::mutex> lock(Guard);
+      for (const auto& delegate : Delegates)
       {
-        (*it)->SetValue(name, val);
+        delegate->SetValue(name, val);
       }
     }
 
-    virtual void SetValue(const NameType& name, const DataType& val)
+    void SetValue(const NameType& name, const DataType& val) override
     {
-      const boost::mutex::scoped_lock lock(Guard);
-      for (ModifiersSet::const_iterator it = Delegates.begin(), lim = Delegates.end(); it != lim; ++it)
+      const std::lock_guard<std::mutex> lock(Guard);
+      for (const auto& delegate : Delegates)
       {
-        (*it)->SetValue(name, val);
+        delegate->SetValue(name, val);
       }
     }
 
-    virtual void RemoveValue(const NameType& name)
+    void RemoveValue(const NameType& name) override
     {
-      const boost::mutex::scoped_lock lock(Guard);
-      for (ModifiersSet::const_iterator it = Delegates.begin(), lim = Delegates.end(); it != lim; ++it)
+      const std::lock_guard<std::mutex> lock(Guard);
+      for (const auto& delegate : Delegates)
       {
-        (*it)->RemoveValue(name);
+        delegate->RemoveValue(name);
       }
     }
   private:
     void Unsubscribe(Modifier::Ptr delegate)
     {
-      const boost::mutex::scoped_lock lock(Guard);
+      const std::lock_guard<std::mutex> lock(Guard);
       Delegates.erase(delegate);
     }
   private:
-    mutable boost::mutex Guard;
+    mutable std::mutex Guard;
     typedef std::set<Modifier::Ptr> ModifiersSet;
     mutable ModifiersSet Delegates;
   };
@@ -388,27 +388,27 @@ namespace
   {
   public:
     CopyOnWrite(Accessor::Ptr stored, Container::Ptr changed)
-      : Stored(stored)
-      , Changed(changed)
+      : Stored(std::move(stored))
+      , Changed(std::move(changed))
     {
     }
 
-    virtual void SetValue(const NameType& name, IntType /*val*/)
+    void SetValue(const NameType& name, IntType /*val*/) override
     {
       CopyExistingValue<IntType>(*Stored, *Changed, name);
     }
 
-    virtual void SetValue(const NameType& name, const StringType& /*val*/)
+    void SetValue(const NameType& name, const StringType& /*val*/) override
     {
       CopyExistingValue<StringType>(*Stored, *Changed, name);
     }
 
-    virtual void SetValue(const NameType& name, const DataType& /*val*/)
+    void SetValue(const NameType& name, const DataType& /*val*/) override
     {
       CopyExistingValue<DataType>(*Stored, *Changed, name);
     }
 
-    virtual void RemoveValue(const NameType& /*name*/)
+    void RemoveValue(const NameType& /*name*/) override
     {
     }
   private:
@@ -420,32 +420,32 @@ namespace
   {
   public:
     SettingsSnapshot(Accessor::Ptr delegate, CompositeModifier::Subscription subscription)
-      : Delegate(delegate)
-      , Subscription(subscription)
+      : Delegate(std::move(delegate))
+      , Subscription(std::move(subscription))
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return Delegate->Version();
     }
 
-    virtual bool FindValue(const NameType& name, IntType& val) const
+    bool FindValue(const NameType& name, IntType& val) const override
     {
       return Delegate->FindValue(name, val);
     }
 
-    virtual bool FindValue(const NameType& name, StringType& val) const
+    bool FindValue(const NameType& name, StringType& val) const override
     {
       return Delegate->FindValue(name, val);
     }
 
-    virtual bool FindValue(const NameType& name, DataType& val) const
+    bool FindValue(const NameType& name, DataType& val) const override
     {
       return Delegate->FindValue(name, val);
     }
 
-    virtual void Process(Visitor& visitor) const
+    void Process(Visitor& visitor) const override
     {
       return Delegate->Process(visitor);
     }
@@ -454,8 +454,8 @@ namespace
     {
       const Container::Ptr changed = Container::Create();
       const Accessor::Ptr delegate = CreateMergedAccessor(changed, stored);
-      const Modifier::Ptr callback = boost::make_shared<CopyOnWrite>(stored, changed);
-      return boost::make_shared<SettingsSnapshot>(delegate, modifiers.Subscribe(callback));
+      const Modifier::Ptr callback = MakePtr<CopyOnWrite>(stored, changed);
+      return MakePtr<SettingsSnapshot>(delegate, modifiers.Subscribe(callback));
     }
   public:
     const Accessor::Ptr Delegate;
@@ -465,18 +465,18 @@ namespace
   class GlobalOptionsStorage : public GlobalOptions
   {
   public:
-    virtual Container::Ptr Get() const
+    Container::Ptr Get() const override
     {
       if (!TrackedOptions)
       {
-        const Container::Ptr persistent = boost::make_shared<SettingsContainer>();
-        Options = boost::make_shared<CachedSettingsContainer>(persistent);
+        const Container::Ptr persistent = MakePtr<SettingsContainer>();
+        Options = MakePtr<CachedSettingsContainer>(persistent);
         TrackedOptions = CreatePreChangePropertyTrackedContainer(Options, Modifiers);
       }
       return TrackedOptions;
     }
 
-    virtual Accessor::Ptr GetSnapshot() const
+    Accessor::Ptr GetSnapshot() const override
     {
       return SettingsSnapshot::Create(Options, Modifiers);
     }

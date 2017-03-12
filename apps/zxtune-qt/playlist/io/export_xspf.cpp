@@ -16,15 +16,13 @@
 #include <error_tools.h>
 //library includes
 #include <zxtune.h>
-#include <core/module_attrs.h>
 #include <debug/log.h>
+#include <module/attributes.h>
 #include <sound/sound_parameters.h>
 #include <parameters/convert.h>
-#include <core/plugins/containers/zdata_supp.h>
+#include <core/plugins/archives/zdata_supp.h>
 //std includes
 #include <set>
-//boost includes
-#include <boost/scoped_ptr.hpp>
 //qt includes
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -124,13 +122,13 @@ namespace
       ElementHelper Extension;
     };
   public:
-    ExtendedPropertiesSaver(QXmlStreamWriter& xml, AttributesFilter filter = 0)
+    ExtendedPropertiesSaver(QXmlStreamWriter& xml, AttributesFilter filter = nullptr)
       : XML(xml)
       , Filter(filter)
     {
     }
 
-    virtual void SetValue(const Parameters::NameType& name, Parameters::IntType val)
+    void SetValue(const Parameters::NameType& name, Parameters::IntType val) override
     {
       if (Filter && !Filter(name))
       {
@@ -140,7 +138,7 @@ namespace
       SaveProperty(name, val);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
     {
       if (Filter && !Filter(name))
       {
@@ -150,7 +148,7 @@ namespace
       SaveProperty(name, val);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::DataType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::DataType& val) override
     {
       if (Filter && !Filter(name))
       {
@@ -173,7 +171,7 @@ namespace
   private:
     QXmlStreamWriter& XML;
     const AttributesFilter Filter;
-    boost::scoped_ptr<StringPropertySaver> Saver;
+    std::unique_ptr<StringPropertySaver> Saver;
   };
 
   class ItemPropertiesSaver : private Parameters::Visitor
@@ -244,11 +242,11 @@ namespace
       Element.Text(XSPF::ITEM_LOCATION_TAG, DataToQString(QUrl(location).toEncoded()));
     }
 
-    virtual void SetValue(const Parameters::NameType& /*name*/, Parameters::IntType /*val*/)
+    void SetValue(const Parameters::NameType& /*name*/, Parameters::IntType /*val*/) override
     {
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
     {
       const String value = Parameters::ConvertToString(val);
       const QString valStr = ConvertString(value);
@@ -269,7 +267,7 @@ namespace
       }
     }
 
-    virtual void SetValue(const Parameters::NameType& /*name*/, const Parameters::DataType& /*val*/)
+    void SetValue(const Parameters::NameType& /*name*/, const Parameters::DataType& /*val*/) override
     {
     }
   private:
@@ -296,6 +294,7 @@ namespace
         name != Module::ATTR_TITLE &&
         name != Module::ATTR_COMMENT &&
         //skip redundand properties
+        name != Module::ATTR_STRINGS &&
         //skip all the parameters
         !IsParameter(name)
       ;
@@ -325,7 +324,7 @@ namespace
   class ItemWriter
   {
   public:
-    virtual ~ItemWriter() {}
+    virtual ~ItemWriter() = default;
 
     virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const = 0;
   };
@@ -333,7 +332,11 @@ namespace
   class ItemFullLocationWriter : public ItemWriter
   {
   public:
-    virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const
+    ItemFullLocationWriter()
+    {
+    }
+
+    void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const override
     {
       saver.SaveModuleLocation(item.GetFullPath());
     }
@@ -347,7 +350,7 @@ namespace
     {
     }
 
-    virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const
+    void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const override
     {
       saver.SaveModuleLocation(item.GetFullPath(), Root);
     }
@@ -358,7 +361,11 @@ namespace
   class ItemContentLocationWriter : public ItemWriter
   {
   public:
-    virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const
+    ItemContentLocationWriter()
+    {
+    }
+
+    void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const override
     {
       if (const Binary::Data::Ptr rawContent = item.GetModuleData())
       {
@@ -387,7 +394,11 @@ namespace
   class ItemShortPropertiesWriter : public ItemWriter
   {
   public:
-    virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const
+    ItemShortPropertiesWriter()
+    {
+    }
+
+    void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const override
     {
       const Parameters::Accessor::Ptr adjustedParams = item.GetAdjustedParameters();
       saver.SaveStubModuleProperties(*adjustedParams);
@@ -398,7 +409,11 @@ namespace
   class ItemFullPropertiesWriter : public ItemWriter
   {
   public:
-    virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const
+    ItemFullPropertiesWriter()
+    {
+    }
+
+    void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const override
     {
       if (const Module::Holder::Ptr holder = item.GetModule())
       {
@@ -419,26 +434,26 @@ namespace
   class ItemCompositeWriter : public ItemWriter
   {
   public:
-    ItemCompositeWriter(std::auto_ptr<ItemWriter> loc, std::auto_ptr<ItemWriter> props)
-      : Location(loc)
-      , Properties(props)
+    ItemCompositeWriter(std::unique_ptr<ItemWriter> loc, std::unique_ptr<ItemWriter> props)
+      : Location(std::move(loc))
+      , Properties(std::move(props))
     {
     }
 
-    virtual void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const
+    void Save(const Playlist::Item::Data& item, ItemPropertiesSaver& saver) const override
     {
       Location->Save(item, saver);
       Properties->Save(item, saver);
     }
   private:
-    const std::auto_ptr<ItemWriter> Location;
-    const std::auto_ptr<ItemWriter> Properties;
+    const std::unique_ptr<ItemWriter> Location;
+    const std::unique_ptr<ItemWriter> Properties;
   };
 
-  std::auto_ptr<const ItemWriter> CreateWriter(const QString& filename, Playlist::IO::ExportFlags flags)
+  std::unique_ptr<const ItemWriter> CreateWriter(const QString& filename, Playlist::IO::ExportFlags flags)
   {
-    std::auto_ptr<ItemWriter> location;
-    std::auto_ptr<ItemWriter> props;
+    std::unique_ptr<ItemWriter> location;
+    std::unique_ptr<ItemWriter> props;
     if (0 != (flags & Playlist::IO::SAVE_CONTENT))
     {
       location.reset(new ItemContentLocationWriter());
@@ -463,7 +478,7 @@ namespace
         location.reset(new ItemFullLocationWriter());
       }
     }
-    return std::auto_ptr<const ItemWriter>(new ItemCompositeWriter(location, props));
+    return std::unique_ptr<const ItemWriter>(new ItemCompositeWriter(std::move(location), std::move(props)));
   }
 
   class XSPFWriter
@@ -531,7 +546,7 @@ namespace Playlist
       {
         throw Error(THIS_LINE, FromQString(QFile::tr("Cannot create %1 for output").arg(filename)));
       }
-      const std::auto_ptr<const ItemWriter> itemWriter = CreateWriter(filename, flags);
+      const std::unique_ptr<const ItemWriter> itemWriter = CreateWriter(filename, flags);
       XSPFWriter writer(device, *itemWriter);
       const Parameters::Accessor::Ptr playlistProperties = container->GetProperties();
       writer.WriteProperties(*playlistProperties, container->GetItemsCount());

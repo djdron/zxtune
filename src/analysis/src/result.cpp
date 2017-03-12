@@ -8,14 +8,16 @@
 *
 **/
 
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <analysis/result.h>
-//boost includes
-#include <boost/make_shared.hpp>
+//std includes
+#include <utility>
 
-namespace
+namespace Analysis
 {
-  class CalculatedResult : public Analysis::Result
+  class CalculatedResult : public Result
   {
   public:
     explicit CalculatedResult(std::size_t matchedSize, std::size_t unmatchedSize)
@@ -24,12 +26,12 @@ namespace
     {
     }
 
-    virtual std::size_t GetMatchedDataSize() const
+    std::size_t GetMatchedDataSize() const override
     {
       return MatchedSize;
     }
 
-    virtual std::size_t GetLookaheadOffset() const
+    std::size_t GetLookaheadOffset() const override
     {
       return UnmatchedSize;
     }
@@ -38,21 +40,21 @@ namespace
     const std::size_t UnmatchedSize;
   };
 
-  class UnmatchedResult : public Analysis::Result
+  class UnmatchedResult : public Result
   {
   public:
     UnmatchedResult(Binary::Format::Ptr format, Binary::Container::Ptr data)
-      : Format(format)
-      , RawData(data)
+      : Format(std::move(format))
+      , RawData(std::move(data))
     {
     }
 
-    virtual std::size_t GetMatchedDataSize() const
+    std::size_t GetMatchedDataSize() const override
     {
       return 0;
     }
 
-    virtual std::size_t GetLookaheadOffset() const
+    std::size_t GetLookaheadOffset() const override
     {
       return Format->NextMatchOffset(*RawData);
     }
@@ -66,16 +68,16 @@ namespace Analysis
 {
   Result::Ptr CreateMatchedResult(std::size_t matchedSize)
   {
-    return boost::make_shared<CalculatedResult>(matchedSize, 0);
+    return MakePtr<CalculatedResult>(matchedSize, 0);
   }
 
   Result::Ptr CreateUnmatchedResult(Binary::Format::Ptr format, Binary::Container::Ptr data)
   {
-    return boost::make_shared<UnmatchedResult>(format, data);
+    return MakePtr<UnmatchedResult>(format, data);
   }
 
   Result::Ptr CreateUnmatchedResult(std::size_t unmatchedSize)
   {
-    return boost::make_shared<CalculatedResult>(0, unmatchedSize);
+    return MakePtr<CalculatedResult>(0, unmatchedSize);
   }
 }

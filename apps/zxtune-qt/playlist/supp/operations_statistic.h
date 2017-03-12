@@ -20,7 +20,7 @@ namespace Playlist
     class StatisticTextNotification : public Playlist::TextNotification
     {
     public:
-      typedef boost::shared_ptr<StatisticTextNotification> Ptr;
+      typedef std::shared_ptr<StatisticTextNotification> Ptr;
 
       virtual void AddInvalid() = 0;
       virtual void AddValid() = 0;
@@ -31,6 +31,6 @@ namespace Playlist
     };
 
     TextResultOperation::Ptr CreateCollectStatisticOperation(StatisticTextNotification::Ptr result);
-    TextResultOperation::Ptr CreateCollectStatisticOperation(Playlist::Model::IndexSetPtr items, StatisticTextNotification::Ptr result);
+    TextResultOperation::Ptr CreateCollectStatisticOperation(Playlist::Model::IndexSet::Ptr items, StatisticTextNotification::Ptr result);
   }
 }

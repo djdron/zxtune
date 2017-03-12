@@ -14,8 +14,9 @@
 #include <types.h>
 //library includes
 #include <time/stamp.h>
-//boost includes
-#include <boost/array.hpp>
+//std includes
+#include <array>
+#include <memory>
 
 //supporting for AY/YM-based modules
 namespace Devices
@@ -112,7 +113,7 @@ namespace Devices
 
         operator BoolType () const
         {
-          return IsValid() ? &IndicesIterator::IsValid : 0;
+          return IsValid() ? &IndicesIterator::IsValid : nullptr;
         }
 
         Index operator * () const
@@ -155,7 +156,7 @@ namespace Devices
       };
     private:
       uint16_t Mask;
-      boost::array<uint8_t, TOTAL> Data;
+      std::array<uint8_t, TOTAL> Data;
     };
 
     struct DataChunk
@@ -171,8 +172,8 @@ namespace Devices
     class Device
     {
     public:
-      typedef boost::shared_ptr<Device> Ptr;
-      virtual ~Device() {}
+      typedef std::shared_ptr<Device> Ptr;
+      virtual ~Device() = default;
 
       /// Render single data chunk
       virtual void RenderData(const DataChunk& src) = 0;

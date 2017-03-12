@@ -14,6 +14,7 @@
 #include "storage.h"
 //common includes
 #include <error_tools.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
 #include <l10n/api.h>
@@ -24,7 +25,6 @@
 //boost includes
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
-#include <boost/make_shared.hpp>
 
 #define FILE_TAG A6428476
 
@@ -39,30 +39,30 @@ namespace Sound
   class StaticBackendInformation : public BackendInformation
   {
   public:
-    StaticBackendInformation(const String& id, const char* descr, uint_t caps, const Error& status)
-      : IdValue(id)
+    StaticBackendInformation(String id, const char* descr, uint_t caps, Error  status)
+      : IdValue(std::move(id))
       , DescrValue(descr)
       , CapsValue(caps)
-      , StatusValue(status)
+      , StatusValue(std::move(status))
     {
     }
 
-    virtual String Id() const
+    String Id() const override
     {
       return IdValue;
     }
 
-    virtual String Description() const
+    String Description() const override
     {
       return translate(DescrValue);
     }
 
-    virtual uint_t Capabilities() const
+    uint_t Capabilities() const override
     {
       return CapsValue;
     }
 
-    virtual Error Status() const
+    Error Status() const override
     {
       return StatusValue;
     }
@@ -76,24 +76,26 @@ namespace Sound
   class ServiceImpl : public Service, public BackendsStorage
   {
   public:
+    typedef std::shared_ptr<ServiceImpl> RWPtr;
+    
     explicit ServiceImpl(Parameters::Accessor::Ptr options)
-      : Options(options)
+      : Options(std::move(options))
     {
     }
 
-    virtual BackendInformation::Iterator::Ptr EnumerateBackends() const
+    BackendInformation::Iterator::Ptr EnumerateBackends() const override
     {
       return CreateRangedObjectIteratorAdapter(Infos.begin(), Infos.end());
     }
 
-    virtual Strings::Array GetAvailableBackends() const
+    Strings::Array GetAvailableBackends() const override
     {
       const Strings::Array order = GetOrder();
       Strings::Array available = GetAvailable();
       Strings::Array result;
-      for (Strings::Array::const_iterator it = order.begin(), lim = order.end(); it != lim; ++it)
+      for (const auto& id : order)
       {
-        const Strings::Array::iterator avIt = std::find(available.begin(), available.end(), *it);
+        const Strings::Array::iterator avIt = std::find(available.begin(), available.end(), id);
         if (avIt != available.end())
         {
           result.push_back(*avIt);
@@ -104,7 +106,7 @@ namespace Sound
       return result;
     }
 
-    virtual Backend::Ptr CreateBackend(const String& backendId, Module::Holder::Ptr module, BackendCallback::Ptr callback) const
+    Backend::Ptr CreateBackend(const String& backendId, Module::Holder::Ptr module, BackendCallback::Ptr callback) const override
     {
       try
       {
@@ -122,25 +124,25 @@ namespace Sound
       }
     }
 
-    virtual void Register(const String& id, const char* description, uint_t caps, BackendWorkerFactory::Ptr factory)
+    void Register(const String& id, const char* description, uint_t caps, BackendWorkerFactory::Ptr factory) override
     {
       Factories.push_back(FactoryWithId(id, factory));
-      const BackendInformation::Ptr info = boost::make_shared<StaticBackendInformation>(id, description, caps, Error());
+      const BackendInformation::Ptr info = MakePtr<StaticBackendInformation>(id, description, caps, Error());
       Infos.push_back(info);
       Dbg("Service(%1%): Registered backend %2%", this, id);
     }
 
-    virtual void Register(const String& id, const char* description, uint_t caps, const Error& status)
+    void Register(const String& id, const char* description, uint_t caps, const Error& status) override
     {
-      const BackendInformation::Ptr info = boost::make_shared<StaticBackendInformation>(id, description, caps, status);
+      const BackendInformation::Ptr info = MakePtr<StaticBackendInformation>(id, description, caps, status);
       Infos.push_back(info);
       Dbg("Service(%1%): Registered disabled backend %2%", this, id);
     }
 
-    virtual void Register(const String& id, const char* description, uint_t caps)
+    void Register(const String& id, const char* description, uint_t caps) override
     {
       const Error status = Error(THIS_LINE, translate("Not supported in current configuration"));
-      const BackendInformation::Ptr info = boost::make_shared<StaticBackendInformation>(id, description, caps, status);
+      const BackendInformation::Ptr info = MakePtr<StaticBackendInformation>(id, description, caps, status);
       Infos.push_back(info);
       Dbg("Service(%1%): Registered stub backend %2%", this, id);
     }
@@ -157,9 +159,8 @@ namespace Sound
     Strings::Array GetAvailable() const
     {
       Strings::Array ids;
-      for (std::vector<BackendInformation::Ptr>::const_iterator it = Infos.begin(), lim = Infos.end(); it != lim; ++it)
+      for (const auto& info : Infos)
       {
-        const BackendInformation::Ptr info = *it;
         if (!info->Status())
         {
           ids.push_back(info->Id());
@@ -187,9 +188,9 @@ namespace Sound
       {
       }
 
-      FactoryWithId(const String& id, BackendWorkerFactory::Ptr factory)
-        : Id(id)
-        , Factory(factory)
+      FactoryWithId(String id, BackendWorkerFactory::Ptr factory)
+        : Id(std::move(id))
+        , Factory(std::move(factory))
       {
       }
 
@@ -203,21 +204,21 @@ namespace Sound
 
   Service::Ptr CreateSystemService(Parameters::Accessor::Ptr options)
   {
-    const boost::shared_ptr<ServiceImpl> result = boost::make_shared<ServiceImpl>(options);
+    const ServiceImpl::RWPtr result = MakeRWPtr<ServiceImpl>(options);
     RegisterSystemBackends(*result);
     return result;
   }
 
   Service::Ptr CreateFileService(Parameters::Accessor::Ptr options)
   {
-    const boost::shared_ptr<ServiceImpl> result = boost::make_shared<ServiceImpl>(options);
+    const ServiceImpl::RWPtr result = MakeRWPtr<ServiceImpl>(options);
     RegisterFileBackends(*result);
     return result;
   }
 
   Service::Ptr CreateGlobalService(Parameters::Accessor::Ptr options)
   {
-    const boost::shared_ptr<ServiceImpl> result = boost::make_shared<ServiceImpl>(options);
+    const ServiceImpl::RWPtr result = MakeRWPtr<ServiceImpl>(options);
     RegisterAllBackends(*result);
     return result;
   }

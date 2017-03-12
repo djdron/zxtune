@@ -12,27 +12,28 @@
 #include "container.h"
 #include "lha_supp.h"
 #include "pack_utils.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <binary/input_stream.h>
 #include <debug/log.h>
 #include <formats/archived.h>
 //3rdparty includes
 #include <3rdparty/lhasa/lib/lha_decoder.h>
-//boost includes
-#include <boost/make_shared.hpp>
 
-namespace
+namespace Formats
 {
-  const Debug::Stream Dbg("Formats::Packed::Lha");
-}
-
+namespace Packed
+{
 namespace Lha
 {
+  const Debug::Stream Dbg("Formats::Packed::Lha");
+
   class Decompressor
   {
   public:
-    typedef boost::shared_ptr<const Decompressor> Ptr;
-    virtual ~Decompressor() {}
+    typedef std::shared_ptr<const Decompressor> Ptr;
+    virtual ~Decompressor() = default;
 
     virtual Formats::Packed::Container::Ptr Decode(const Binary::Container& rawData, std::size_t outputSize) const = 0;
   };
@@ -45,16 +46,16 @@ namespace Lha
     {
     }
 
-    virtual Formats::Packed::Container::Ptr Decode(const Binary::Container& rawData, std::size_t outputSize) const
+    Formats::Packed::Container::Ptr Decode(const Binary::Container& rawData, std::size_t outputSize) const override
     {
       Binary::InputStream input(rawData);
-      const boost::shared_ptr<LHADecoder> decoder(::lha_decoder_new(Type, &ReadData, &input, outputSize), &::lha_decoder_free);
-      std::auto_ptr<Dump> result(new Dump(outputSize));
+      const std::shared_ptr<LHADecoder> decoder(::lha_decoder_new(Type, &ReadData, &input, outputSize), &::lha_decoder_free);
+      std::unique_ptr<Dump> result(new Dump(outputSize));
       if (const std::size_t decoded = ::lha_decoder_read(decoder.get(), &result->front(), outputSize))
       {
         const std::size_t originalSize = input.GetPosition();
         Dbg("Decoded %1% -> %2% bytes", originalSize, outputSize);
-        return CreatePackedContainer(result, originalSize);
+        return CreateContainer(std::move(result), originalSize);
       }
       return Formats::Packed::Container::Ptr();
     }
@@ -72,42 +73,35 @@ namespace Lha
   {
     if (LHADecoderType* type = ::lha_decoder_for_name(const_cast<char*>(method.c_str())))
     {
-      return boost::make_shared<LHADecompressor>(type);
+      return MakePtr<LHADecompressor>(type);
     }
     return Decompressor::Ptr();
   }
-}
 
-namespace Formats
-{
-  namespace Packed
+  Formats::Packed::Container::Ptr DecodeRawData(const Binary::Container& input, const std::string& method, std::size_t outputSize)
   {
-    namespace Lha
+    if (Formats::Packed::Container::Ptr result = DecodeRawDataAtLeast(input, method, outputSize))
     {
-      Formats::Packed::Container::Ptr DecodeRawData(const Binary::Container& input, const std::string& method, std::size_t outputSize)
+      const std::size_t decoded = result->Size();
+      if (decoded == outputSize)
       {
-        if (Formats::Packed::Container::Ptr result = DecodeRawDataAtLeast(input, method, outputSize))
-        {
-          const std::size_t decoded = result->Size();
-          if (decoded == outputSize)
-          {
-            return result;
-          }
-          const std::size_t originalSize = result->PackedSize();
-          Dbg("Output size mismatch while decoding %1% -> %2% (%3% required)", originalSize, decoded, outputSize);
-        }
-        return Formats::Packed::Container::Ptr();
+        return result;
       }
-
-      Formats::Packed::Container::Ptr DecodeRawDataAtLeast(const Binary::Container& input, const std::string& method, std::size_t sizeHint)
-      {
-        if (const ::Lha::Decompressor::Ptr decompressor = ::Lha::CreateDecompressor(method))
-        {
-          return decompressor->Decode(input, sizeHint);
-        }
-        return Formats::Packed::Container::Ptr();
-      }
+      const std::size_t originalSize = result->PackedSize();
+      Dbg("Output size mismatch while decoding %1% -> %2% (%3% required)", originalSize, decoded, outputSize);
     }
+    return Formats::Packed::Container::Ptr();
   }
-}
+
+  Formats::Packed::Container::Ptr DecodeRawDataAtLeast(const Binary::Container& input, const std::string& method, std::size_t sizeHint)
+  {
+    if (const Lha::Decompressor::Ptr decompressor = Lha::CreateDecompressor(method))
+    {
+      return decompressor->Decode(input, sizeHint);
+    }
+    return Formats::Packed::Container::Ptr();
+  }
+}//namespace Lha
+}//namespace Packed
+}//namespace Formats
 

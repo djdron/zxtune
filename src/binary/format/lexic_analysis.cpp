@@ -12,31 +12,28 @@
 #include "lexic_analysis.h"
 //common includes
 #include <contract.h>
+#include <make_ptr.h>
 //std includes
+#include <algorithm>
+#include <functional>
 #include <list>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/mem_fn.hpp>
+#include <vector>
 
-namespace
+namespace LexicalAnalysis
 {
-  struct TokensSet
+  class TokensSet
   {
-    typedef boost::shared_ptr<const TokensSet> Ptr;
+  public:
+    typedef std::unique_ptr<const TokensSet> Ptr;
+    typedef std::unique_ptr<TokensSet> RWPtr;
 
-    std::string Lexeme;
-    LexicalAnalysis::TokenTypesSet Types;
-
-    void Add(const std::string& lexeme, LexicalAnalysis::TokenType type)
+    explicit TokensSet(std::string lexeme)
+      : Lexeme(std::move(lexeme))
     {
-      if (Empty())
-      {
-        Lexeme = lexeme;
-      }
-      else
-      {
-        Require(Lexeme == lexeme);
-      }
+    }
+
+    void Add(TokenType type)
+    {
       Types.Add(type);
     }
 
@@ -44,8 +41,13 @@ namespace
     {
       return Types.Empty();
     }
+    
+    std::size_t LexemeSize() const
+    {
+      return Lexeme.size();
+    }
 
-    void Report(LexicalAnalysis::Grammar::Callback& cb) const
+    void Report(Grammar::Callback& cb) const
     {
       Require(!Empty());
       if (Types.Size() == 1)
@@ -57,27 +59,27 @@ namespace
         cb.MultipleTokensMatched(Lexeme, Types);
       }
     }
+  private:
+    const std::string Lexeme;
+    TokenTypesSet Types;
   };
-}
 
-namespace LexicalAnalysis
-{
   class ContextIndependentGrammar : public Grammar
   {
   public:
-    virtual void AddTokenizer(Tokenizer::Ptr src)
+    void AddTokenizer(Tokenizer::Ptr src) override
     {
-      Sources.push_back(src);
+      Sources.push_back(std::move(src));
     }
 
-    virtual void Analyse(const std::string& notation, Callback& cb) const
+    void Analyse(const std::string& notation, Callback& cb) const override
     {
       for (std::string::const_iterator cursor = notation.begin(), lim = notation.end(); cursor != lim; )
       {
         if (const TokensSet::Ptr tokens = ExtractLongestTokens(cursor, lim))
         {
           tokens->Report(cb);
-          cursor += tokens->Lexeme.size();
+          cursor += tokens->LexemeSize();
         }
         else
         {
@@ -89,48 +91,48 @@ namespace LexicalAnalysis
   private:
     TokensSet::Ptr ExtractLongestTokens(std::string::const_iterator lexemeStart, std::string::const_iterator lim) const
     {
-      std::list<boost::shared_ptr<TokensSet> > context;
-      std::list<Tokenizer::Ptr> candidates = Sources;
+      TokensSet::Ptr result;
+      std::vector<const Tokenizer*> candidates(Sources.size());
+      std::transform(Sources.begin(), Sources.end(), candidates.begin(), std::mem_fun_ref(&Tokenizer::Ptr::get));
       for (std::string::const_iterator lexemeEnd = lexemeStart + 1; !candidates.empty(); ++lexemeEnd)
       {
         const std::string lexeme(lexemeStart, lexemeEnd);
-        context.push_back(boost::make_shared<TokensSet>());
-        TokensSet& target = *context.back();
-        for (std::list<Tokenizer::Ptr>::iterator tokIt = candidates.begin(), tokLim = candidates.end(); tokIt != tokLim;)
+        auto tokens = MakeRWPtr<TokensSet>(lexeme);
+        std::vector<const Tokenizer*> passedCandidates;
+        passedCandidates.reserve(candidates.size());
+        for (const auto tokenizer : candidates)
         {
-          const Tokenizer::Ptr tokenizer = *tokIt;
           switch (const TokenType result = tokenizer->Parse(lexeme))
           {
           case INVALID_TOKEN:
-            tokIt = candidates.erase(tokIt);
             break;
           case INCOMPLETE_TOKEN:
-            ++tokIt;
+            passedCandidates.push_back(tokenizer);
             break;
           default:
-            target.Add(lexeme, result);
-            ++tokIt;
+            tokens->Add(result);
+            passedCandidates.push_back(tokenizer);
             break;
           }
+        }
+        if (!tokens->Empty())
+        {
+          result = std::move(tokens);
         }
         if (lexemeEnd == lim)
         {
           break;
         }
+        candidates = std::move(passedCandidates);
       }
-      context.remove_if(boost::mem_fn(&TokensSet::Empty));
-      if (context.empty())
-      {
-        return TokensSet::Ptr();
-      }
-      return context.back();
+      return result;
     }
   private:
-    std::list<Tokenizer::Ptr> Sources;
+    std::vector<Tokenizer::Ptr> Sources;
   };
 
   Grammar::RWPtr CreateContextIndependentGrammar()
   {
-    return boost::make_shared<ContextIndependentGrammar>();
+    return MakeRWPtr<ContextIndependentGrammar>();
   }
 }

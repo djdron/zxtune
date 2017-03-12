@@ -23,6 +23,7 @@
 #include "ui/tools/parameters_helpers.h"
 //common includes
 #include <contract.h>
+#include <make_ptr.h>
 //library includes
 #include <io/api.h>
 #include <io/providers_parameters.h>
@@ -30,7 +31,6 @@
 #include <sound/backends_parameters.h>
 //boost includes
 #include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
 //qt includes
 #include <QtCore/QThread>
 #include <QtGui/QCloseEvent>
@@ -54,7 +54,7 @@ namespace
   
   Playlist::Item::Conversion::Options::Ptr CreateOptions(const String& type, const QString& filenameTemplate, Parameters::Accessor::Ptr params)
   {
-    return boost::make_shared<Playlist::Item::Conversion::Options>(type, FromQString(filenameTemplate), params);
+    return MakePtr<Playlist::Item::Conversion::Options>(type, FromQString(filenameTemplate), params);
   }
 
   class SetupConversionDialogImpl : public UI::SetupConversionDialog
@@ -91,7 +91,7 @@ namespace
       State->Load();
     }
 
-    virtual Playlist::Item::Conversion::Options::Ptr Execute()
+    Playlist::Item::Conversion::Options::Ptr Execute() override
     {
       if (exec())
       {
@@ -103,7 +103,7 @@ namespace
       }
     }
 
-    virtual void UpdateDescriptions()
+    void UpdateDescriptions() override
     {
       UpdateTargetDescription();
       UpdateFormatDescription();
@@ -111,7 +111,7 @@ namespace
     }
 
     //QWidgets virtuals
-    virtual void closeEvent(QCloseEvent* event)
+    void closeEvent(QCloseEvent* event) override
     {
       State->Save();
       event->accept();
@@ -216,10 +216,10 @@ namespace
     void AddSoundTypes()
     {
       const Strings::Array& types = UI::SupportedFormatsWidget::GetSoundTypes();
-      for (Strings::Array::const_iterator it = types.begin(), lim = types.end(); it != lim; ++it)
+      for (const auto &type : types)
       {
-        Types.push_back(*it);
-        Filters << MakeFilter(ToQString(*it));
+        Types.push_back(type);
+        Filters << MakeFilter(ToQString(type));
       }
     }
     
@@ -253,7 +253,7 @@ namespace UI
 
   SetupConversionDialog::Ptr SetupConversionDialog::Create(QWidget& parent)
   {
-    return SetupConversionDialog::Ptr(new SetupConversionDialogImpl(parent));
+    return MakePtr<SetupConversionDialogImpl>(parent);
   }
   
   Playlist::Item::Conversion::Options::Ptr GetExportParameters(QWidget& parent)

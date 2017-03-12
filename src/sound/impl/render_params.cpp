@@ -8,11 +8,13 @@
 *
 **/
 
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <sound/render_params.h>
 #include <sound/sound_parameters.h>
-//boost includes
-#include <boost/make_shared.hpp>
+
+#include <utility>
 
 namespace Sound
 {
@@ -20,34 +22,34 @@ namespace Sound
   {
   public:
     explicit RenderParametersImpl(Parameters::Accessor::Ptr params)
-      : Params(params)
+      : Params(std::move(params))
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return Params->Version();
     }
 
-    virtual uint_t SoundFreq() const
+    uint_t SoundFreq() const override
     {
       using namespace Parameters::ZXTune::Sound;
       return static_cast<uint_t>(FoundProperty(FREQUENCY, FREQUENCY_DEFAULT));
     }
 
-    virtual Time::Microseconds FrameDuration() const
+    Time::Microseconds FrameDuration() const override
     {
       using namespace Parameters::ZXTune::Sound;
       return Time::Microseconds(FoundProperty(FRAMEDURATION, FRAMEDURATION_DEFAULT));
     }
 
-    virtual bool Looped() const
+    bool Looped() const override
     {
       using namespace Parameters::ZXTune::Sound;
       return 0 != FoundProperty(LOOPED, 0);
     }
 
-    virtual uint_t SamplesPerFrame() const
+    uint_t SamplesPerFrame() const override
     {
       const uint_t freq = SoundFreq();
       const Time::Microseconds frameDuration = FrameDuration();
@@ -69,7 +71,7 @@ namespace Sound
 {
   RenderParameters::Ptr RenderParameters::Create(Parameters::Accessor::Ptr soundParameters)
   {
-    return boost::make_shared<RenderParametersImpl>(soundParameters);
+    return MakePtr<RenderParametersImpl>(soundParameters);
   }
 
   Time::Microseconds GetFrameDuration(const Parameters::Accessor& params)

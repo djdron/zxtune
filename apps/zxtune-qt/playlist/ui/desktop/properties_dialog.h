@@ -27,7 +27,7 @@ namespace Playlist
     protected:
       explicit PropertiesDialog(QWidget& parent);
     public:
-      typedef boost::shared_ptr<PropertiesDialog> Ptr;
+      typedef std::shared_ptr<PropertiesDialog> Ptr;
 
       static Ptr Create(QWidget& parent, Item::Data::Ptr item);
     private slots:
@@ -36,6 +36,6 @@ namespace Playlist
       void ResetToDefaults();
     };
 
-    void ExecutePropertiesDialog(QWidget& parent, Model::Ptr model, Playlist::Model::IndexSetPtr scope);
+    void ExecutePropertiesDialog(QWidget& parent, Model::Ptr model, Playlist::Model::IndexSet::Ptr scope);
   }
 }

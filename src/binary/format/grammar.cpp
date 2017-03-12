@@ -12,15 +12,14 @@
 #include "grammar.h"
 //common includes
 #include <pointers.h>
+#include <make_ptr.h>
 //std includes
 #include <cctype>
-//boost includes
-#include <boost/make_shared.hpp>
 
-namespace
+namespace Binary
 {
-  using namespace Binary;
-
+namespace FormatDSL
+{
   const std::string BINDIGITS("01");
   const std::string DIGITS = BINDIGITS + "23456789";
   const std::string HEXDIGITS = DIGITS + "abcdefABCDEF";
@@ -28,7 +27,7 @@ namespace
   class SpaceDelimitersTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       static const std::string SPACES(" \n\t\r");
       return lexeme.empty() || lexeme.npos != lexeme.find_first_not_of(SPACES)
@@ -40,7 +39,7 @@ namespace
   class SymbolDelimitersTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       static const char DELIMITERS[] = {DELIMITER_TEXT, 0};
       return lexeme.size() != 1 || lexeme.npos != lexeme.find_first_not_of(DELIMITERS)
@@ -52,7 +51,7 @@ namespace
   class DecimalNumbersTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       return lexeme.empty() || lexeme.npos != lexeme.find_first_not_of(DIGITS)
         ? LexicalAnalysis::INVALID_TOKEN
@@ -63,7 +62,7 @@ namespace
   class CharacterTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       return lexeme.empty() || lexeme[0] != SYMBOL_TEXT
         ? LexicalAnalysis::INVALID_TOKEN
@@ -74,7 +73,7 @@ namespace
   class AnyMaskTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       static const char MASKS[] = {ANY_BYTE_TEXT, 0};
       return lexeme.size() != 1 || lexeme.npos != lexeme.find_first_not_of(MASKS)
@@ -86,7 +85,7 @@ namespace
   class BinaryMaskTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       static const std::string ANY_BITS = std::string(1, ANY_BIT_TEXT) + char(std::toupper(ANY_BIT_TEXT));
       static const std::string BITMATCHES = BINDIGITS + ANY_BITS;
@@ -109,7 +108,7 @@ namespace
   class HexadecimalMaskTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       static const std::string ANY_NIBBLES = std::string(1, ANY_NIBBLE_TEXT) + char(std::toupper(ANY_NIBBLE_TEXT));
       static const std::string HEX_TOKENS = HEXDIGITS + ANY_NIBBLES;
@@ -131,7 +130,7 @@ namespace
   class MultiplicityMaskTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       if (lexeme.empty() || lexeme[0] != MULTIPLICITY_TEXT)
       {
@@ -153,7 +152,7 @@ namespace
   class OperationTokenizer : public LexicalAnalysis::Tokenizer
   {
   public:
-    virtual LexicalAnalysis::TokenType Parse(const std::string& lexeme) const
+    LexicalAnalysis::TokenType Parse(const std::string& lexeme) const override
     {
       static const char OPERATIONS[] = {RANGE_TEXT, CONJUNCTION_TEXT, DISJUNCTION_TEXT,
         QUANTOR_BEGIN, QUANTOR_END, GROUP_BEGIN, GROUP_END, 0};
@@ -169,23 +168,23 @@ namespace
     FormatGrammar()
       : Delegate(LexicalAnalysis::CreateContextIndependentGrammar())
     {
-      Delegate->AddTokenizer(boost::make_shared<SpaceDelimitersTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<SymbolDelimitersTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<DecimalNumbersTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<CharacterTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<AnyMaskTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<BinaryMaskTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<HexadecimalMaskTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<MultiplicityMaskTokenizer>());
-      Delegate->AddTokenizer(boost::make_shared<OperationTokenizer>());
+      Delegate->AddTokenizer(MakePtr<SpaceDelimitersTokenizer>());
+      Delegate->AddTokenizer(MakePtr<SymbolDelimitersTokenizer>());
+      Delegate->AddTokenizer(MakePtr<DecimalNumbersTokenizer>());
+      Delegate->AddTokenizer(MakePtr<CharacterTokenizer>());
+      Delegate->AddTokenizer(MakePtr<AnyMaskTokenizer>());
+      Delegate->AddTokenizer(MakePtr<BinaryMaskTokenizer>());
+      Delegate->AddTokenizer(MakePtr<HexadecimalMaskTokenizer>());
+      Delegate->AddTokenizer(MakePtr<MultiplicityMaskTokenizer>());
+      Delegate->AddTokenizer(MakePtr<OperationTokenizer>());
     }
 
-    void AddTokenizer(LexicalAnalysis::Tokenizer::Ptr tokenizer)
+    void AddTokenizer(LexicalAnalysis::Tokenizer::Ptr tokenizer) override
     {
-      return Delegate->AddTokenizer(tokenizer);
+      return Delegate->AddTokenizer(std::move(tokenizer));
     }
 
-    virtual void Analyse(const std::string& notation, LexicalAnalysis::Grammar::Callback& cb) const
+    void Analyse(const std::string& notation, LexicalAnalysis::Grammar::Callback& cb) const override
     {
       return Delegate->Analyse(notation, cb);
     }
@@ -193,12 +192,16 @@ namespace
     const LexicalAnalysis::Grammar::RWPtr Delegate;
   };
 }
+}
 
 namespace Binary
+{
+namespace FormatDSL
 {
   LexicalAnalysis::Grammar::Ptr CreateFormatGrammar()
   {
     static FormatGrammar grammar;
     return MakeSingletonPointer(grammar);
   }
+}
 }

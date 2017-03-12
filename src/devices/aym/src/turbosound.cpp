@@ -11,10 +11,12 @@
 //local includes
 #include "psg.h"
 #include "soundchip.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <devices/turbosound.h>
-//boost includes
-#include <boost/make_shared.hpp>
+//std includes
+#include <utility>
 
 namespace Devices
 {
@@ -83,12 +85,12 @@ namespace TurboSound
   {
   public:
     explicit HalfLevelMixer(MixerType::Ptr delegate)
-      : Delegate(delegate)
+      : Delegate(std::move(delegate))
       , DelegateRef(*Delegate)
     {
     }
 
-    virtual Sound::Sample ApplyData(const MixerType::InDataType& in) const
+    Sound::Sample ApplyData(const MixerType::InDataType& in) const override
     {
       const Sound::Sample out = DelegateRef.ApplyData(in);
       return Sound::Sample(out.Left() / 2, out.Right() / 2);
@@ -100,8 +102,8 @@ namespace TurboSound
 
   Chip::Ptr CreateChip(ChipParameters::Ptr params, MixerType::Ptr mixer, Sound::Receiver::Ptr target)
   {
-    const MixerType::Ptr halfMixer = boost::make_shared<HalfLevelMixer>(mixer);
-    return boost::make_shared<AYM::SoundChip<Traits> >(params, halfMixer, target);
+    const MixerType::Ptr halfMixer = MakePtr<HalfLevelMixer>(mixer);
+    return MakePtr<AYM::SoundChip<Traits> >(params, halfMixer, target);
   }
 }
 }

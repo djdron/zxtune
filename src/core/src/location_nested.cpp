@@ -10,35 +10,35 @@
 
 //local includes
 #include "location.h"
-//boost includes
-#include <boost/make_shared.hpp>
+//common includes
+#include <make_ptr.h>
+//std includes
+#include <utility>
 
-namespace
+namespace ZXTune
 {
-  using namespace ZXTune;
-
   class NestedLocation : public DataLocation
   {
   public:
-    NestedLocation(DataLocation::Ptr parent, const String& subPlugin, Binary::Container::Ptr subData, const String& subPath)
-      : Parent(parent)
-      , SubData(subData)
-      , SubPlugin(subPlugin)
-      , Subpath(subPath)
+    NestedLocation(DataLocation::Ptr parent, String subPlugin, Binary::Container::Ptr subData, String subPath)
+      : Parent(std::move(parent))
+      , SubData(std::move(subData))
+      , SubPlugin(std::move(subPlugin))
+      , Subpath(std::move(subPath))
     {
     }
 
-    virtual Binary::Container::Ptr GetData() const
+    Binary::Container::Ptr GetData() const override
     {
       return SubData;
     }
 
-    virtual Analysis::Path::Ptr GetPath() const
+    Analysis::Path::Ptr GetPath() const override
     {
       return Parent->GetPath()->Append(Subpath);
     }
 
-    virtual Analysis::Path::Ptr GetPluginsChain() const
+    Analysis::Path::Ptr GetPluginsChain() const override
     {
       return Parent->GetPluginsChain()->Append(SubPlugin);
     }
@@ -55,6 +55,6 @@ namespace ZXTune
   DataLocation::Ptr CreateNestedLocation(DataLocation::Ptr parent, Binary::Container::Ptr subData, const String& subPlugin, const String& subPath)
   {
     assert(subData);
-    return boost::make_shared<NestedLocation>(parent, subPlugin, subData, subPath);
+    return MakePtr<NestedLocation>(parent, subPlugin, subData, subPath);
   }
 }

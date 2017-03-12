@@ -17,6 +17,7 @@
 //common includes
 #include <contract.h>
 #include <error_tools.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
 #include <l10n/api.h>
@@ -28,10 +29,6 @@
 //std includes
 #include <algorithm>
 #include <cstring>
-//boost includes
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/weak_ptr.hpp>
 //text includes
 #include "text/backends.h"
 
@@ -82,15 +79,14 @@ namespace Win32
       }
     }
   private:
-    const boost::shared_ptr<void> Handle;
+    const std::shared_ptr<void> Handle;
   };
 
   //lightweight wrapper around HWAVEOUT handle
   class WaveOutDevice
   {
   public:
-    typedef boost::shared_ptr<WaveOutDevice> Ptr;
-    typedef boost::weak_ptr<WaveOutDevice> WeakPtr;
+    typedef std::shared_ptr<WaveOutDevice> Ptr;
 
     WaveOutDevice(Api::Ptr api, const ::WAVEFORMATEX& format, UINT device)
       : WinApi(api)
@@ -194,7 +190,7 @@ namespace Win32
   class WaveTarget
   {
   public:
-    typedef boost::shared_ptr<WaveTarget> Ptr;
+    typedef std::shared_ptr<WaveTarget> Ptr;
     virtual ~WaveTarget() {}
 
     virtual void Write(const Chunk& buf) = 0;
@@ -308,7 +304,7 @@ namespace Win32
     {
       for (BuffersArray::iterator it = Buffers.begin(), lim = Buffers.end(); it != lim; ++it)
       {
-        *it = boost::make_shared<WaveBuffer>(device);
+        *it = MakePtr<WaveBuffer>(device);
       }
     }
 
@@ -353,8 +349,8 @@ namespace Win32
 
     virtual Gain GetVolume() const
     {
-      boost::array<uint16_t, Sample::CHANNELS> buffer;
-      BOOST_STATIC_ASSERT(sizeof(buffer) == sizeof(DWORD));
+      std::array<uint16_t, Sample::CHANNELS> buffer;
+      static_assert(sizeof(buffer) == sizeof(DWORD), "Incompatible sound sample type");
       Device->GetVolume(safe_ptr_cast<LPDWORD>(&buffer[0]));
       const Gain::Type l(int_t(buffer[0]), MAX_WIN32_VOLUME);
       const Gain::Type r(int_t(buffer[1]), MAX_WIN32_VOLUME);
@@ -367,12 +363,12 @@ namespace Win32
       {
         throw Error(THIS_LINE, translate("Failed to set volume: gain is out of range."));
       }
-      boost::array<uint16_t, Sample::CHANNELS> buffer =
+      std::array<uint16_t, Sample::CHANNELS> buffer =
       {{
         static_cast<uint16_t>((volume.Left() * MAX_WIN32_VOLUME).Round()),
         static_cast<uint16_t>((volume.Right() * MAX_WIN32_VOLUME).Round())
       }};
-      BOOST_STATIC_ASSERT(sizeof(buffer) == sizeof(DWORD));
+      static_assert(sizeof(buffer) == sizeof(DWORD), "Incompatible sound sample type");
       Device->SetVolume(*safe_ptr_cast<LPDWORD>(&buffer[0]));
     }
   private:
@@ -488,9 +484,9 @@ namespace Win32
     {
       WaveOutObjects res;
       const BackendParameters params(*BackendParams);
-      res.Device = boost::make_shared<WaveOutDevice>(WinApi, GetFormat(), params.GetDevice());
-      res.Target = boost::make_shared<CycledWaveBuffer>(res.Device, params.GetBuffers());
-      res.Volume = boost::make_shared<VolumeControl>(res.Device);
+      res.Device = MakePtr<WaveOutDevice>(WinApi, GetFormat(), params.GetDevice());
+      res.Target = MakePtr<CycledWaveBuffer>(res.Device, params.GetBuffers());
+      res.Volume = MakePtr<VolumeControl>(res.Device);
       return res;
     }
   private:
@@ -510,7 +506,7 @@ namespace Win32
 
     virtual BackendWorker::Ptr CreateWorker(Parameters::Accessor::Ptr params, Module::Holder::Ptr /*holder*/) const
     {
-      return boost::make_shared<BackendWorker>(WinApi, params);
+      return MakePtr<BackendWorker>(WinApi, params);
     }
   private:
     const Api::Ptr WinApi;
@@ -572,7 +568,7 @@ namespace Win32
     virtual Device::Ptr Get() const
     {
       return IsValid()
-        ? boost::make_shared<WaveDevice>(WinApi, Current)
+        ? MakePtr<WaveDevice>(WinApi, Current)
         : Device::Ptr();
     }
 
@@ -600,7 +596,7 @@ namespace Sound
       const Win32::Api::Ptr api = Win32::LoadDynamicApi();
       if (Win32::DevicesIterator(api).IsValid())
       {
-        const BackendWorkerFactory::Ptr factory = boost::make_shared<Win32::BackendWorkerFactory>(api);
+        const BackendWorkerFactory::Ptr factory = MakePtr<Win32::BackendWorkerFactory>(api);
         storage.Register(Win32::ID, Win32::DESCRIPTION, Win32::CAPABILITIES, factory);
       }
       else
@@ -621,7 +617,7 @@ namespace Sound
       try
       {
         const Api::Ptr api = LoadDynamicApi();
-        return Device::Iterator::Ptr(new DevicesIterator(api));
+        return MakePtr<DevicesIterator>(api);
       }
       catch (const Error& e)
       {

@@ -10,43 +10,44 @@
 
 //common includes
 #include <error.h>
+#include <make_ptr.h>
 //library includes
 #include <async/coroutine.h>
 #include <async/worker.h>
-//boost includes
-#include <boost/make_shared.hpp>
+//std includes
+#include <utility>
 
-namespace
+namespace Async
 {
-  class WorkerCoroutine : public Async::Coroutine
+  class WorkerCoroutine : public Coroutine
   {
   public:
-    explicit WorkerCoroutine(Async::Worker::Ptr worker)
-      : Delegate(worker)
+    explicit WorkerCoroutine(Worker::Ptr worker)
+      : Delegate(std::move(worker))
     {
     }
 
-    virtual void Initialize()
+    void Initialize() override
     {
       return Delegate->Initialize();
     }
 
-    virtual void Finalize()
+    void Finalize() override
     {
       return Delegate->Finalize();
     }
 
-    virtual void Suspend()
+    void Suspend() override
     {
       return Delegate->Suspend();
     }
 
-    virtual void Resume()
+    void Resume() override
     {
       return Delegate->Resume();
     }
 
-    virtual void Execute(Async::Scheduler& sch)
+    void Execute(Scheduler& sch) override
     {
       while (!Delegate->IsFinished())
       {
@@ -55,7 +56,7 @@ namespace
       }
     }
   private:
-    const Async::Worker::Ptr Delegate;
+    const Worker::Ptr Delegate;
   };
 }
 
@@ -63,7 +64,7 @@ namespace Async
 {
   Job::Ptr CreateJob(Worker::Ptr worker)
   {
-    const Coroutine::Ptr routine = boost::make_shared<WorkerCoroutine>(worker);
+    const Coroutine::Ptr routine = MakePtr<WorkerCoroutine>(worker);
     return CreateJob(routine);
   }
 }

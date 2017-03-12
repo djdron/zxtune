@@ -8,17 +8,16 @@
 *
 **/
 
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <parameters/container.h>
 //std includes
 #include <map>
-//boost includes
-#include <boost/make_shared.hpp>
+#include <utility>
 
-namespace
+namespace Parameters
 {
-  using namespace Parameters;
-
   template<class T>
   bool FindByName(const std::map<NameType, T>& map, const NameType& name, T& res)
   {
@@ -37,44 +36,44 @@ namespace
     }
 
     //accessor virtuals
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return VersionValue;
     }
 
-    virtual bool FindValue(const NameType& name, IntType& val) const
+    bool FindValue(const NameType& name, IntType& val) const override
     {
       return FindByName(Integers, name, val);
     }
 
-    virtual bool FindValue(const NameType& name, StringType& val) const
+    bool FindValue(const NameType& name, StringType& val) const override
     {
       return FindByName(Strings, name, val);
     }
 
-    virtual bool FindValue(const NameType& name, DataType& val) const
+    bool FindValue(const NameType& name, DataType& val) const override
     {
       return FindByName(Datas, name, val);
     }
 
-    virtual void Process(Visitor& visitor) const
+    void Process(Visitor& visitor) const override
     {
-      for (IntegerMap::const_iterator it = Integers.begin(), lim = Integers.end(); it != lim; ++it)
+      for (const auto& i : Integers)
       {
-        visitor.SetValue(it->first, it->second);
+        visitor.SetValue(i.first, i.second);
       }
-      for (StringMap::const_iterator it = Strings.begin(), lim = Strings.end(); it != lim; ++it)
+      for (const auto& s : Strings)
       {
-        visitor.SetValue(it->first, it->second);
+        visitor.SetValue(s.first, s.second);
       }
-      for (DataMap::const_iterator it = Datas.begin(), lim = Datas.end(); it != lim; ++it)
+      for (const auto& d : Datas)
       {
-        visitor.SetValue(it->first, it->second);
+        visitor.SetValue(d.first, d.second);
       }
     }
 
     //visitor virtuals
-    virtual void SetValue(const NameType& name, IntType val)
+    void SetValue(const NameType& name, IntType val) override
     {
       if (Set(Integers[name], val) | Strings.erase(name) | Datas.erase(name))
       {
@@ -82,7 +81,7 @@ namespace
       }
     }
 
-    virtual void SetValue(const NameType& name, const StringType& val)
+    void SetValue(const NameType& name, const StringType& val) override
     {
       if (Integers.erase(name) | Set(Strings[name], val) | Datas.erase(name))
       {
@@ -90,7 +89,7 @@ namespace
       }
     }
 
-    virtual void SetValue(const NameType& name, const DataType& val)
+    void SetValue(const NameType& name, const DataType& val) override
     {
       if (Integers.erase(name) | Strings.erase(name) | Set(Datas[name], val))
       {
@@ -99,7 +98,7 @@ namespace
     }
 
     //modifier virtuals
-    virtual void RemoveValue(const NameType& name)
+    void RemoveValue(const NameType& name) override
     {
       if (Integers.erase(name) | Strings.erase(name) | Datas.erase(name))
       {
@@ -140,55 +139,55 @@ namespace
   {
   public:
     CompositeContainer(Accessor::Ptr accessor, Modifier::Ptr modifier)
-      : AccessDelegate(accessor)
-      , ModifyDelegate(modifier)
+      : AccessDelegate(std::move(accessor))
+      , ModifyDelegate(std::move(modifier))
     {
     }
 
     //accessor virtuals
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return AccessDelegate->Version();
     }
 
-    virtual bool FindValue(const NameType& name, IntType& val) const
+    bool FindValue(const NameType& name, IntType& val) const override
     {
       return AccessDelegate->FindValue(name, val);
     }
 
-    virtual bool FindValue(const NameType& name, StringType& val) const
+    bool FindValue(const NameType& name, StringType& val) const override
     {
       return AccessDelegate->FindValue(name, val);
     }
 
-    virtual bool FindValue(const NameType& name, DataType& val) const
+    bool FindValue(const NameType& name, DataType& val) const override
     {
       return AccessDelegate->FindValue(name, val);
     }
 
-    virtual void Process(Visitor& visitor) const
+    void Process(Visitor& visitor) const override
     {
       return AccessDelegate->Process(visitor);
     }
 
     //visitor virtuals
-    virtual void SetValue(const NameType& name, IntType val)
+    void SetValue(const NameType& name, IntType val) override
     {
       return ModifyDelegate->SetValue(name, val);
     }
 
-    virtual void SetValue(const NameType& name, const StringType& val)
+    void SetValue(const NameType& name, const StringType& val) override
     {
       return ModifyDelegate->SetValue(name, val);
     }
 
-    virtual void SetValue(const NameType& name, const DataType& val)
+    void SetValue(const NameType& name, const DataType& val) override
     {
       return ModifyDelegate->SetValue(name, val);
     }
 
     //modifier virtuals
-    virtual void RemoveValue(const NameType& name)
+    void RemoveValue(const NameType& name) override
     {
       return ModifyDelegate->RemoveValue(name);
     }
@@ -196,17 +195,14 @@ namespace
     const Accessor::Ptr AccessDelegate;
     const Modifier::Ptr ModifyDelegate;
   };
-}
 
-namespace Parameters
-{
   Container::Ptr Container::Create()
   {
-    return boost::make_shared<StorageContainer>();
+    return MakePtr<StorageContainer>();
   }
 
   Container::Ptr Container::CreateAdapter(Accessor::Ptr accessor, Modifier::Ptr modifier)
   {
-    return boost::make_shared<CompositeContainer>(accessor, modifier);
+    return MakePtr<CompositeContainer>(std::move(accessor), std::move(modifier));
   }
 }

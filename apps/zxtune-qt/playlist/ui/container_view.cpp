@@ -24,6 +24,7 @@
 //common includes
 #include <contract.h>
 #include <error.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
 //std includes
@@ -49,18 +50,18 @@ namespace
       GetNext();
     }
 
-    virtual bool IsValid() const
+    bool IsValid() const override
     {
-      return Current.get() != 0;
+      return Current.get() != nullptr;
     }
 
-    virtual Playlist::Controller::Ptr Get() const
+    Playlist::Controller::Ptr Get() const override
     {
       assert(IsValid());
       return Current;
     }
 
-    virtual void Next()
+    void Next() override
     {
       assert(IsValid());
       GetNext();
@@ -87,9 +88,9 @@ namespace
   {
     const QDir appDir(QCoreApplication::applicationDirPath());
     const QFileInfoList files = appDir.entryInfoList(QStringList("*.xspf"), QDir::Files | QDir::Readable, QDir::Name);
-    for (QFileInfoList::const_iterator it = files.begin(), lim = files.end(); it != lim; ++it)
+    for (const auto& file : files)
     {
-      container.OpenPlaylist(it->absoluteFilePath());
+      container.OpenPlaylist(file.absoluteFilePath());
     }
   }
 
@@ -103,7 +104,7 @@ namespace
       , Container(Playlist::Container::Create(parameters))
       , Session(Playlist::Session::Create())
       , ActionsMenu(new QMenu(this))
-      , ActivePlaylistView(0)
+      , ActivePlaylistView(nullptr)
     {
       //setup self
       setupUi(this);
@@ -128,12 +129,12 @@ namespace
       Dbg("Created at %1%", this);
     }
 
-    virtual ~ContainerViewImpl()
+    ~ContainerViewImpl() override
     {
       Dbg("Destroyed at %1%", this);
     }
 
-    virtual void Setup()
+    void Setup() override
     {
       if (Session->Empty())
       {
@@ -149,7 +150,7 @@ namespace
       }
     }
 
-    virtual void Teardown()
+    void Teardown() override
     {
       for (PlaylistsIterator it(*widgetsContainer); it.IsValid(); it.Next())
       {
@@ -158,78 +159,78 @@ namespace
       StorePlaylistSession();
     }
 
-    virtual void Open(const QStringList& items)
+    void Open(const QStringList& items) override
     {
       Playlist::UI::View& pl = GetEmptyPlaylist();
       pl.AddItems(items);
       QTimer::singleShot(1000, pl.GetPlaylist()->GetIterator(), SLOT(Reset()));
     }
 
-    virtual QMenu* GetActionsMenu() const
+    QMenu* GetActionsMenu() const override
     {
       return ActionsMenu;
     }
 
-    virtual void Play()
+    void Play() override
     {
       Playlist::UI::View& pl = GetActivePlaylist();
       pl.Play();
     }
 
-    virtual void Pause()
+    void Pause() override
     {
       Playlist::UI::View& pl = GetActivePlaylist();
       pl.Pause();
     }
 
-    virtual void Stop()
+    void Stop() override
     {
       Playlist::UI::View& pl = GetActivePlaylist();
       pl.Stop();
     }
 
-    virtual void Finish()
+    void Finish() override
     {
       Playlist::UI::View& pl = GetActivePlaylist();
       pl.Finish();
     }
 
-    virtual void Next()
+    void Next() override
     {
       Playlist::UI::View& pl = GetActivePlaylist();
       pl.Next();
     }
 
-    virtual void Prev()
+    void Prev() override
     {
       Playlist::UI::View& pl = GetActivePlaylist();
       pl.Prev();
     }
 
-    virtual void Clear()
+    void Clear() override
     {
       Playlist::UI::View& pl = GetVisiblePlaylist();
       pl.Clear();
     }
 
-    virtual void AddFiles()
+    void AddFiles() override
     {
       Playlist::UI::View& pl = GetVisiblePlaylist();
       pl.AddFiles();
     }
 
-    virtual void AddFolder()
+    void AddFolder() override
     {
       Playlist::UI::View& pl = GetVisiblePlaylist();
       pl.AddFolder();
     }
 
-    virtual void CreatePlaylist()
+    void CreatePlaylist() override
     {
       CreateAnonymousPlaylist();
     }
 
-    virtual void LoadPlaylist()
+    void LoadPlaylist() override
     {
       QString file;
       if (UI::OpenSingleFileDialog(actionLoadPlaylist->text(),
@@ -239,24 +240,24 @@ namespace
       }
     }
 
-    virtual void SavePlaylist()
+    void SavePlaylist() override
     {
       Playlist::UI::View& pl = GetVisiblePlaylist();
       pl.Save();
     }
 
-    virtual void RenamePlaylist()
+    void RenamePlaylist() override
     {
       Playlist::UI::View& pl = GetVisiblePlaylist();
       pl.Rename();
     }
 
-    virtual void CloseCurrentPlaylist()
+    void CloseCurrentPlaylist() override
     {
       ClosePlaylist(widgetsContainer->currentIndex());
     }
 
-    virtual void ClosePlaylist(int index)
+    void ClosePlaylist(int index) override
     {
       Playlist::UI::View* const view = static_cast<Playlist::UI::View*>(widgetsContainer->widget(index));
       view->hide();//to save layout
@@ -267,14 +268,14 @@ namespace
       if (view == ActivePlaylistView)
       {
         emit Deactivated();
-        ActivePlaylistView = 0;
+        ActivePlaylistView = nullptr;
         SwitchToLastPlaylist();
       }
       view->deleteLater();
     }
 
     //qwidget virtuals
-    virtual void changeEvent(QEvent* event)
+    void changeEvent(QEvent* event) override
     {
       if (event && QEvent::LanguageChange == event->type())
       {
@@ -285,22 +286,22 @@ namespace
       Playlist::UI::ContainerView::changeEvent(event);
     }
 
-    virtual void contextMenuEvent(QContextMenuEvent* event)
+    void contextMenuEvent(QContextMenuEvent* event) override
     {
       ActionsMenu->exec(event->globalPos());
     }
 
-    virtual void mouseDoubleClickEvent(QMouseEvent* /*event*/)
+    void mouseDoubleClickEvent(QMouseEvent* /*event*/) override
     {
       CreatePlaylist();
     }
   private:
-    virtual void CreatePlaylist(Playlist::Controller::Ptr ctrl)
+    void CreatePlaylist(Playlist::Controller::Ptr ctrl) override
     {
       RegisterPlaylist(ctrl);
     }
 
-    virtual void RenamePlaylist(const QString& name)
+    void RenamePlaylist(const QString& name) override
     {
       if (QObject* sender = this->sender())
       {
@@ -314,7 +315,7 @@ namespace
       }
     }
 
-    virtual void ActivateItem(Playlist::Item::Data::Ptr /*item*/)
+    void ActivateItem(Playlist::Item::Data::Ptr /*item*/) override
     {
       if (QObject* sender = this->sender())
       {
@@ -384,7 +385,7 @@ namespace
     void SwitchTo(Playlist::UI::View* plView)
     {
       Dbg("Switch playlist %1% -> %2%", ActivePlaylistView, plView);
-      const bool wasPrevious = ActivePlaylistView != 0;
+      const bool wasPrevious = ActivePlaylistView != nullptr;
       if (wasPrevious)
       {
         const Playlist::Item::Iterator::Ptr iter = ActivePlaylistView->GetPlaylist()->GetIterator();
@@ -456,7 +457,7 @@ namespace
     
     void StorePlaylistSession()
     {
-      Playlist::Controller::Iterator::Ptr iter(new PlaylistsIterator(*widgetsContainer));
+      const Playlist::Controller::Iterator::Ptr iter = MakePtr<PlaylistsIterator>(*widgetsContainer);
       Session->Save(iter);
       const uint_t idx = widgetsContainer->indexOf(ActivePlaylistView);
       const uint_t trk = ActivePlaylistView->GetPlaylist()->GetIterator()->GetIndex();

@@ -9,55 +9,50 @@
 **/
 
 //local includes
-#include "enumerator.h"
+#include "archive_plugins_enumerator.h"
+#include "player_plugins_enumerator.h"
 #include "registrator.h"
 #include "archives/plugins_list.h"
-#include "containers/plugins_list.h"
 #include "players/plugins_list.h"
 #include "core/src/callback.h"
 //common includes
 #include <error_tools.h>
 #include <pointers.h>
+#include <make_ptr.h>
 //library includes
 #include <binary/container_factories.h>
-#include <core/convert_parameters.h>
-#include <core/module_attrs.h>
 #include <core/module_detect.h>
 #include <core/module_open.h>
 #include <debug/log.h>
 #include <l10n/api.h>
+#include <module/attributes.h>
 #include <time/timer.h>
 //std includes
 #include <list>
 #include <map>
-//boost includes
-#include <boost/make_shared.hpp>
 //text includes
 #include <core/text/core.h>
 
 #define FILE_TAG 04EDD719
 
-namespace
+namespace ZXTune
 {
   const Debug::Stream Dbg("Core::Enumerator");
   const L10n::TranslateFunctor translate = L10n::TranslateFunctor("core");
-}
 
-namespace ZXTune
-{
   template<class PluginType>
   class PluginsContainer : public PluginsRegistrator<PluginType>
                          , public PluginsEnumerator<PluginType>
   {
   public:
-    virtual void RegisterPlugin(typename PluginType::Ptr plugin)
+    void RegisterPlugin(typename PluginType::Ptr plugin) override
     {
       const Plugin::Ptr description = plugin->GetDescription();
       Plugins.push_back(plugin);
       Dbg("Registered %1%", description->Id());
     }
 
-    virtual typename PluginType::Iterator::Ptr Enumerate() const
+    typename PluginType::Iterator::Ptr Enumerate() const override
     {
       return CreateRangedObjectIteratorAdapter(Plugins.begin(), Plugins.end());
     }
@@ -71,7 +66,6 @@ namespace ZXTune
     ArchivePluginsContainer()
     {
       const Time::Timer timer;
-      RegisterContainerPlugins(*this);
       RegisterArchivePlugins(*this);
       Dbg("Registered %1% archive plugins for %2%ms", Plugins.size(), Time::Milliseconds(timer.Elapsed()).Get());
     }
@@ -91,24 +85,24 @@ namespace ZXTune
   class SimplePluginDescription : public Plugin
   {
   public:
-    SimplePluginDescription(const String& id, const String& info, uint_t capabilities)
-      : ID(id)
-      , Info(info)
+    SimplePluginDescription(String  id, String  info, uint_t capabilities)
+      : ID(std::move(id))
+      , Info(std::move(info))
       , Caps(capabilities)
     {
     }
 
-    virtual String Id() const
+    String Id() const override
     {
       return ID;
     }
 
-    virtual String Description() const
+    String Description() const override
     {
       return Info;
     }
 
-    virtual uint_t Capabilities() const
+    uint_t Capabilities() const override
     {
       return Caps;
     }
@@ -122,24 +116,24 @@ namespace ZXTune
   {
   public:
     CompositePluginsIterator(ArchivePlugin::Iterator::Ptr archives, PlayerPlugin::Iterator::Ptr players)
-      : Archives(archives)
-      , Players(players)
+      : Archives(std::move(archives))
+      , Players(std::move(players))
     {
       Check(Archives);
       Check(Players);
     }
 
-    virtual bool IsValid() const
+    bool IsValid() const override
     {
       return Archives || Players;
     }
 
-    virtual Plugin::Ptr Get() const
+    Plugin::Ptr Get() const override
     {
       return (Archives ? Archives->Get()->GetDescription() : Players->Get()->GetDescription());
     }
 
-    virtual void Next()
+    void Next() override
     {
       if (Archives)
       {
@@ -189,11 +183,11 @@ namespace ZXTune
   {
     const ArchivePlugin::Iterator::Ptr archives = ArchivePluginsEnumerator::Create()->Enumerate();
     const PlayerPlugin::Iterator::Ptr players = PlayerPluginsEnumerator::Create()->Enumerate();
-    return boost::make_shared<CompositePluginsIterator>(archives, players);
+    return MakePtr<CompositePluginsIterator>(archives, players);
   }
 
   Plugin::Ptr CreatePluginDescription(const String& id, const String& info, uint_t capabilities)
   {
-    return boost::make_shared<SimplePluginDescription>(id, info, capabilities);
+    return MakePtr<SimplePluginDescription>(id, info, capabilities);
   }
 }

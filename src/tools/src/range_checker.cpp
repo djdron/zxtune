@@ -9,6 +9,7 @@
 **/
 
 //common includes
+#include <make_ptr.h>
 #include <range_checker.h>
 //std includes
 #include <cassert>
@@ -27,7 +28,7 @@ namespace
     {
     }
 
-    virtual bool AddRange(std::size_t offset, std::size_t size)
+    bool AddRange(std::size_t offset, std::size_t size) override
     {
       const std::size_t endPos = offset + size;
       if (endPos > Limit)
@@ -39,7 +40,7 @@ namespace
       return true;
     }
 
-    virtual Range GetAffectedRange() const
+    Range GetAffectedRange() const override
     {
       return Result.first == Limit
         ? Range(0, 0)
@@ -59,7 +60,7 @@ namespace
     {
     }
 
-    virtual bool AddRange(std::size_t offset, std::size_t size)
+    bool AddRange(std::size_t offset, std::size_t size) override
     {
       if (!Base.AddRange(offset, size))
       {
@@ -71,7 +72,7 @@ namespace
         return true;
       }
       // regular iterator for simplification- compiler gets regular iterator from Ranges member
-      RangeMap::iterator bound = Ranges.upper_bound(offset);
+      auto bound = Ranges.upper_bound(offset);
       if (bound == Ranges.end()) //to end
       {
         --bound;
@@ -104,7 +105,7 @@ namespace
       return true;
     }
 
-    virtual Range GetAffectedRange() const
+    Range GetAffectedRange() const override
     {
       return Ranges.empty()
         ? Range(0, 0)
@@ -116,7 +117,7 @@ namespace
       if (bound != Ranges.begin())
       {
         //try to merge with previous
-        RangeMap::iterator prev = bound;
+        auto prev = bound;
         --prev;
         assert(prev->first + prev->second <= bound->first);
         if (prev->first + prev->second == bound->first)
@@ -127,7 +128,7 @@ namespace
         }
       }
       //try to merge with next
-      RangeMap::iterator next = bound;
+      auto next = bound;
       if (++next != Ranges.end())
       {
         assert(bound->first + bound->second <= next->first);
@@ -151,14 +152,14 @@ namespace
     {
     }
 
-    virtual bool AddRange(std::size_t offset, std::size_t size)
+    bool AddRange(std::size_t offset, std::size_t size) override
     {
       if (!Base.AddRange(offset, size))
       {
         return false;
       }
       const std::size_t endPos = offset + size;
-      RangeMap::iterator bound = Ranges.upper_bound(offset);
+      auto bound = Ranges.upper_bound(offset);
       if (bound != Ranges.end() &&
           endPos > bound->first)
       {
@@ -193,7 +194,7 @@ namespace
       return true;
    }
 
-    virtual Range GetAffectedRange() const
+    Range GetAffectedRange() const override
     {
       return Ranges.empty()
         ? Range(0, 0)
@@ -207,15 +208,15 @@ namespace
 
 RangeChecker::Ptr RangeChecker::CreateSimple(std::size_t limit)
 {
-  return RangeChecker::Ptr(new SimpleRangeChecker(limit));
+  return MakePtr<SimpleRangeChecker>(limit);
 }
 
 RangeChecker::Ptr RangeChecker::Create(std::size_t limit)
 {
-  return RangeChecker::Ptr(new RangeCheckerImpl(limit));
+  return MakePtr<RangeCheckerImpl>(limit);
 }
 
 RangeChecker::Ptr RangeChecker::CreateShared(std::size_t limit)
 {
-  return RangeChecker::Ptr(new SharedRangeChecker(limit));
+  return MakePtr<SharedRangeChecker>(limit);
 }

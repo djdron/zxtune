@@ -14,11 +14,15 @@
 //common includes
 #include <contract.h>
 #include <iterator.h>
+#include <make_ptr.h>
 //std includes
 #include <cctype>
 #include <stack>
+#include <utility>
 
-namespace
+namespace Binary
+{
+namespace FormatDSL
 {
   inline uint_t ParseDecimalValue(const std::string& num)
   {
@@ -38,14 +42,14 @@ namespace
     std::string Value;
 
     Token()
-      : Type(Binary::DELIMITER)
+      : Type(DELIMITER)
       , Value(" ")
     {
     }
 
-    Token(LexicalAnalysis::TokenType type, const std::string& lexeme)
+    Token(LexicalAnalysis::TokenType type, std::string lexeme)
       : Type(type)
-      , Value(lexeme)
+      , Value(std::move(lexeme))
     {
     }
   };
@@ -53,9 +57,9 @@ namespace
   class State
   {
   public:
-    virtual ~State() {}
+    virtual ~State() = default;
 
-    virtual const State* Transition(const Token& tok, Binary::FormatTokensVisitor& visitor) const = 0;
+    virtual const State* Transition(const Token& tok, FormatTokensVisitor& visitor) const = 0;
 
     static const State* Initial();
     static const State* Quantor();
@@ -71,38 +75,38 @@ namespace
     {
     }
 
-    virtual const State* Transition(const Token& tok, Binary::FormatTokensVisitor& visitor) const
+    const State* Transition(const Token& tok, FormatTokensVisitor& visitor) const override
     {
       switch (tok.Type)
       {
-      case Binary::DELIMITER:
+      case DELIMITER:
         return this;
-      case Binary::OPERATION:
+      case OPERATION:
         return ParseOperation(tok, visitor);
-      case Binary::CONSTANT:
-      case Binary::MASK:
+      case CONSTANT:
+      case MASK:
         return ParseValue(tok, visitor);
       default:
         return State::Error();
       }
     }
   private:
-    const State* ParseOperation(const Token& tok, Binary::FormatTokensVisitor& visitor) const
+    const State* ParseOperation(const Token& tok, FormatTokensVisitor& visitor) const
     {
       Require(tok.Value.size() == 1);
       switch (tok.Value[0])
       {
-      case Binary::GROUP_BEGIN:
+      case GROUP_BEGIN:
         visitor.GroupStart();
         return this;
-      case Binary::GROUP_END:
+      case GROUP_END:
         visitor.GroupEnd();
         return this;
-      case Binary::QUANTOR_BEGIN:
+      case QUANTOR_BEGIN:
         return State::Quantor();
-      case Binary::RANGE_TEXT:
-      case Binary::CONJUNCTION_TEXT:
-      case Binary::DISJUNCTION_TEXT:
+      case RANGE_TEXT:
+      case CONJUNCTION_TEXT:
+      case DISJUNCTION_TEXT:
         visitor.Operation(tok.Value);
         return this;
       default:
@@ -110,12 +114,12 @@ namespace
       }
     }
 
-    const State* ParseValue(const Token& tok, Binary::FormatTokensVisitor& visitor) const
+    const State* ParseValue(const Token& tok, FormatTokensVisitor& visitor) const
     {
-      if (tok.Value[0] == Binary::BINARY_MASK_TEXT ||
-          tok.Value[0] == Binary::MULTIPLICITY_TEXT ||
-          tok.Value[0] == Binary::ANY_BYTE_TEXT ||
-          tok.Value[0] == Binary::SYMBOL_TEXT)
+      if (tok.Value[0] == BINARY_MASK_TEXT ||
+          tok.Value[0] == MULTIPLICITY_TEXT ||
+          tok.Value[0] == ANY_BYTE_TEXT ||
+          tok.Value[0] == SYMBOL_TEXT)
       {
         visitor.Match(tok.Value);
         return this;
@@ -142,9 +146,9 @@ namespace
     {
     }
 
-    virtual const State* Transition(const Token& tok, Binary::FormatTokensVisitor& visitor) const
+    const State* Transition(const Token& tok, FormatTokensVisitor& visitor) const override
     {
-      if (tok.Type == Binary::CONSTANT)
+      if (tok.Type == CONSTANT)
       {
         const uint_t num = ParseDecimalValue(tok.Value);
         visitor.Quantor(num);
@@ -165,10 +169,10 @@ namespace
     {
     }
 
-    virtual const State* Transition(const Token& tok, Binary::FormatTokensVisitor& /*visitor*/) const
+    const State* Transition(const Token& tok, FormatTokensVisitor& /*visitor*/) const override
     {
-      Require(tok.Type == Binary::OPERATION);
-      Require(tok.Value == std::string(1, Binary::QUANTOR_END));
+      Require(tok.Type == OPERATION);
+      Require(tok.Value == std::string(1, QUANTOR_END));
       return State::Initial();
     }
   };
@@ -181,7 +185,7 @@ namespace
     {
     }
 
-    virtual const State* Transition(const Token& /*token*/, Binary::FormatTokensVisitor& /*visitor*/) const
+    const State* Transition(const Token& /*token*/, FormatTokensVisitor& /*visitor*/) const override
     {
       return this;
     }
@@ -210,40 +214,37 @@ namespace
     static const ErrorStateType instance;
     return &instance;
   }
-}
 
-namespace
-{
   class ParseFSM : public LexicalAnalysis::Grammar::Callback
   {
   public:
-    explicit ParseFSM(Binary::FormatTokensVisitor& visitor)
+    explicit ParseFSM(FormatTokensVisitor& visitor)
       : CurState(State::Initial())
       , Visitor(visitor)
     {
     }
 
-    virtual void TokenMatched(const std::string& lexeme, LexicalAnalysis::TokenType type)
+    void TokenMatched(const std::string& lexeme, LexicalAnalysis::TokenType type) override
     {
       CurState = CurState->Transition(Token(type, lexeme), Visitor);
       Require(CurState != State::Error());
     }
 
-    virtual void MultipleTokensMatched(const std::string& /*lexeme*/, const LexicalAnalysis::TokenTypesSet& /*types*/)
+    void MultipleTokensMatched(const std::string& /*lexeme*/, const LexicalAnalysis::TokenTypesSet& /*types*/) override
     {
       Require(false);
     }
 
-    virtual void AnalysisError(const std::string& /*notation*/, std::size_t /*position*/)
+    void AnalysisError(const std::string& /*notation*/, std::size_t /*position*/) override
     {
       Require(false);
     }
   private:
     const State* CurState;
-    Binary::FormatTokensVisitor& Visitor;
+    FormatTokensVisitor& Visitor;
   };
 
-  const std::string GROUP_START(1, Binary::GROUP_BEGIN);
+  const std::string GROUP_START(1, GROUP_BEGIN);
 
   struct Operator
   {
@@ -254,18 +255,18 @@ namespace
     {
     }
 
-    explicit Operator(const std::string& op)
-      : Val(op)
+    explicit Operator(std::string op)
+      : Val(std::move(op))
       , Prec(0)
     {
       Require(!Val.empty());
       switch (Val[0])
       {
-      case Binary::RANGE_TEXT:
+      case RANGE_TEXT:
         ++Prec;
-      case Binary::CONJUNCTION_TEXT:
+      case CONJUNCTION_TEXT:
         ++Prec;
-      case Binary::DISJUNCTION_TEXT:
+      case DISJUNCTION_TEXT:
         ++Prec;
       }
     }
@@ -299,16 +300,16 @@ namespace
     std::size_t Prec;
   };
 
-  class RPNTranslation : public Binary::FormatTokensVisitor
+  class RPNTranslation : public FormatTokensVisitor
   {
   public:
-    RPNTranslation(Binary::FormatTokensVisitor& delegate)
+    RPNTranslation(FormatTokensVisitor& delegate)
       : Delegate(delegate)
       , LastIsMatch(false)
     {
     }
 
-    virtual void Match(const std::string& val)
+    void Match(const std::string& val) override
     {
       if (LastIsMatch)
       {
@@ -318,7 +319,7 @@ namespace
       LastIsMatch = true;
     }
 
-    virtual void GroupStart()
+    void GroupStart() override
     {
       FlushOperations();
       Ops.push(Operator(GROUP_START));
@@ -326,7 +327,7 @@ namespace
       LastIsMatch = false;
     }
 
-    virtual void GroupEnd()
+    void GroupEnd() override
     {
       FlushOperations();
       Require(!Ops.empty() && Ops.top().Value() == GROUP_START);
@@ -335,14 +336,14 @@ namespace
       LastIsMatch = false;
     }
 
-    virtual void Quantor(uint_t count)
+    void Quantor(uint_t count) override
     {
       FlushOperations();
       Delegate.Quantor(count);
       LastIsMatch = false;
     }
 
-    virtual void Operation(const std::string& op)
+    void Operation(const std::string& op) override
     {
       const Operator newOp(op);
       FlushOperations(newOp);
@@ -394,33 +395,33 @@ namespace
       }
     }
   private:
-    Binary::FormatTokensVisitor& Delegate;
+    FormatTokensVisitor& Delegate;
     std::stack<Operator> Ops;
     bool LastIsMatch;
   };
 
-  class SyntaxCheck : public Binary::FormatTokensVisitor
+  class SyntaxCheck : public FormatTokensVisitor
   {
   public:
-    explicit SyntaxCheck(Binary::FormatTokensVisitor& delegate)
+    explicit SyntaxCheck(FormatTokensVisitor& delegate)
       : Delegate(delegate)
       , Position(0)
     {
     }
 
-    virtual void Match(const std::string& val)
+    void Match(const std::string& val) override
     {
       Delegate.Match(val);
       ++Position;
     }
 
-    virtual void GroupStart()
+    void GroupStart() override
     {
       GroupStarts.push(Position);
       Delegate.GroupStart();
     }
 
-    virtual void GroupEnd()
+    void GroupEnd() override
     {
       Require(!GroupStarts.empty());
       Require(GroupStarts.top() != Position);
@@ -429,14 +430,14 @@ namespace
       Delegate.GroupEnd();
     }
 
-    virtual void Quantor(uint_t count)
+    void Quantor(uint_t count) override
     {
       Require(Position != 0);
       Require(count != 0);
       Delegate.Quantor(count);
     }
 
-    virtual void Operation(const std::string& op)
+    void Operation(const std::string& op) override
     {
       const std::size_t usedVals = Operator(op).Parameters();
       CheckAvailableParameters(usedVals, Position);
@@ -497,14 +498,17 @@ namespace
       std::size_t End;
     };
   private:
-    Binary::FormatTokensVisitor& Delegate;
+    FormatTokensVisitor& Delegate;
     std::size_t Position;
     std::stack<std::size_t> GroupStarts;
     std::stack<Group> Groups;
   };
 }
+}
 
 namespace Binary
+{
+namespace FormatDSL
 {
   void ParseFormatNotation(const std::string& notation, FormatTokensVisitor& visitor)
   {
@@ -519,8 +523,9 @@ namespace Binary
     rpn.Flush();
   }
 
-  FormatTokensVisitor::Ptr CreatePostfixSynaxCheckAdapter(FormatTokensVisitor& visitor)
+  FormatTokensVisitor::Ptr CreatePostfixSyntaxCheckAdapter(FormatTokensVisitor& visitor)
   {
-    return FormatTokensVisitor::Ptr(new SyntaxCheck(visitor));
+    return MakePtr<SyntaxCheck>(visitor);
   }
+}
 }

@@ -10,13 +10,15 @@
 
 //local includes
 #include "event.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <async/activity.h>
 #include <async/coroutine.h>
-//boost includes
-#include <boost/make_shared.hpp>
+//std includes
+#include <utility>
 
-namespace
+namespace Async
 {
   void PausePaused()
   {
@@ -46,22 +48,22 @@ namespace
 
   struct StoppingEvent {};
 
-  class CoroutineOperation : public Async::Operation
-                           , private Async::Scheduler
+  class CoroutineOperation : public Operation
+                           , private Scheduler
   {
   public:
-    CoroutineOperation(Async::Coroutine::Ptr routine, Async::Event<JobState>& state)
-      : Routine(routine)
+    CoroutineOperation(Coroutine::Ptr routine, Event<JobState>& state)
+      : Routine(std::move(routine))
       , State(state)
     {
     }
 
-    virtual void Prepare()
+    void Prepare() override
     {
       return Routine->Initialize();
     }
     
-    virtual void Execute()
+    void Execute() override
     {
       try
       {
@@ -85,7 +87,7 @@ namespace
       Routine->Finalize();
     }
 
-    virtual void Yield()
+    void Yield() override
     {
       switch (State.WaitForAny(STOPPING, PAUSING, STARTED))
       {
@@ -108,19 +110,19 @@ namespace
       }
     }
   private:
-    const Async::Coroutine::Ptr Routine;
-    Async::Event<JobState>& State;
+    const Coroutine::Ptr Routine;
+    Event<JobState>& State;
   };
   
-  class JobImpl : public Async::Job
+  class CoroutineJob : public Job
   {
   public:
-    explicit JobImpl(Async::Coroutine::Ptr routine)
-      : Routine(routine)
+    explicit CoroutineJob(Coroutine::Ptr routine)
+      : Routine(std::move(routine))
     {
     }
 
-    virtual ~JobImpl()
+    ~CoroutineJob() override
     {
       if (Act)
       {
@@ -128,9 +130,9 @@ namespace
       }
     }
 
-    virtual void Start()
+    void Start() override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       if (Act)
       {
         if (Act->IsExecuted())
@@ -139,14 +141,14 @@ namespace
         }
         FinishAction();
       }
-      const Async::Operation::Ptr jobOper = boost::make_shared<CoroutineOperation>(Routine, boost::ref(State));
-      Act = Async::Activity::Create(jobOper);
+      const Operation::Ptr jobOper = MakePtr<CoroutineOperation>(Routine, State);
+      Act = Activity::Create(jobOper);
       State.Set(STARTED);
     }
     
-    virtual void Pause()
+    void Pause() override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       if (Act)
       {
         if (Act->IsExecuted())
@@ -158,9 +160,9 @@ namespace
       return PauseStopped();
     }
     
-    virtual void Stop()
+    void Stop() override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       if (Act)
       {
         return FinishAction();//TODO: wrap error
@@ -168,15 +170,15 @@ namespace
       return StopStopped();
     }
 
-    virtual bool IsActive() const
+    bool IsActive() const override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       return Act && Act->IsExecuted();
     }
     
-    virtual bool IsPaused() const
+    bool IsPaused() const override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       return Act && Act->IsExecuted() && State.Check(PAUSED);
     }
   private:
@@ -217,7 +219,7 @@ namespace
       State.Set(STOPPING);
       try
       {
-        Async::Activity::Ptr act;
+        Activity::Ptr act;
         act.swap(Act);
         act->Wait();
         State.Reset();
@@ -228,10 +230,10 @@ namespace
       }
     }
   private:
-    const Async::Coroutine::Ptr Routine;
-    mutable boost::mutex Mutex;
-    Async::Event<JobState> State;
-    Async::Activity::Ptr Act;
+    const Coroutine::Ptr Routine;
+    mutable std::mutex Mutex;
+    Event<JobState> State;
+    Activity::Ptr Act;
   };
 }
 
@@ -239,6 +241,6 @@ namespace Async
 {
   Job::Ptr CreateJob(Coroutine::Ptr routine)
   {
-    return boost::make_shared<JobImpl>(routine);
+    return MakePtr<CoroutineJob>(routine);
   }
 }

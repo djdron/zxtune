@@ -9,6 +9,7 @@
 **/
 
 //common includes
+#include <make_ptr.h>
 #include <progress_callback.h>
 
 namespace
@@ -16,11 +17,11 @@ namespace
   class StubProgressCallback : public Log::ProgressCallback
   {
   public:
-    virtual void OnProgress(uint_t /*current*/)
+    void OnProgress(uint_t /*current*/) override
     {
     }
 
-    virtual void OnProgress(uint_t /*current*/, const String& /*message*/)
+    void OnProgress(uint_t /*current*/, const String& /*message*/) override
     {
     }
   };
@@ -40,13 +41,13 @@ namespace
     {
     }
 
-    virtual void OnProgress(uint_t current)
+    void OnProgress(uint_t current) override
     {
       const int_t curProg = ScaleToPercent(Total, current);
       Delegate.OnProgress(curProg);
     }
 
-    virtual void OnProgress(uint_t current, const String& message)
+    void OnProgress(uint_t current, const String& message) override
     {
       const int_t curProg = ScaleToPercent(Total, current);
       Delegate.OnProgress(curProg, message);
@@ -66,13 +67,13 @@ namespace
     {
     }
 
-    virtual void OnProgress(uint_t current)
+    void OnProgress(uint_t current) override
     {
       const int_t curProg = ScaleToProgress(current);
       Delegate.OnProgress(curProg);
     }
 
-    virtual void OnProgress(uint_t current, const String& message)
+    void OnProgress(uint_t current, const String& message) override
     {
       const int_t curProg = ScaleToProgress(current);
       Delegate.OnProgress(curProg, message);
@@ -99,11 +100,11 @@ namespace Log
 
   ProgressCallback::Ptr CreatePercentProgressCallback(uint_t total, ProgressCallback& delegate)
   {
-    return ProgressCallback::Ptr(new PercentProgressCallback(total, delegate));
+    return MakePtr<PercentProgressCallback>(total, delegate);
   }
 
   ProgressCallback::Ptr CreateNestedPercentProgressCallback(uint_t total, uint_t current, ProgressCallback& delegate)
   {
-    return ProgressCallback::Ptr(new NestedPercentProgressCallback(total, current, delegate));
+    return MakePtr<NestedPercentProgressCallback>(total, current, delegate);
   }
 }

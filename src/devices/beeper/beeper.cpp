@@ -8,10 +8,14 @@
 *
 **/
 
+//common includes
+#include <make_ptr.h>
 //local includes
 #include <devices/beeper.h>
 #include <devices/details/renderers.h>
 #include <parameters/tracking_helper.h>
+//std includes
+#include <utility>
 
 namespace Devices
 {
@@ -46,15 +50,15 @@ namespace Beeper
   {
   public:
     ChipImpl(ChipParameters::Ptr params, Sound::Receiver::Ptr target)
-      : Params(params)
-      , Target(target)
+      : Params(std::move(params))
+      , Target(std::move(target))
       , Renderer(Clock, PSG)
       , ClockFreq()
       , SoundFreq()
     {
     }
     
-    virtual void RenderData(const std::vector<DataChunk>& src)
+    void RenderData(const std::vector<DataChunk>& src) override
     {
       if (src.empty())
       {
@@ -67,25 +71,24 @@ namespace Beeper
         const uint_t samples = Clock.SamplesTill(end);
         Sound::ChunkBuilder builder;
         builder.Reserve(samples);
-        for (std::vector<DataChunk>::const_iterator it = src.begin(), lim = src.end(); it != lim; ++it)
+        for (const auto& chunk : src)
         {
-          const DataChunk& chunk = *it;
           Renderer.Render(chunk.TimeStamp, builder);
-          PSG.SetNewData(it->Level);
+          PSG.SetNewData(chunk.Level);
         }
-        Target->ApplyData(builder.GetResult());
+        Target->ApplyData(builder.CaptureResult());
         Target->Flush();
       }
       else
       {
-        for (std::vector<DataChunk>::const_iterator it = src.begin(), lim = src.end(); it != lim; ++it)
+        for (const auto& chunk : src)
         {
-          PSG.SetNewData(it->Level);
+          PSG.SetNewData(chunk.Level);
         }
       }
     }
 
-    virtual void Reset()
+    void Reset() override
     {
       Params.Reset();
       PSG.Reset();
@@ -119,7 +122,7 @@ namespace Beeper
 
   Chip::Ptr CreateChip(ChipParameters::Ptr params, Sound::Receiver::Ptr target)
   {
-    return boost::make_shared<ChipImpl>(params, target);
+    return MakePtr<ChipImpl>(params, target);
   }
 }
 }

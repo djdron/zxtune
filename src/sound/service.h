@@ -11,6 +11,7 @@
 #pragma once
 
 //library includes
+#include <module/holder.h>
 #include <sound/backend.h>
 #include <strings/array.h>
 
@@ -20,8 +21,8 @@ namespace Sound
   {
   public:
     //! Pointer type
-    typedef boost::shared_ptr<const Service> Ptr;
-    virtual ~Service() {}
+    typedef std::shared_ptr<const Service> Ptr;
+    virtual ~Service() = default;
 
     //! Enumerate all the registered backends
     virtual BackendInformation::Iterator::Ptr EnumerateBackends() const = 0;

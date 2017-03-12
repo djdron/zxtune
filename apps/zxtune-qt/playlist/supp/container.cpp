@@ -19,11 +19,9 @@
 #include "ui/tools/errordialog.h"
 //common includes
 #include <error.h>
+#include <make_ptr.h>
 //library includes
 #include <platform/version/api.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/ref.hpp>
 //text includes
 #include "text/text.h"
 
@@ -47,17 +45,17 @@ namespace
       Properties->SetValue(Playlist::ATTRIBUTE_CREATOR, Platform::Version::GetProgramVersionString());
     }
 
-    virtual Parameters::Accessor::Ptr GetProperties() const
+    Parameters::Accessor::Ptr GetProperties() const override
     {
       return Properties;
     }
 
-    virtual unsigned GetItemsCount() const
+    unsigned GetItemsCount() const override
     {
       return Storage.CountItems();
     }
 
-    virtual Playlist::Item::Collection::Ptr GetItems() const
+    Playlist::Item::Collection::Ptr GetItems() const override
     {
       return Storage.GetItems();
     }
@@ -76,9 +74,9 @@ namespace
     {
     }
 
-    virtual void Execute(const Playlist::Item::Storage& storage, Log::ProgressCallback& cb)
+    void Execute(const Playlist::Item::Storage& storage, Log::ProgressCallback& cb) override
     {
-      const Playlist::IO::Container::Ptr container = boost::make_shared<ContainerImpl>(Name, storage);
+      const Playlist::IO::Container::Ptr container = MakePtr<ContainerImpl>(Name, storage);
       try
       {
         Playlist::IO::SaveXSPF(container, Filename, cb, Flags);
@@ -98,14 +96,14 @@ namespace
   {
   public:
     LoadPlaylistOperation(Playlist::Item::DataProvider::Ptr provider, const QString& filename, Playlist::Controller& ctrl)
-      : Provider(provider)
+      : Provider(std::move(provider))
       , Filename(filename)
       , Controller(ctrl)
     {
     }
 
     //do not track progress since view may not be created
-    virtual void Execute(Playlist::Item::Storage& storage, Log::ProgressCallback& cb)
+    void Execute(Playlist::Item::Storage& storage, Log::ProgressCallback& cb) override
     {
       if (Playlist::IO::Container::Ptr container = Playlist::IO::Open(Provider, Filename, cb))
       {
@@ -129,22 +127,22 @@ namespace
   {
   public:
     explicit PlaylistContainer(Parameters::Accessor::Ptr parameters)
-      : Params(parameters)
+      : Params(std::move(parameters))
     {
     }
 
-    virtual Playlist::Controller::Ptr CreatePlaylist(const QString& name) const
+    Playlist::Controller::Ptr CreatePlaylist(const QString& name) const override
     {
       const Playlist::Item::DataProvider::Ptr provider = Playlist::Item::DataProvider::Create(Params);
       const Playlist::Controller::Ptr ctrl = Playlist::Controller::Create(name, provider);
       return ctrl;
     }
 
-    virtual void OpenPlaylist(const QString& filename)
+    void OpenPlaylist(const QString& filename) override
     {
       const Playlist::Item::DataProvider::Ptr provider = Playlist::Item::DataProvider::Create(Params);
       const Playlist::Controller::Ptr playlist = Playlist::Controller::Create(QLatin1String(Text::PLAYLIST_LOADING_HEADER), provider);
-      const Playlist::Item::StorageModifyOperation::Ptr op = boost::make_shared<LoadPlaylistOperation>(provider, filename, boost::ref(*playlist));
+      const Playlist::Item::StorageModifyOperation::Ptr op = MakePtr<LoadPlaylistOperation>(provider, filename, *playlist);
       playlist->GetModel()->PerformOperation(op);
       emit PlaylistCreated(playlist);
     }
@@ -157,13 +155,13 @@ namespace Playlist
 {
   Container::Ptr Container::Create(Parameters::Accessor::Ptr parameters)
   {
-    return boost::make_shared<PlaylistContainer>(parameters);
+    return MakePtr<PlaylistContainer>(parameters);
   }
 
   void Save(Controller::Ptr ctrl, const QString& filename, uint_t flags)
   {
     const QString name = ctrl->GetName();
-    const Playlist::Item::StorageAccessOperation::Ptr op = boost::make_shared<SavePlaylistOperation>(name, filename, flags);
+    const Playlist::Item::StorageAccessOperation::Ptr op = MakePtr<SavePlaylistOperation>(name, filename, flags);
     ctrl->GetModel()->PerformOperation(op);
   }
 }

@@ -10,10 +10,10 @@
 
 //local includes
 #include "z80.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <time/timer.h>
-//boost includes
-#include <boost/make_shared.hpp>
 
 namespace
 {
@@ -26,17 +26,17 @@ namespace
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return 1;
     }
 
-    virtual uint_t IntTicks() const
+    uint_t IntTicks() const override
     {
       return Int;
     }
 
-    virtual uint64_t ClockFreq() const
+    uint64_t ClockFreq() const override
     {
       return Clock;
     }
@@ -52,7 +52,7 @@ namespace Benchmark
   {
     Devices::Z80::Chip::Ptr CreateDevice(uint64_t clockFreq, uint_t intTicks, const Dump& memory, Devices::Z80::ChipIO::Ptr io)
     {
-      const Devices::Z80::ChipParameters::Ptr params = boost::make_shared<Z80Parameters>(clockFreq, intTicks);
+      const Devices::Z80::ChipParameters::Ptr params = MakePtr<Z80Parameters>(clockFreq, intTicks);
       return Devices::Z80::CreateChip(params, memory, io);
     }
 

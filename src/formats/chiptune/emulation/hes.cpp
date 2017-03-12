@@ -12,15 +12,14 @@
 #include <byteorder.h>
 #include <contract.h>
 #include <pointers.h>
+#include <make_ptr.h>
 //library includes
 #include <binary/format_factories.h>
 #include <formats/chiptune/container.h>
 #include <math/numeric.h>
 //std includes
+#include <array>
 #include <cstring>
-//boost includes
-#include <boost/array.hpp>
-#include <boost/make_shared.hpp>
 //text includes
 #include <formats/text/chiptune.h>
 
@@ -30,13 +29,7 @@ namespace Chiptune
 {
   namespace HES
   {
-    typedef boost::array<uint8_t, 4> SignatureType;
-
-    const SignatureType SIGNATURE_HESM = {{'H', 'E', 'S', 'M'}};
-    const SignatureType SIGNATURE_DATA = {{'D', 'A', 'T', 'A'}};
-
-    const uint_t VERSION_MIN = 1;
-    const uint_t VERSION_MAX = 3;
+    typedef std::array<uint8_t, 4> SignatureType;
 
 #ifdef USE_PRAGMA_PACK
 #pragma pack(push,1)
@@ -59,7 +52,7 @@ namespace Chiptune
 #pragma pack(pop)
 #endif
 
-    BOOST_STATIC_ASSERT(sizeof(RawHeader) == 0x20);
+    static_assert(sizeof(RawHeader) == 0x20, "Invalid layout");
 
     const std::string FORMAT =
         "'H'E'S'M" //signature
@@ -80,22 +73,22 @@ namespace Chiptune
       {
       }
 
-      virtual String GetDescription() const
+      String GetDescription() const override
       {
         return Text::HES_DECODER_DESCRIPTION;
       }
 
-      virtual Binary::Format::Ptr GetFormat() const
+      Binary::Format::Ptr GetFormat() const override
       {
         return Format;
       }
 
-      virtual bool Check(const Binary::Container& rawData) const
+      bool Check(const Binary::Container& rawData) const override
       {
         return Format->Match(rawData);
       }
 
-      virtual Formats::Chiptune::Container::Ptr Decode(const Binary::Container& rawData) const
+      Formats::Chiptune::Container::Ptr Decode(const Binary::Container& rawData) const override
       {
         if (!Format->Match(rawData))
         {
@@ -115,7 +108,7 @@ namespace Chiptune
 
   Decoder::Ptr CreateHESDecoder()
   {
-    return boost::make_shared<HES::Decoder>();
+    return MakePtr<HES::Decoder>();
   }
 }
 }

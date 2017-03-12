@@ -24,23 +24,23 @@ namespace Playlist
     class ConversionResultNotification : public Playlist::TextNotification
     {
     public:
-      typedef boost::shared_ptr<ConversionResultNotification> Ptr;
+      typedef std::shared_ptr<ConversionResultNotification> Ptr;
 
       virtual void AddSucceed() = 0;
       virtual void AddFailedToOpen(const String& path) = 0;
       virtual void AddFailedToConvert(const String& path, const Error& err) = 0;
     };
 
-    TextResultOperation::Ptr CreateSoundFormatConvertOperation(Playlist::Model::IndexSetPtr items,
+    TextResultOperation::Ptr CreateSoundFormatConvertOperation(Playlist::Model::IndexSet::Ptr items,
       const String& type, Sound::Service::Ptr service, ConversionResultNotification::Ptr result);
 
     TextResultOperation::Ptr CreateExportOperation(const String& nameTemplate,
       Parameters::Accessor::Ptr params, ConversionResultNotification::Ptr result);
-    TextResultOperation::Ptr CreateExportOperation(Playlist::Model::IndexSetPtr items,
+    TextResultOperation::Ptr CreateExportOperation(Playlist::Model::IndexSet::Ptr items,
       const String& nameTemplate, Parameters::Accessor::Ptr params, ConversionResultNotification::Ptr result);
 
     //dispatcher over factories described above
-    TextResultOperation::Ptr CreateConvertOperation(Playlist::Model::IndexSetPtr items, const Conversion::Options& opts, ConversionResultNotification::Ptr result);
+    TextResultOperation::Ptr CreateConvertOperation(Playlist::Model::IndexSet::Ptr items, const Conversion::Options& opts, ConversionResultNotification::Ptr result);
     TextResultOperation::Ptr CreateConvertOperation(const Conversion::Options& opts, ConversionResultNotification::Ptr result);
   }
 }

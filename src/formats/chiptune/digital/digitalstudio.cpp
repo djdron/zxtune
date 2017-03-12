@@ -15,26 +15,20 @@
 //common includes
 #include <byteorder.h>
 #include <contract.h>
+#include <make_ptr.h>
 #include <range_checker.h>
 //library includes
 #include <binary/container_factories.h>
+#include <binary/data_adapter.h>
 #include <binary/format_factories.h>
 #include <binary/typed_container.h>
 #include <debug/log.h>
 #include <math/numeric.h>
 //std includes
+#include <array>
 #include <cstring>
-//boost includes
-#include <boost/array.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/mem_fn.hpp>
 //text includes
 #include <formats/text/chiptune.h>
-
-namespace
-{
-  const Debug::Stream Dbg("Formats::Chiptune::DigitalStudio");
-}
 
 namespace Formats
 {
@@ -42,6 +36,8 @@ namespace Chiptune
 {
   namespace DigitalStudio
   {
+    const Debug::Stream Dbg("Formats::Chiptune::DigitalStudio");
+
     const std::size_t COMPILED_MODULE_SIZE = 0x1c200;
     const std::size_t MODULE_SIZE = 0x1b200;
     const std::size_t MIN_POSITIONS_COUNT = 1;
@@ -80,14 +76,15 @@ namespace Chiptune
       char Name[8];
     } PACK_POST;
 
-    typedef boost::array<uint8_t, 0x38> ZeroesArray;
+    typedef std::array<uint8_t, 0x38> ZeroesArray;
 
+    //Usually located at #7e00
     PACK_PRE struct Header
     {
       //+0
       uint8_t Loop;
       //+1
-      boost::array<uint8_t, MAX_POSITIONS_COUNT> Positions;
+      std::array<uint8_t, MAX_POSITIONS_COUNT> Positions;
       //+0x64
       uint8_t Tempo;
       //+0x65
@@ -99,7 +96,7 @@ namespace Chiptune
       //+0xc8
       ZeroesArray Zeroes;
       //+0x100
-      SampleInfo Samples[SAMPLES_COUNT];
+      std::array<SampleInfo, SAMPLES_COUNT> Samples;
       //+0x200
       uint8_t FirstPage[0x4000];
       //+0x4200
@@ -110,7 +107,7 @@ namespace Chiptune
 #pragma pack(pop)
 #endif
 
-    BOOST_STATIC_ASSERT(sizeof(Header) == 0x7200);
+    static_assert(sizeof(Header) == 0x7200, "Invalid layout");
 
     const std::size_t MIN_SIZE = sizeof(Header);
 
@@ -123,26 +120,37 @@ namespace Chiptune
     class SamplesSet
     {
     public:
+      SamplesSet()
+        : SamplesTotal()
+        , Samples4Bit()
+      {
+      }
+      
       void Add(uint_t idx, std::size_t loop, Binary::Data::Ptr data)
       {
-        const bool is4bit = CheckIfSample4Bit(static_cast<const uint8_t*>(data->Start()), data->Size());
-        Dbg(" size #%1$05x, loop #%2$04x%3%", data->Size(), loop, is4bit ? " 4bit" : "");
-        Samples.push_back(Description(idx, loop, data, is4bit));
+        Description& desc = Samples[idx];
+        desc = Description(loop, data);
+        Dbg(" size #%1$05x, loop #%2$04x%3%", data->Size(), loop, desc.Is4Bit ? " 4bit" : "");
+        ++SamplesTotal;
+        Samples4Bit += desc.Is4Bit;
       }
 
       bool Is4Bit() const
       {
-        const std::size_t specific = std::count_if(Samples.begin(), Samples.end(), boost::mem_fn(&Description::Is4Bit));
-        Dbg("%1% 4-bit samples out of %2%", specific, Samples.size());
-        return specific >= Samples.size() / 2;
+        Dbg("%1% 4-bit samples out of %2%", Samples4Bit, SamplesTotal);
+        return Samples4Bit >= SamplesTotal / 2;
       }
 
       void Apply(Builder& builder)
       {
         const bool is4Bit = Is4Bit();
-        for (std::vector<Description>::const_iterator it = Samples.begin(), lim = Samples.end(); it != lim; ++it)
+        for (uint_t idx = 0; idx != Samples.size(); ++idx)
         {
-          builder.SetSample(it->Index, it->Loop, it->Content, is4Bit && it->Is4Bit);
+          const Description& desc = Samples[idx];
+          if (desc.Content)
+          {
+            builder.SetSample(idx, desc.Loop, *desc.Content, is4Bit && desc.Is4Bit);
+          }
         }
       }
     private:
@@ -159,28 +167,27 @@ namespace Chiptune
       
       struct Description
       {
-        uint_t Index;
         std::size_t Loop;
         Binary::Data::Ptr Content;
         bool Is4Bit;
 
         Description()
-          : Index()
-          , Loop()
+          : Loop()
           , Content()
           , Is4Bit()
         {
         }
 
-        Description(uint_t idx, std::size_t loop, Binary::Data::Ptr content, bool is4bit)
-          : Index(idx)
-          , Loop(loop)
+        Description(std::size_t loop, Binary::Data::Ptr content)
+          : Loop(loop)
           , Content(content)
-          , Is4Bit(is4bit)
+          , Is4Bit(CheckIfSample4Bit(static_cast<const uint8_t*>(content->Start()), content->Size()))
         {
         }
       };
-      std::vector<Description> Samples;
+      std::array<Description, SAMPLES_COUNT> Samples;
+      uint_t SamplesTotal;
+      uint_t Samples4Bit;
     };
 
     //TODO: extract
@@ -188,10 +195,10 @@ namespace Chiptune
     {
       const std::size_t size1 = lh.Size();
       const std::size_t size2 = rh.Size();
-      std::auto_ptr<Dump> res(new Dump(size1 + size2));
+      std::unique_ptr<Dump> res(new Dump(size1 + size2));
       std::memcpy(&res->front(), lh.Start(), size1);
       std::memcpy(&res->front() + size1, rh.Start(), size2);
-      return Binary::CreateContainer(res);
+      return Binary::CreateContainer(std::move(res));
     }
 
     class Format
@@ -212,15 +219,24 @@ namespace Chiptune
       void ParseCommonProperties(Builder& target) const
       {
         target.SetInitialTempo(Source.Tempo);
-        target.GetMetaBuilder().SetTitle(FromCharArray(Source.Title));
+        MetaBuilder& meta = target.GetMetaBuilder();
+        meta.SetTitle(FromCharArray(Source.Title));
+        Strings::Array names(Source.Samples.size());
+        for (uint_t idx = 0; idx != Source.Samples.size(); ++idx)
+        {
+          names[idx] = FromCharArray(Source.Samples[idx].Name);
+        }
+        meta.SetStrings(names);
       }
 
       void ParsePositions(Builder& target) const
       {
         Require(Math::InRange<std::size_t>(Source.Length, MIN_POSITIONS_COUNT, MAX_POSITIONS_COUNT));
-        const std::vector<uint_t> positions(Source.Positions.begin(), Source.Positions.begin() + Source.Length);
-        target.SetPositions(positions, Source.Loop);
-        Dbg("Positions: %1%, loop to %2%", positions.size(), unsigned(Source.Loop));
+        Digital::Positions positions;
+        positions.Loop = Source.Loop;
+        positions.Lines.assign(Source.Positions.begin(), Source.Positions.begin() + Source.Length);
+        Dbg("Positions: %1%, loop to %2%", positions.GetSize(), positions.GetLoop());
+        target.SetPositions(std::move(positions));
       }
 
       void ParsePatterns(const Indices& pats, Builder& target) const
@@ -255,7 +271,7 @@ namespace Chiptune
           }
         }
       }
-
+      
       std::size_t GetSize() const
       {
         return IsCompiled ? COMPILED_MODULE_SIZE : MODULE_SIZE;
@@ -347,27 +363,29 @@ namespace Chiptune
         const std::size_t ZX_PAGE_SIZE = 0x4000;
         const std::size_t LO_MEM_ADDR = 0x8000;
         const std::size_t HI_MEM_ADDR = 0xc000;
-        static const std::size_t SAMPLES_OFFSETS[8] = {0x200, 0x7200, 0x0, 0xb200, 0xf200, 0x0, 0x13200, 0x17200};
-        static const std::size_t SAMPLES_OFFSETS_COMPILED[8] = {0x200, 0x8200, 0x0, 0xc200, 0x10200, 0x0, 0x14200, 0x18200};
+        static const std::size_t PAGES_OFFSETS[8] = {0x200, 0x7200, 0x0, 0xb200, 0xf200, 0x0, 0x13200, 0x17200};
+        static const std::size_t PAGES_OFFSETS_COMPILED[8] = {0x200, 0x8200, 0x0, 0xc200, 0x10200, 0x0, 0x14200, 0x18200};
 
         if (info.Size == 0)
         {
+          Dbg(" Empty sample");
           return Binary::Data::Ptr();
         }
-        Require(info.Page >= 0x51 && info.Page <= 0x57);
+        //assume normal 128k machine: normal screen, basic48, nolock
+        Require((info.Page & 0x38) == 0x10);
 
-        const std::size_t* const offsets = IsCompiled ? SAMPLES_OFFSETS_COMPILED : SAMPLES_OFFSETS;
+        const std::size_t* const offsets = IsCompiled ? PAGES_OFFSETS_COMPILED : PAGES_OFFSETS;
 
         const std::size_t pageNumber = info.Page & 0x7;
         Require(0 != offsets[pageNumber]);
 
-        const bool isLoMemSample = 0x7 == pageNumber;
-        const std::size_t BASE_ADDR = isLoMemSample ? LO_MEM_ADDR : HI_MEM_ADDR;
-        const std::size_t MAX_SIZE = isLoMemSample ? 2 * ZX_PAGE_SIZE : ZX_PAGE_SIZE;
-
         const std::size_t sampleStart = fromLE(info.Start);
         const std::size_t sampleSize = fromLE(info.Size);
         const std::size_t sampleLoop = fromLE(info.Loop);
+        
+        const bool isLoMemSample = sampleStart < HI_MEM_ADDR;
+        const std::size_t BASE_ADDR = isLoMemSample ? LO_MEM_ADDR : HI_MEM_ADDR;
+        const std::size_t MAX_SIZE = isLoMemSample ? 2 * ZX_PAGE_SIZE : ZX_PAGE_SIZE;
 
         Require(sampleStart >= BASE_ADDR);
         Require(sampleSize <= MAX_SIZE);
@@ -377,20 +395,19 @@ namespace Chiptune
         const std::size_t sampleOffsetInPage = sampleStart - BASE_ADDR;
         if (isLoMemSample)
         {
-          const bool isLoMemSampleInPage = sampleOffsetInPage >= ZX_PAGE_SIZE;
-          const bool isSplitSample = !isLoMemSampleInPage && sampleOffsetInPage + sampleSize > ZX_PAGE_SIZE;
+          const bool isSplitSample = sampleOffsetInPage + sampleSize > ZX_PAGE_SIZE;
 
           if (isSplitSample)
           {
             const std::size_t firstOffset = offsets[0] + sampleOffsetInPage;
-            const std::size_t firstCopy = ZX_PAGE_SIZE - sampleOffsetInPage;
-            const Binary::Data::Ptr part1 = GetSampleData(firstOffset, firstCopy);
-            Require(part1 != 0);
-            const std::size_t secondOffset = offsets[7];
-            const std::size_t secondCopy = sampleOffsetInPage + sampleSize - ZX_PAGE_SIZE;
+            const std::size_t firstSize = ZX_PAGE_SIZE - sampleOffsetInPage;
+            Require(Ranges->AddRange(firstOffset, firstSize));
+            const Binary::Data::Ptr part1 = RawData.GetSubcontainer(firstOffset, firstSize);
+            const std::size_t secondOffset = offsets[pageNumber];
+            const std::size_t secondSize = sampleOffsetInPage + sampleSize - ZX_PAGE_SIZE;
             Dbg(" Two parts in low memory: #%1$05x..#%2$05x + #%3$05x..#%4$05x", 
-              firstOffset, firstOffset + firstCopy, secondOffset, secondOffset + secondCopy);
-            if (const Binary::Data::Ptr part2 = GetSampleData(secondOffset, secondCopy))
+              firstOffset, firstOffset + firstSize, secondOffset, secondOffset + secondSize);
+            if (const Binary::Data::Ptr part2 = GetSampleData(secondOffset, secondSize))
             {
               Dbg(" Using two parts with sizes #%1$05x + #%2$05x", part1->Size(), part2->Size());
               return CreateCompositeData(*part1, *part2);
@@ -403,9 +420,7 @@ namespace Chiptune
           }
           else
           {
-            const std::size_t dataOffset = isLoMemSampleInPage 
-              ? (offsets[7] + (sampleOffsetInPage - ZX_PAGE_SIZE))
-              : offsets[0] + sampleOffsetInPage;
+            const std::size_t dataOffset = offsets[0] + sampleOffsetInPage;
             Dbg(" One part in low memory: #%1$05x..#%2$05x", 
               dataOffset, dataOffset + sampleSize);
             return GetSampleData(dataOffset, sampleSize);
@@ -459,22 +474,22 @@ namespace Chiptune
       {
       }
 
-      virtual String GetDescription() const
+      String GetDescription() const override
       {
         return Text::DIGITALSTUDIO_DECODER_DESCRIPTION;
       }
 
-      virtual Binary::Format::Ptr GetFormat() const
+      Binary::Format::Ptr GetFormat() const override
       {
         return Format;
       }
 
-      virtual bool Check(const Binary::Container& rawData) const
+      bool Check(const Binary::Container& rawData) const override
       {
         return FastCheck(rawData) && Format->Match(rawData);
       }
 
-      virtual Formats::Chiptune::Container::Ptr Decode(const Binary::Container& rawData) const
+      Formats::Chiptune::Container::Ptr Decode(const Binary::Container& rawData) const override
       {
         if (!Format->Match(rawData))
         {
@@ -530,7 +545,7 @@ namespace Chiptune
 
   Decoder::Ptr CreateDigitalStudioDecoder()
   {
-    return boost::make_shared<DigitalStudio::Decoder>();
+    return MakePtr<DigitalStudio::Decoder>();
   }
 } //namespace Chiptune
 } //namespace Formats

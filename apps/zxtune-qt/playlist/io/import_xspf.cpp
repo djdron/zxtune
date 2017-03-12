@@ -15,17 +15,15 @@
 #include "ui/utils.h"
 //common includes
 #include <error.h>
+#include <make_ptr.h>
 //library includes
-#include <core/module_attrs.h>
 #include <debug/log.h>
+#include <module/attributes.h>
 #include <parameters/convert.h>
 #include <parameters/serialize.h>
 //std includes
 #include <cctype>
 #include <set>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/range/end.hpp>
 //qt includes
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -47,36 +45,39 @@ namespace
     LAST_VERSION = 1
   };
 
-  Parameters::NameType PLAYLIST_ENABLED_PROPERTIES[] =
+  bool IsPlaylistEnabledProperty(const Parameters::NameType& name)
   {
-    Playlist::ATTRIBUTE_VERSION,
-    Playlist::ATTRIBUTE_NAME,
+    return name == Playlist::ATTRIBUTE_VERSION
+        || name == Playlist::ATTRIBUTE_NAME
+    ;
   };
 
-  std::string ITEM_DISABLED_PROPERTIES[] =
+  bool IsItemDisabledProperty(const Parameters::NameType& name)
   {
-    Module::ATTR_CRC,
-    Module::ATTR_FIXEDCRC,
-    Module::ATTR_SIZE,
-    Module::ATTR_CONTAINER,
-    Module::ATTR_TYPE,
-    Module::ATTR_VERSION,
-    Module::ATTR_PROGRAM,
-    Module::ATTR_DATE
+    return name == Module::ATTR_CRC
+        || name == Module::ATTR_FIXEDCRC
+        || name == Module::ATTR_SIZE
+        || name == Module::ATTR_CONTAINER
+        || name == Module::ATTR_TYPE
+        || name == Module::ATTR_VERSION
+        || name == Module::ATTR_PROGRAM
+        || name == Module::ATTR_DATE
+    ;
   };
 
   class PropertiesFilter : public Parameters::Visitor
   {
   public:
-    template<class T>
-    PropertiesFilter(Parameters::Visitor& delegate, T propFrom, T propTo, bool match)
+    typedef bool (*PropertyFilter)(const Parameters::NameType&);
+    
+    PropertiesFilter(Parameters::Visitor& delegate, PropertyFilter filter, bool match)
       : Delegate(delegate)
-      , Filter(propFrom, propTo)
+      , Filter(filter)
       , Match(match)
     {
     }
 
-    virtual void SetValue(const Parameters::NameType& name, Parameters::IntType val)
+    void SetValue(const Parameters::NameType& name, Parameters::IntType val) override
     {
       if (Pass(name))
       {
@@ -84,7 +85,7 @@ namespace
       }
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
     {
       if (Pass(name))
       {
@@ -92,7 +93,7 @@ namespace
       }
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::DataType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::DataType& val) override
     {
       if (Pass(name))
       {
@@ -102,11 +103,11 @@ namespace
   private:
     bool Pass(const Parameters::NameType& name) const
     {
-      return Match == (0 != Filter.count(name));
+      return Match == Filter(name);
     }
   private:
     Parameters::Visitor& Delegate;
-    const std::set<Parameters::NameType> Filter;
+    const PropertyFilter Filter;
     const bool Match;
   };
 
@@ -119,7 +120,7 @@ namespace
       , XML(&device)
       , Version(LAST_VERSION)
       , Properties(Parameters::Container::Create())
-      , Items(boost::make_shared<Playlist::IO::ContainerItems>())
+      , Items(MakeRWPtr<Playlist::IO::ContainerItems>())
     {
       Properties->SetValue(Playlist::ATTRIBUTE_NAME, FromQString(File.baseName()));
     }
@@ -143,7 +144,7 @@ namespace
       return !XML.error();
     }
 
-    Playlist::IO::ContainerItemsPtr GetItems() const
+    Playlist::IO::ContainerItems::Ptr GetItems() const
     {
       return Items;
     }
@@ -162,7 +163,7 @@ namespace
         if (tagName == XSPF::EXTENSION_TAG)
         {
           Dbg(" Parsing playlist extension");
-          PropertiesFilter filter(*Properties, PLAYLIST_ENABLED_PROPERTIES, boost::end(PLAYLIST_ENABLED_PROPERTIES), true);
+          PropertiesFilter filter(*Properties, &IsPlaylistEnabledProperty, true);
           ParseExtension(filter);
           Properties->FindValue(Playlist::ATTRIBUTE_VERSION, Version);
         }
@@ -276,7 +277,7 @@ namespace
       else if (attr == XSPF::EXTENSION_TAG)
       {
         Dbg("  parsing extension");
-        PropertiesFilter filter(props, ITEM_DISABLED_PROPERTIES, boost::end(ITEM_DISABLED_PROPERTIES), false);
+        PropertiesFilter filter(props, &IsItemDisabledProperty, false);
         ParseExtension(filter);
       }
       else
@@ -340,7 +341,7 @@ namespace
     //context
     Parameters::IntType Version;
     const Parameters::Container::Ptr Properties;
-    const boost::shared_ptr<Playlist::IO::ContainerItems> Items;
+    const Playlist::IO::ContainerItems::RWPtr Items;
   };
 
   Playlist::IO::Container::Ptr CreateXSPFPlaylist(Playlist::Item::DataProvider::Ptr provider,
@@ -359,7 +360,7 @@ namespace
       return Playlist::IO::Container::Ptr();
     }
 
-    const Playlist::IO::ContainerItemsPtr items = reader.GetItems();
+    const Playlist::IO::ContainerItems::Ptr items = reader.GetItems();
     const Parameters::Accessor::Ptr properties = reader.GetProperties();
     Dbg("Parsed %1% items", items->size());
     return Playlist::IO::CreateContainer(provider, properties, items);

@@ -9,8 +9,7 @@
 **/
 
 //library includes
-#include <core/module_attrs.h>
-#include <core/module_types.h>
+#include <module/attributes.h>
 #include <parameters/template.h>
 #include <strings/template.h>
 

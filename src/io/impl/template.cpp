@@ -10,6 +10,8 @@
 
 //local includes
 #include "boost_filesystem_path.h"
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <io/template.h>
 #include <strings/array.h>
@@ -28,7 +30,7 @@ namespace IO
     {
     }
 
-    virtual String GetFieldValue(const String& fieldName) const
+    String GetFieldValue(const String& fieldName) const override
     {
       const String res = Delegate.GetFieldValue(fieldName);
       return res.empty()
@@ -63,11 +65,11 @@ namespace IO
   {
   public:
     explicit FilenameTemplate(Strings::Template::Ptr delegate)
-      : Delegate(delegate)
+      : Delegate(std::move(delegate))
     {
     }
 
-    virtual String Instantiate(const Strings::FieldsSource& source) const
+    String Instantiate(const Strings::FieldsSource& source) const override
     {
       const FilenameFieldsFilter filter(source);
       return Delegate->Instantiate(filter);
@@ -79,6 +81,6 @@ namespace IO
   Strings::Template::Ptr CreateFilenameTemplate(const String& notation)
   {
     Strings::Template::Ptr delegate = Strings::Template::Create(notation);
-    return Strings::Template::Ptr(new FilenameTemplate(delegate));
+    return MakePtr<FilenameTemplate>(std::move(delegate));
   }
 }

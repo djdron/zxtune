@@ -11,11 +11,15 @@
 //local includes
 #include "plugin.h"
 #include "core/src/callback.h"
-#include <core/plugin_attrs.h>
+#include <core/plugins/plugins_types.h>
+//common includes
+#include <make_ptr.h>
 //library includes
-#include <core/module_attrs.h>
-//boost includes
-#include <boost/make_shared.hpp>
+#include <core/plugin_attrs.h>
+#include <module/attributes.h>
+#include <module/players/properties_helper.h>
+//std includes
+#include <utility>
 
 namespace ZXTune
 {
@@ -23,47 +27,49 @@ namespace ZXTune
   {
   public:
     CommonPlayerPlugin(Plugin::Ptr descr, Formats::Chiptune::Decoder::Ptr decoder, Module::Factory::Ptr factory)
-      : Description(descr)
-      , Decoder(decoder)
-      , Factory(factory)
+      : Description(std::move(descr))
+      , Decoder(std::move(decoder))
+      , Factory(std::move(factory))
     {
     }
 
-    virtual Plugin::Ptr GetDescription() const
+    Plugin::Ptr GetDescription() const override
     {
       return Description;
     }
 
-    virtual Binary::Format::Ptr GetFormat() const
+    Binary::Format::Ptr GetFormat() const override
     {
       return Decoder->GetFormat();
     }
 
-    virtual Analysis::Result::Ptr Detect(const Parameters::Accessor& params, DataLocation::Ptr inputData, const Module::DetectCallback& callback) const
+    Analysis::Result::Ptr Detect(const Parameters::Accessor& params, DataLocation::Ptr inputData, const Module::DetectCallback& callback) const override
     {
       const Binary::Container::Ptr data = inputData->GetData();
       if (Decoder->Check(*data))
       {
-        Module::PropertiesBuilder properties;
-        properties.SetType(Description->Id());
-        properties.SetLocation(*inputData);
+        const Parameters::Container::Ptr properties = Parameters::Container::Create();
+        Module::PropertiesHelper props(*properties);
+        props.SetType(Description->Id());
+        props.SetContainer(inputData->GetPluginsChain()->AsString());
         if (const Module::Holder::Ptr holder = Factory->CreateModule(params, *data, properties))
         {
           callback.ProcessModule(inputData, Description, holder);
           Parameters::IntType usedSize = 0;
-          properties.GetResult()->FindValue(Module::ATTR_SIZE, usedSize);
+          properties->FindValue(Module::ATTR_SIZE, usedSize);
           return Analysis::CreateMatchedResult(static_cast<std::size_t>(usedSize));
         }
       }
       return Analysis::CreateUnmatchedResult(Decoder->GetFormat(), data);
     }
 
-    virtual Module::Holder::Ptr Open(const Parameters::Accessor& params, const Binary::Container& data) const
+    Module::Holder::Ptr Open(const Parameters::Accessor& params, const Binary::Container& data) const override
     {
       if (Decoder->Check(data))
       {
-        Module::PropertiesBuilder properties;
-        properties.SetType(Description->Id());
+        const Parameters::Container::Ptr properties = Parameters::Container::Create();
+        Module::PropertiesHelper(*properties)
+          .SetType(Description->Id());
         return Factory->CreateModule(params, data, properties);
       }
       return Module::Holder::Ptr();
@@ -78,6 +84,6 @@ namespace ZXTune
     Formats::Chiptune::Decoder::Ptr decoder, Module::Factory::Ptr factory)
   {
     const Plugin::Ptr description = CreatePluginDescription(id, decoder->GetDescription(), caps | Capabilities::Category::MODULE);
-    return PlayerPlugin::Ptr(new CommonPlayerPlugin(description, decoder, factory));
+    return MakePtr<CommonPlayerPlugin>(description, decoder, factory);
   }
 }

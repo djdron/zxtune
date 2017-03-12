@@ -15,9 +15,7 @@
 #include "ui/state.h"
 //common includes
 #include <contract.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/ref.hpp>
+#include <make_ptr.h>
 
 namespace
 {
@@ -57,13 +55,13 @@ namespace
       State->Load();
     }
 
-    virtual ~SearchDialogImpl()
+    ~SearchDialogImpl() override
     {
       UpdateRecent(*Pattern);
       State->Save();
     }
 
-    virtual bool Execute(Playlist::Item::Search::Data& res)
+    bool Execute(Playlist::Item::Search::Data& res) override
     {     
       if (!exec())
       {
@@ -94,15 +92,15 @@ namespace Playlist
 
     SearchDialog::Ptr SearchDialog::Create(QWidget& parent)
     {
-      return boost::make_shared<SearchDialogImpl>(boost::ref(parent));
+      return MakePtr<SearchDialogImpl>(parent);
     }
 
     Playlist::Item::SelectionOperation::Ptr ExecuteSearchDialog(QWidget& parent)
     {
-      return ExecuteSearchDialog(parent, Model::IndexSetPtr());
+      return ExecuteSearchDialog(parent, Model::IndexSet::Ptr());
     }
 
-    Playlist::Item::SelectionOperation::Ptr ExecuteSearchDialog(QWidget& parent, Model::IndexSetPtr scope)
+    Playlist::Item::SelectionOperation::Ptr ExecuteSearchDialog(QWidget& parent, Model::IndexSet::Ptr scope)
     {
       const SearchDialog::Ptr dialog = SearchDialog::Create(parent);
       Playlist::Item::Search::Data data;

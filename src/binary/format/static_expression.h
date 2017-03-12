@@ -2,7 +2,7 @@
 *
 * @file
 *
-* @brief  Static token helpers
+* @brief  Static predicates helpers
 *
 * @author vitamin.caig@gmail.com
 *
@@ -15,136 +15,149 @@
 //common includes
 #include <contract.h>
 //std includes
+#include <array>
 #include <vector>
-//boost includes
-#include <boost/array.hpp>
 
 namespace Binary
 {
-  class StaticToken
+  namespace FormatDSL
   {
-  public:
-    explicit StaticToken(Token::Ptr tok)
-      : Mask()
-      , Count()
-      , Last()
+    class StaticPredicate
     {
-      for (uint_t idx = 0; idx != 256; ++idx)
+    public:
+      explicit StaticPredicate(const FormatDSL::Predicate& pred)
+        : Mask()
+        , Count()
+        , Last()
       {
-        if (tok->Match(idx))
+        for (uint_t idx = 0; idx != 256; ++idx)
         {
-          Set(idx);
-        }
-      }
-    }
-
-    explicit StaticToken(uint_t val)
-      : Mask()
-      , Count()
-      , Last()
-    {
-      Set(val);
-    }
-
-    bool Match(uint_t val) const
-    {
-      return Get(val);
-    }
-
-    bool IsAny() const
-    {
-      return Count == 256;
-    }
-
-    const uint_t* GetSingle() const
-    {
-      return Count == 1
-        ? &Last
-        : 0;
-    }
-
-    static bool AreIntersected(const StaticToken& lh, const StaticToken& rh)
-    {
-      if (lh.IsAny() || rh.IsAny())
-      {
-        return true;
-      }
-      else
-      {
-        for (uint_t idx = 0; idx != ElementsCount; ++idx)
-        {
-          if (0 != (lh.Mask[idx] & rh.Mask[idx]))
+          if (pred.Match(idx))
           {
-            return true;
+            Set(idx);
           }
         }
-        return false;
       }
-    }
-  private:
-    void Set(uint_t idx)
-    {
-      Require(!Get(idx));
-      const uint_t bit = idx % BitsPerElement;
-      const std::size_t offset = idx / BitsPerElement;
-      const ElementType mask = ElementType(1) << bit;
-      Mask[offset] |= mask;
-      ++Count;
-      Last = idx;
-    }
 
-    bool Get(uint_t idx) const
-    {
-      const uint_t bit = idx % BitsPerElement;
-      const std::size_t offset = idx / BitsPerElement;
-      const ElementType mask = ElementType(1) << bit;
-      return 0 != (Mask[offset] & mask);
-    }
-  private:
-    typedef uint_t ElementType;
-    static const std::size_t BitsPerElement = 8 * sizeof(ElementType);
-    static const std::size_t ElementsCount = 256 / BitsPerElement;
-    boost::array<ElementType, ElementsCount> Mask;
-    uint_t Count;
-    uint_t Last;
-  };
-
-  class StaticPattern
-  {
-  public:
-    explicit StaticPattern(ObjectIterator<Token::Ptr>::Ptr iter)
-    {
-      for (; iter->IsValid(); iter->Next())
+      explicit StaticPredicate(uint_t val)
+        : Mask()
+        , Count()
+        , Last()
       {
-        Data.push_back(StaticToken(iter->Get()));
+        Set(val);
       }
-    }
+      
+      bool Match(uint_t val) const
+      {
+        return Get(val);
+      }
 
-    std::size_t GetSize() const
-    {
-      return Data.size();
-    }
+      bool IsAny() const
+      {
+        return Count == 256;
+      }
 
-    const StaticToken& Get(std::size_t idx) const
-    {
-      return Data[idx];
-    }
+      const uint_t* GetSingle() const
+      {
+        return Count == 1
+          ? &Last
+          : nullptr;
+      }
 
-    //return back offset
-    std::size_t FindSuffix(std::size_t suffixSize) const;
-    //return forward offset
-    std::size_t FindPrefix(std::size_t prefixSize) const;
-  private:
-    const StaticToken* Begin() const
-    {
-      return &Data.front();
-    }
+      static bool AreIntersected(const StaticPredicate& lh, const StaticPredicate& rh)
+      {
+        if (lh.IsAny() || rh.IsAny())
+        {
+          return true;
+        }
+        else
+        {
+          for (uint_t idx = 0; idx != ElementsCount; ++idx)
+          {
+            if (0 != (lh.Mask[idx] & rh.Mask[idx]))
+            {
+              return true;
+            }
+          }
+          return false;
+        }
+      }
+    private:
+      void Set(uint_t idx)
+      {
+        Require(!Get(idx));
+        const uint_t bit = idx % BitsPerElement;
+        const std::size_t offset = idx / BitsPerElement;
+        const ElementType mask = ElementType(1) << bit;
+        Mask[offset] |= mask;
+        ++Count;
+        Last = idx;
+      }
 
-    const StaticToken* End() const
+      bool Get(uint_t idx) const
+      {
+        const uint_t bit = idx % BitsPerElement;
+        const std::size_t offset = idx / BitsPerElement;
+        const ElementType mask = ElementType(1) << bit;
+        return 0 != (Mask[offset] & mask);
+      }
+    private:
+      typedef uint_t ElementType;
+      static const std::size_t BitsPerElement = 8 * sizeof(ElementType);
+      static const std::size_t ElementsCount = 256 / BitsPerElement;
+      std::array<ElementType, ElementsCount> Mask;
+      uint_t Count;
+      uint_t Last;
+    };
+
+    class StaticPattern
     {
-      return &Data.back() + 1;
-    }
-  private:
-    std::vector<StaticToken> Data;
-  };
+    public:
+      explicit StaticPattern(const Pattern& pat)
+      {
+        Data.reserve(pat.size());
+        for (const auto& pred : pat)
+        {
+          Data.push_back(StaticPredicate(*pred));
+        }
+      }
+      
+      StaticPattern(const StaticPattern&) = delete;
+      StaticPattern& operator = (const StaticPattern&) = delete;
+      
+      StaticPattern(StaticPattern&& rh)// = default;
+        : Data(std::move(rh.Data))
+      {
+      }
+      
+      std::size_t GetSize() const
+      {
+        return Data.size();
+      }
+
+      const StaticPredicate& Get(std::size_t idx) const
+      {
+        return Data[idx];
+      }
+
+      //return back offsets of suffixes
+      std::vector<std::size_t> GetSuffixOffsets() const;
+      //return forward offset
+      std::size_t FindPrefix(std::size_t prefixSize) const;
+    private:
+      const StaticPredicate* Begin() const
+      {
+        return &Data.front();
+      }
+
+      const StaticPredicate* End() const
+      {
+        return &Data.back() + 1;
+      }
+
+      std::size_t FindMaxSuffixMatchSize(std::size_t offset) const;
+    private:
+      std::vector<StaticPredicate> Data;
+    };
+  }
 }

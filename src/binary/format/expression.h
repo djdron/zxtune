@@ -11,36 +11,37 @@
 #pragma once
 
 //common includes
-#include <iterator.h>
 #include <types.h>
 //std includes
+#include <list>
 #include <memory>
 #include <string>
-//boost includes
-#include <boost/shared_ptr.hpp>
 
 namespace Binary
 {
-  class Token
+  namespace FormatDSL
   {
-  public:
-    typedef boost::shared_ptr<const Token> Ptr;
-    virtual ~Token() {}
+    class Predicate
+    {
+    public:
+      typedef std::shared_ptr<const Predicate> Ptr;
+      virtual ~Predicate() = default;
 
-    virtual bool Match(uint_t val) const = 0;
-  };
+      virtual bool Match(uint_t val) const = 0;
+    };
 
-  typedef std::vector<Token::Ptr> Pattern;
+    typedef std::vector<Predicate::Ptr> Pattern;
 
-  class Expression
-  {
-  public:
-    typedef std::auto_ptr<const Expression> Ptr;
-    virtual ~Expression() {}
+    class Expression
+    {
+    public:
+      typedef std::unique_ptr<const Expression> Ptr;
+      virtual ~Expression() = default;
 
-    virtual std::size_t StartOffset() const = 0;
-    virtual ObjectIterator<Token::Ptr>::Ptr Tokens() const = 0;
+      virtual std::size_t StartOffset() const = 0;
+      virtual const Pattern& Predicates() const = 0;
 
-    static Ptr Parse(const std::string& notation);
-  };
+      static Ptr Parse(const std::string& notation);
+    };
+  }
 }

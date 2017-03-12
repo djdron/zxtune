@@ -20,14 +20,15 @@
 #include "update/parameters.h"
 //common includes
 #include <contract.h>
+#include <make_ptr.h>
 //library includes
 #include <math/numeric.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/range/end.hpp>
-#include <boost/range/size.hpp>
 //qt includes
 #include <QtWidgets/QRadioButton>
+//std includes
+#include <utility>
+//boost includes
+#include <boost/range/size.hpp>
 
 namespace
 {
@@ -45,22 +46,22 @@ namespace
   {
   public:
     explicit UpdateCheckPeriodComboboxValue(Parameters::Container::Ptr ctr)
-      : Ctr(ctr)
+      : Ctr(std::move(ctr))
     {
     }
 
-    virtual int Get() const
+    int Get() const override
     {
       using namespace Parameters;
       Parameters::IntType val = ZXTuneQT::Update::CHECK_PERIOD_DEFAULT;
       Ctr->FindValue(ZXTuneQT::Update::CHECK_PERIOD, val);
-      const Parameters::IntType* const arrPos = std::find(UPDATE_CHECK_PERIODS, boost::end(UPDATE_CHECK_PERIODS), val);
-      return arrPos != boost::end(UPDATE_CHECK_PERIODS)
+      const Parameters::IntType* const arrPos = std::find(UPDATE_CHECK_PERIODS, std::end(UPDATE_CHECK_PERIODS), val);
+      return arrPos != std::end(UPDATE_CHECK_PERIODS)
         ? arrPos - UPDATE_CHECK_PERIODS
         : -1;
     }
 
-    virtual void Set(int val)
+    void Set(int val) override
     {
       if (Math::InRange<int>(val, 0, boost::size(UPDATE_CHECK_PERIODS) - 1))
       {
@@ -68,7 +69,7 @@ namespace
       }
     }
 
-    virtual void Reset()
+    void Reset() override
     {
       Ctr->RemoveValue(Parameters::ZXTuneQT::Update::CHECK_PERIOD);
     }
@@ -94,11 +95,11 @@ namespace
       IntegerValue::Bind(*playlistCachedFiles, *Options, ZXTuneQT::Playlist::Cache::FILES_LIMIT, ZXTuneQT::Playlist::Cache::FILES_LIMIT_DEFAULT);
       IntegerValue::Bind(*playlistCacheLimit, *Options, ZXTuneQT::Playlist::Cache::MEMORY_LIMIT_MB, ZXTuneQT::Playlist::Cache::MEMORY_LIMIT_MB_DEFAULT);
       BooleanValue::Bind(*playlistStoreAllProperties, *Options, ZXTuneQT::Playlist::Store::PROPERTIES, ZXTuneQT::Playlist::Store::PROPERTIES_DEFAULT);
-      UpdateCheckPeriod = IntegerValue::Bind(*updateCheckPeriod, boost::make_shared<UpdateCheckPeriodComboboxValue>(Options));
+      UpdateCheckPeriod = IntegerValue::Bind(*updateCheckPeriod, MakePtr<UpdateCheckPeriodComboboxValue>(Options));
       BooleanValue::Bind(*appSingleInstance, *Options, ZXTuneQT::SINGLE_INSTANCE, ZXTuneQT::SINGLE_INSTANCE_DEFAULT);
     }
 
-    virtual void OnLanguageChanged(int idx)
+    void OnLanguageChanged(int idx) override
     {
       const QString lang = languageSelect->itemData(idx).toString();
       Language->Set(lang);
@@ -106,7 +107,7 @@ namespace
     }
 
     //QWidget
-    virtual void changeEvent(QEvent* event)
+    void changeEvent(QEvent* event) override
     {
       if (event && QEvent::LanguageChange == event->type())
       {
@@ -119,9 +120,8 @@ namespace
     void SetupLanguages()
     {
       const QStringList& langs = Language->GetAvailable();
-      for (QStringList::const_iterator it = langs.begin(), lim = langs.end(); it != lim; ++it)
+      for (const auto& id : langs)
       {
-        const QString& id(*it);
         const QString& name(QLocale(id).nativeLanguageName());
         languageSelect->addItem(name, id);
       }

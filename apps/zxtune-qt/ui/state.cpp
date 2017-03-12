@@ -15,12 +15,10 @@
 #include "ui/utils.h"
 //common includes
 #include <pointers.h>
+#include <make_ptr.h>
 //library includes
 #include <debug/log.h>
 #include <parameters/convert.h>
-//boost includes
-#include <boost/make_shared.hpp>
-#include <boost/mem_fn.hpp>
 //qt includes
 #include <QtCore/QByteArray>
 #include <QtWidgets/QAbstractButton>
@@ -38,8 +36,8 @@ namespace
   class WidgetState
   {
   public:
-    typedef boost::shared_ptr<const WidgetState> Ptr;
-    virtual ~WidgetState() {}
+    typedef std::shared_ptr<const WidgetState> Ptr;
+    virtual ~WidgetState() = default;
 
     virtual void Load() const = 0;
     virtual void Save() const = 0;
@@ -51,52 +49,52 @@ namespace
   {
   public:
     NamespaceContainer(Parameters::Container::Ptr delegate, const Parameters::NameType& prefix)
-      : Delegate(delegate)
+      : Delegate(std::move(delegate))
       , Prefix(prefix)
     {
     }
 
-    virtual uint_t Version() const
+    uint_t Version() const override
     {
       return Delegate->Version();
     }
 
-    virtual void SetValue(const Parameters::NameType& name, Parameters::IntType val)
+    void SetValue(const Parameters::NameType& name, Parameters::IntType val) override
     {
       Delegate->SetValue(Prefix + name, val);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
     {
       Delegate->SetValue(Prefix + name, val);
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::DataType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::DataType& val) override
     {
       Delegate->SetValue(Prefix + name, val);
     }
 
-    virtual void RemoveValue(const Parameters::NameType& name)
+    void RemoveValue(const Parameters::NameType& name) override
     {
       Delegate->RemoveValue(Prefix + name);
     }
 
-    virtual bool FindValue(const Parameters::NameType& name, Parameters::IntType& val) const
+    bool FindValue(const Parameters::NameType& name, Parameters::IntType& val) const override
     {
       return Delegate->FindValue(Prefix + name, val);
     }
 
-    virtual bool FindValue(const Parameters::NameType& name, Parameters::StringType& val) const
+    bool FindValue(const Parameters::NameType& name, Parameters::StringType& val) const override
     {
       return Delegate->FindValue(Prefix + name, val);
     }
 
-    virtual bool FindValue(const Parameters::NameType& name, Parameters::DataType& val) const
+    bool FindValue(const Parameters::NameType& name, Parameters::DataType& val) const override
     {
       return Delegate->FindValue(Prefix + name, val);
     }
 
-    virtual void Process(Parameters::Visitor& visitor) const
+    void Process(Parameters::Visitor& visitor) const override
     {
       NamespacedVisitor namedVisitor(Prefix, visitor);
       Delegate->Process(namedVisitor);
@@ -111,17 +109,17 @@ namespace
       {
       }
 
-      virtual void SetValue(const Parameters::NameType& name, Parameters::IntType val)
+      void SetValue(const Parameters::NameType& name, Parameters::IntType val) override
       {
         FilterValue(name, val);
       }
 
-      virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+      void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
       {
         FilterValue(name, val);
       }
 
-      virtual void SetValue(const Parameters::NameType& name, const Parameters::DataType& val)
+      void SetValue(const Parameters::NameType& name, const Parameters::DataType& val) override
       {
         FilterValue(name, val);
       }
@@ -173,7 +171,7 @@ namespace
     const QString name = obj.objectName();
     return name.size() == 0
       ? parent
-      : boost::make_shared<NamespaceContainer>(parent, name.toStdString());
+      : MakePtr<NamespaceContainer>(parent, name.toStdString());
   }
 
   class MainWindowState : public WidgetState
@@ -182,17 +180,17 @@ namespace
     MainWindowState(QMainWindow* wnd, Parameters::Container::Ptr ctr)
       : Wnd(*wnd)
       //store in 'main' namespace
-      , Container(ctr)
+      , Container(std::move(ctr))
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Wnd.restoreGeometry(LoadBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_GEOMETRY));
       Wnd.restoreState(LoadBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_LAYOUT), PARAMETERS_VERSION);
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       SaveBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_GEOMETRY, Wnd.saveGeometry());
       SaveBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_LAYOUT, Wnd.saveState(PARAMETERS_VERSION));
@@ -208,16 +206,16 @@ namespace
     DialogState(QDialog* wnd, Parameters::Container::Ptr ctr)
       : Wnd(*wnd)
       //store in 'main' namespace
-      , Container(ctr)
+      , Container(std::move(ctr))
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Wnd.restoreGeometry(LoadBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_GEOMETRY));
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       SaveBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_GEOMETRY, Wnd.saveGeometry());
     }
@@ -232,16 +230,16 @@ namespace
     FileDialogState(QFileDialog* wnd, Parameters::Container::Ptr ctr)
       : Wnd(*wnd)
       //store in 'main' namespace
-      , Container(ctr)
+      , Container(std::move(ctr))
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Wnd.restoreState(LoadBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_LAYOUT));
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       SaveBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_LAYOUT, Wnd.saveState());
     }
@@ -259,14 +257,14 @@ namespace
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Parameters::IntType idx = 0;
       Container->FindValue(Parameters::ZXTuneQT::UI::PARAM_INDEX, idx);
       Wid.setCurrentIndex(idx);
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       Container->SetValue(Parameters::ZXTuneQT::UI::PARAM_INDEX, Wid.currentIndex());
     }
@@ -284,7 +282,7 @@ namespace
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Parameters::IntType size = 0;
       if (Container->FindValue(Parameters::ZXTuneQT::UI::PARAM_SIZE, size) && size)
@@ -301,7 +299,7 @@ namespace
       }
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       const Parameters::IntType size = Wid.count();
       Container->SetValue(Parameters::ZXTuneQT::UI::PARAM_SIZE, size);
@@ -363,7 +361,7 @@ namespace
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       //do not load sorting-related data
       const AutoBlockSignal blockstate(View);
@@ -374,7 +372,7 @@ namespace
       }
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       SaveBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_LAYOUT, View.saveState());
     }
@@ -388,12 +386,12 @@ namespace
   public:
     ButtonState(QAbstractButton* wid, Parameters::Container::Ptr ctr)
       : Wid(*wid)
-      , Container(ctr)
+      , Container(std::move(ctr))
       , Name(FromQString(Wid.objectName()))
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Parameters::IntType val = 0;
       if (Container->FindValue(Name, val))
@@ -402,7 +400,7 @@ namespace
       }
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       Container->SetValue(Name, Wid.isChecked());
     }
@@ -421,7 +419,7 @@ namespace
     {
     }
 
-    virtual void Load() const
+    void Load() const override
     {
       Parameters::IntType val;
       if (!Wid.restoreGeometry(LoadBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_GEOMETRY)))
@@ -434,7 +432,7 @@ namespace
       }
     }
 
-    virtual void Save() const
+    void Save() const override
     {
       SaveBlob(*Container, Parameters::ZXTuneQT::UI::PARAM_GEOMETRY, Wid.saveGeometry());
       Container->SetValue(Parameters::ZXTuneQT::UI::PARAM_VISIBLE, Wid.isVisible());
@@ -448,54 +446,54 @@ namespace
   {
   public:
     explicit PersistentState(Parameters::Container::Ptr ctr)
-      : Options(ctr)
+      : Options(std::move(ctr))
     {
     }
 
-    virtual void AddWidget(QWidget& wid)
+    void AddWidget(QWidget& wid) override
     {
       if (QMainWindow* mainWnd = dynamic_cast<QMainWindow*>(&wid))
       {
-        Substates.push_back(boost::make_shared<MainWindowState>(mainWnd, Options));
+        Substates.push_back(MakePtr<MainWindowState>(mainWnd, Options));
       }
       else if (QFileDialog* fileDialog = dynamic_cast<QFileDialog*>(&wid))
       {
-        Substates.push_back(boost::make_shared<FileDialogState>(fileDialog, Options));
+        Substates.push_back(MakePtr<FileDialogState>(fileDialog, Options));
       }
       else if (QDialog* dialog = dynamic_cast<QDialog*>(&wid))
       {
-        Substates.push_back(boost::make_shared<DialogState>(dialog, Options));
+        Substates.push_back(MakePtr<DialogState>(dialog, Options));
       }
       else if (QTabWidget* tabs = dynamic_cast<QTabWidget*>(&wid))
       {
-        Substates.push_back(boost::make_shared<TabWidgetState>(tabs, Options));
+        Substates.push_back(MakePtr<TabWidgetState>(tabs, Options));
       }
       else if (QComboBox* combo = dynamic_cast<QComboBox*>(&wid))
       {
-        Substates.push_back(boost::make_shared<ComboBoxState>(combo, Options));
+        Substates.push_back(MakePtr<ComboBoxState>(combo, Options));
       }
       else if (QHeaderView* headerView = dynamic_cast<QHeaderView*>(&wid))
       {
-        Substates.push_back(boost::make_shared<HeaderViewState>(headerView, Options));
+        Substates.push_back(MakePtr<HeaderViewState>(headerView, Options));
       }
       else if (QAbstractButton* button = dynamic_cast<QAbstractButton*>(&wid))
       {
-        Substates.push_back(boost::make_shared<ButtonState>(button, Options));
+        Substates.push_back(MakePtr<ButtonState>(button, Options));
       }
       else
       {
-        Substates.push_back(boost::make_shared<AnyWidgetState>(&wid, Options));
+        Substates.push_back(MakePtr<AnyWidgetState>(&wid, Options));
       }
     }
 
-    virtual void Load() const
+    void Load() const override
     {
-      std::for_each(Substates.begin(), Substates.end(), boost::mem_fn(&WidgetState::Load));
+      std::for_each(Substates.begin(), Substates.end(), std::mem_fn(&WidgetState::Load));
     }
 
-    virtual void Save() const
+    void Save() const override
     {
-      std::for_each(Substates.begin(), Substates.end(), boost::mem_fn(&WidgetState::Save));
+      std::for_each(Substates.begin(), Substates.end(), std::mem_fn(&WidgetState::Save));
     }
   private:
     const Parameters::Container::Ptr Options;
@@ -507,16 +505,16 @@ namespace UI
 {
   State::Ptr State::Create(const String& category)
   {
-    const Parameters::Container::Ptr container = boost::make_shared<NamespaceContainer>(
+    const Parameters::Container::Ptr container = MakePtr<NamespaceContainer>(
       GlobalOptions::Instance().Get(), Parameters::ZXTuneQT::UI::PREFIX + ToStdString(category));
-    return State::Ptr(new PersistentState(container));
+    return MakePtr<PersistentState>(container);
   }
 
   State::Ptr State::Create(QWidget& root)
   {
-    const Parameters::Container::Ptr container = boost::make_shared<NamespaceContainer>(
+    const Parameters::Container::Ptr container = MakePtr<NamespaceContainer>(
       GlobalOptions::Instance().Get(), Parameters::ZXTuneQT::UI::PREFIX + root.objectName().toStdString());
-    State::Ptr res(new PersistentState(container));
+    State::Ptr res = MakePtr<PersistentState>(container);
     res->AddWidget(root);
     return res;
   }

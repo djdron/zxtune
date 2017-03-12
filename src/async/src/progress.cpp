@@ -8,17 +8,17 @@
 *
 **/
 
+//common includes
+#include <make_ptr.h>
 //library includes
 #include <async/progress.h>
-//boost includes
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/mutex.hpp>
+//std includes
+#include <condition_variable>
+#include <mutex>
 
-namespace
+namespace Async
 {
-  class SynchronizedProgress : public Async::Progress
+  class SynchronizedProgress : public Progress
   {
   public:
     SynchronizedProgress()
@@ -27,23 +27,23 @@ namespace
     {
     }
 
-    virtual void Produce(uint_t items)
+    void Produce(uint_t items) override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       Produced += items;
     }
 
-    virtual void Consume(uint_t items)
+    void Consume(uint_t items) override
     {
-      const boost::mutex::scoped_lock lock(Mutex);
+      const std::lock_guard<std::mutex> lock(Mutex);
       Consumed += items;
       NotifyIfComplete();
     }
 
-    virtual void WaitForComplete() const
+    void WaitForComplete() const override
     {
-      boost::mutex::scoped_lock lock(Mutex);
-      Complete.wait(lock, boost::bind(&SynchronizedProgress::IsComplete, this));
+      std::unique_lock<std::mutex> lock(Mutex);
+      Complete.wait(lock, [this] () {return IsComplete();});
     }
   private:
     void NotifyIfComplete()
@@ -61,8 +61,8 @@ namespace
   private:
     uint_t Produced;
     uint_t Consumed;
-    mutable boost::mutex Mutex;
-    mutable boost::condition_variable Complete;
+    mutable std::mutex Mutex;
+    mutable std::condition_variable Complete;
   };
 }
 
@@ -70,6 +70,6 @@ namespace Async
 {
   Progress::Ptr Progress::Create()
   {
-    return boost::make_shared<SynchronizedProgress>();
+    return MakePtr<SynchronizedProgress>();
   }
 }

@@ -11,6 +11,8 @@
 #pragma once
 
 //library includes
+#include <module/track_state.h>
+#include <module/holder.h>
 #include <sound/backend.h>
 #include <sound/chunk.h>
 
@@ -19,8 +21,8 @@ namespace Sound
   class BackendWorker
   {
   public:
-    typedef boost::shared_ptr<BackendWorker> Ptr;
-    virtual ~BackendWorker() {}
+    typedef std::shared_ptr<BackendWorker> Ptr;
+    virtual ~BackendWorker() = default;
 
     virtual void Startup() = 0;
     virtual void Shutdown() = 0;
@@ -34,8 +36,8 @@ namespace Sound
   class BackendWorkerFactory
   {
   public:
-    typedef boost::shared_ptr<const BackendWorkerFactory> Ptr;
-    virtual ~BackendWorkerFactory() {}
+    typedef std::shared_ptr<const BackendWorkerFactory> Ptr;
+    virtual ~BackendWorkerFactory() = default;
 
     virtual BackendWorker::Ptr CreateWorker(Parameters::Accessor::Ptr params, Module::Holder::Ptr holder) const = 0;
   };

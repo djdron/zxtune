@@ -10,35 +10,37 @@
 
 //local includes
 #include "dump_builder.h"
-//boost includes
-#include <boost/make_shared.hpp>
+//common includes
+#include <make_ptr.h>
 //std includes
 #include <algorithm>
 #include <iterator>
 
-namespace
+namespace Devices
 {
-  using namespace Devices::AYM;
-
-  const uint8_t NO_R13 = 0xff;
-
+namespace AYM
+{
   class RawDumpBuilder : public FramedDumpBuilder
   {
   public:
-    virtual void Initialize()
+    enum
+    {
+      NO_R13 = 0xff
+    };
+    
+    void Initialize() override
     {
       Data.clear();
     }
 
-    virtual void GetResult(Dump& data) const
+    void GetResult(Dump& data) const override
     {
       data = Data;
     }
 
-    virtual void WriteFrame(uint_t framesPassed, const Registers& state, const Registers& update)
+    void WriteFrame(uint_t framesPassed, const Registers& state, const Registers& update) override
     {
       assert(framesPassed);
-      Data.reserve(Data.size() + framesPassed * Registers::TOTAL);
       std::back_insert_iterator<Dump> inserter(Data);
       if (const uint_t toSkip = framesPassed - 1)
       {
@@ -67,21 +69,16 @@ namespace
   private:
     Dump Data;
   };
-}
 
-namespace Devices
-{
-  namespace AYM
+  FramedDumpBuilder::Ptr CreateRawDumpBuilder()
   {
-    FramedDumpBuilder::Ptr CreateRawDumpBuilder()
-    {
-      return boost::make_shared<RawDumpBuilder>();
-    }
-
-    Dumper::Ptr CreateRawStreamDumper(DumperParameters::Ptr params)
-    {
-      const FramedDumpBuilder::Ptr builder = CreateRawDumpBuilder();
-      return CreateDumper(params, builder);
-    }
+    return MakePtr<RawDumpBuilder>();
   }
+
+  Dumper::Ptr CreateRawStreamDumper(DumperParameters::Ptr params)
+  {
+    const FramedDumpBuilder::Ptr builder = CreateRawDumpBuilder();
+    return CreateDumper(params, builder);
+  }
+}
 }

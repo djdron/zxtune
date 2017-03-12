@@ -15,20 +15,20 @@
 #include "tags/ayl.h"
 //common includes
 #include <error.h>
+#include <make_ptr.h>
 //library includes
 #include <core/core_parameters.h>
-#include <core/module_attrs.h>
 #include <core/plugins/utils.h>
 #include <debug/log.h>
 #include <devices/aym/chip.h>
 #include <io/api.h>
+#include <module/attributes.h>
 #include <parameters/serialize.h>
 #include <sound/sound_parameters.h>
 //std includes
 #include <cctype>
 //boost includes
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/make_shared.hpp>
 //qt includes
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -153,10 +153,14 @@ namespace
       String Path;
       Strings::Map Parameters;
     };
-    typedef std::vector<AYLEntry> AYLEntries;
+    struct AYLEntries : public std::vector<AYLEntry>
+    {
+      typedef std::shared_ptr<const AYLEntries> Ptr;
+      typedef std::shared_ptr<AYLEntries> RWPtr;
+    };
   public:
     AYLContainer(LinesSource& source, Log::ProgressCallback& cb)
-      : Container(boost::make_shared<AYLEntries>())
+      : Container(MakeRWPtr<AYLEntries>())
       , Parameters()
     {
       const Log::ProgressCallback::Ptr progress = Log::CreatePercentProgressCallback(source.GetSize(), cb);
@@ -177,8 +181,8 @@ namespace
     class Iterator
     {
     public:
-      explicit Iterator(boost::shared_ptr<const AYLEntries> container)
-        : Container(container)
+      explicit Iterator(AYLEntries::Ptr container)
+        : Container(std::move(container))
         , Delegate(Container->begin(), Container->end())
       {
       }
@@ -203,7 +207,7 @@ namespace
         ++Delegate;
       }
     private:
-      const boost::shared_ptr<const AYLEntries> Container;
+      const AYLEntries::Ptr Container;
       RangeIterator<AYLEntries::const_iterator> Delegate;
     };
 
@@ -268,7 +272,7 @@ namespace
       }
     }
   private:
-    const boost::shared_ptr<AYLEntries> Container;
+    const AYLEntries::RWPtr Container;
     Strings::Map Parameters;
   };
 
@@ -293,7 +297,7 @@ namespace
       return Offset;
     }
 
-    virtual void SetValue(const Parameters::NameType& name, Parameters::IntType val)
+    void SetValue(const Parameters::NameType& name, Parameters::IntType val) override
     {
       const String nameStr = FromStdString(name.FullPath());
       Dbg("  property %1%=%2%", nameStr, val);
@@ -317,7 +321,7 @@ namespace
       //ignore "Loop", "Length", "Time"
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::StringType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::StringType& val) override
     {
       const String nameStr = FromStdString(name.FullPath());
       Dbg("  property %1%='%2%'", nameStr, val);
@@ -359,7 +363,7 @@ namespace
       //ignore "Tracker", "Type", "ams_andsix", "FormatSpec"
     }
 
-    virtual void SetValue(const Parameters::NameType& name, const Parameters::DataType& val)
+    void SetValue(const Parameters::NameType& name, const Parameters::DataType& val) override
     {
       //try to process as string
       Delegate.SetValue(name, Parameters::ConvertToString(val));
@@ -453,10 +457,10 @@ namespace
     }
   }
 
-  Playlist::IO::ContainerItemsPtr CreateItems(const QString& basePath, const VersionLayer& version, const AYLContainer& aylItems)
+  Playlist::IO::ContainerItems::Ptr CreateItems(const QString& basePath, const VersionLayer& version, const AYLContainer& aylItems)
   {
     const QDir baseDir(basePath);
-    const boost::shared_ptr<Playlist::IO::ContainerItems> items = boost::make_shared<Playlist::IO::ContainerItems>();
+    const Playlist::IO::ContainerItems::RWPtr items = MakeRWPtr<Playlist::IO::ContainerItems>();
     for (AYLContainer::Iterator iter = aylItems.GetIterator(); iter.IsValid(); iter.Next())
     {
       const String& itemPath = iter.GetPath();
@@ -519,7 +523,7 @@ namespace Playlist
       LinesSource lines(stream, version);
       const AYLContainer aylItems(lines, cb);
       const QString basePath = info.absolutePath();
-      const ContainerItemsPtr items = CreateItems(basePath, version, aylItems);
+      const ContainerItems::Ptr items = CreateItems(basePath, version, aylItems);
       const Parameters::Container::Ptr properties = CreateProperties(version, aylItems);
       properties->SetValue(Playlist::ATTRIBUTE_NAME, FromQString(info.baseName()));
       return Playlist::IO::CreateContainer(provider, properties, items);

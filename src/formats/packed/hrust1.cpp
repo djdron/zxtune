@@ -24,6 +24,7 @@
 #include <math/numeric.h>
 //std includes
 #include <numeric>
+#include <iterator>
 //text includes
 #include <formats/text/packed.h>
 

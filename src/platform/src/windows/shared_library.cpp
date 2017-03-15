@@ -18,6 +18,8 @@
 #include <l10n/api.h>
 //platform includes
 #include <windows.h>
+//std includes
+#include <iterator>
 
 #define FILE_TAG 326CACD8
 

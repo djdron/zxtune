@@ -27,6 +27,7 @@
 #include <cstring>
 #include <functional>
 #include <numeric>
+#include <iterator>
 //boost includes
 #include <boost/bind.hpp>
 //text includes

@@ -21,6 +21,7 @@
 //std includes
 #include <array>
 #include <cstring>
+#include <functional>
 //text includes
 #include <formats/text/chiptune.h>
 #include <formats/text/packed.h>

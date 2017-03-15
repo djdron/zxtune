@@ -20,6 +20,7 @@
 #include <debug/log.h>
 //std includes
 #include <array>
+#include <functional>
 //text includes
 #include <formats/text/chiptune.h>
 #include <formats/text/packed.h>

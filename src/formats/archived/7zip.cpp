@@ -25,6 +25,7 @@
 #include <list>
 #include <map>
 #include <numeric>
+#include <algorithm>
 //text include
 #include <formats/text/archived.h>
 

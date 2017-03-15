@@ -22,6 +22,7 @@
 #include <formats/packed.h>
 //std includes
 #include <cstring>
+#include <iterator>
 //text includes
 #include <formats/text/packed.h>
 

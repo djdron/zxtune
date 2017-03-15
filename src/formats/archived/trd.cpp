@@ -21,6 +21,7 @@
 //std includes
 #include <cstring>
 #include <numeric>
+#include <functional>
 //text include
 #include <formats/text/archived.h>
 

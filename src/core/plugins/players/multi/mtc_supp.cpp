@@ -28,6 +28,7 @@
 #include <parameters/tools.h>
 //std includes
 #include <algorithm>
+#include <functional>
 #include <list>
 
 namespace Module

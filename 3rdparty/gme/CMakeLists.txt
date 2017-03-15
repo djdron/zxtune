@@ -2,7 +2,8 @@ project(libgme)
 
 add_definitions(-DNSF_EMU_APU_ONLY)
 
-set(SRCS_C_CXX "gme/blargg_common.cpp"
+set(SRCS_C_CXX
+	"gme/blargg_common.cpp"
 	"gme/blargg_errors.cpp"
 	"gme/Data_Reader.cpp"
 	"gme/Gme_File.cpp"
@@ -81,7 +82,16 @@ set(SRCS_C_CXX "gme/blargg_common.cpp"
 
 	"gme/Gym_Emu.cpp"
 	"gme/Ym2612_Emu.cpp" "gme/fm2612.c"
-	"gme/Sms_Apu.cpp")
+	"gme/Sms_Apu.cpp"
+
+	"gme/Kss_Emu.cpp"
+	"gme/Kss_Core.cpp"
+	"gme/Kss_Cpu.cpp"
+	"gme/Kss_Scc_Apu.cpp"
+	"gme/Z80_Cpu.cpp"
+	"gme/Opl_Apu.cpp"
+	"gme/fmopl.cpp"
+)
 
 file(GLOB SRCS_H "gme/*.h")
 

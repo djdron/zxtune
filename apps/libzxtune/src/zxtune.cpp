@@ -99,7 +99,7 @@ namespace
     {
     }
 
-    void ApplyData(const Sound::Chunk::Ptr& data) override
+    void ApplyData(Sound::Chunk::Ptr data) override
     {
       Buffer.Put(data->begin(), data->size());
     }

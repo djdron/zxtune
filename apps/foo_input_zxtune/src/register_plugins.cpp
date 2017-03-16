@@ -15,12 +15,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <core/plugins/containers/plugins.h>
+#include <core/plugins/archives/plugins.h>
 
 namespace ZXTune
 {
 
-void RegisterContainerPlugins(ArchivePluginsRegistrator& registrator)
+void RegisterArchivePlugins(ArchivePluginsRegistrator& registrator)
 {
 	//process raw container first
 	RegisterRawContainer(registrator);
@@ -29,6 +29,11 @@ void RegisterContainerPlugins(ArchivePluginsRegistrator& registrator)
 	//process containers last
 	RegisterMultitrackContainers(registrator);
 //	RegisterZdataContainer(registrator);
+
+//packed
+	RegisterDepackPlugins(registrator);
+	RegisterChiptunePackerPlugins(registrator);
+	RegisterDecompilePlugins(registrator);
 }
 
 }

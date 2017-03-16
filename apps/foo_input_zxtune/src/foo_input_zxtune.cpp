@@ -25,17 +25,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <cycle_buffer.h>
 #include <error_tools.h>
 #include <progress_callback.h>
+#include <make_ptr.h>
 //library includes
 #include <binary/container.h>
 #include <binary/container_factories.h>
 #include <time/stamp.h>
 #include <core/core_parameters.h>
 #include <core/module_open.h>
-#include <core/module_holder.h>
-#include <core/module_player.h>
 #include <core/module_detect.h>
-#include <core/module_attrs.h>
 #include <core/data_location.h>
+#include <module/holder.h>
+#include <module/attributes.h>
 #include <parameters/container.h>
 #include <sound/sound_parameters.h>
 #include <platform/version/api.h>
@@ -56,10 +56,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Since foobar2000 v1.0 having at least one of these in your DLL is mandatory to let the troubleshooter tell different versions of your component apart.
 // Note that it is possible to declare multiple components within one DLL, but it's strongly recommended to keep only one declaration per DLL.
 // As for 1.1, the version numbers are used by the component update finder to find updates; for that to work, you must have ONLY ONE declaration per DLL. If there are multiple declarations, the component is assumed to be outdated and a version number of "0" is assumed, to overwrite the component with whatever is currently on the site assuming that it comes with proper version numbers.
-DECLARE_COMPONENT_VERSION("ZX Tune Player", "0.0.5",
-"ZXTune Player (C) 2008 - 2015 by Vitamin/CAIG.\n"
-"based on r3500 oct 30 2015\n"
-"foobar2000 plugin by djdron (C) 2013 - 2015.\n\n"
+DECLARE_COMPONENT_VERSION("ZX Tune Player", "0.0.6",
+"ZXTune Player (C) 2008 - 2016 by Vitamin/CAIG.\n"
+"based on r3750 dec 06 2016\n"
+"foobar2000 plugin by djdron (C) 2013 - 2017.\n\n"
 
 "Used source codes from:\n"
 "AYEmul from S.Bulba\n"
@@ -132,9 +132,9 @@ public:
 		m_file = p_filehint;//p_filehint may be null, hence next line
 		input_open_file_helper(m_file,p_path,p_reason,p_abort);//if m_file is null, opens file with appropriate privileges for our operation (read/write for writing tags, read-only otherwise).
 		t_size size = (t_size)m_file->get_size(p_abort);
-		std::auto_ptr<Dump> data(new Dump(size));
+		std::unique_ptr<Dump> data(new Dump(size));
 		m_file->read(&data->front(), size, p_abort);
-		input_file = Binary::CreateContainer(data);
+		input_file = Binary::CreateContainer(std::move(data));
 		if(!input_file)
 			throw exception_io_unsupported_format();
 		if(p_reason == input_open_info_read)

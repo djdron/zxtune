@@ -1,7 +1,7 @@
 class BufferRender : public Sound::Receiver
 {
 public:
-	typedef boost::shared_ptr<BufferRender> Ptr;
+	typedef std::shared_ptr<BufferRender> Ptr;
 
 	BufferRender()
 		: Buffer(32768)
@@ -9,12 +9,12 @@ public:
 	{
 	}
 
-	virtual void ApplyData(const Sound::Chunk::Ptr& data)
+	void ApplyData(Sound::Chunk::Ptr data) override
 	{
 		Buffer.Put(data->begin(), data->size());
 	}
 
-	virtual void Flush()
+	void Flush() override
 	{
 	}
 
@@ -29,10 +29,10 @@ public:
 		std::size_t part1Size = 0;
 		const Sound::Sample* part2 = 0;
 		std::size_t part2Size = 0;
-		if (const std::size_t toGet = Buffer.Peek(count, part1, part1Size, part2, part2Size))
+		if(const std::size_t toGet = Buffer.Peek(count, part1, part1Size, part2, part2Size))
 		{
 			std::memcpy(target, part1, part1Size * sizeof(*part1));
-			if (part2)
+			if(part2)
 			{
 				std::memcpy(target + part1Size, part2, part2Size * sizeof(*part2));
 			}
@@ -63,7 +63,7 @@ private:
 class PlayerWrapper
 {
 public:
-	typedef boost::shared_ptr<PlayerWrapper> Ptr;
+	typedef std::shared_ptr<PlayerWrapper> Ptr;
 
 	PlayerWrapper(Parameters::Container::Ptr params, Module::Renderer::Ptr renderer, BufferRender::Ptr buffer)
 		: Params(params)
@@ -75,13 +75,13 @@ public:
 	std::size_t RenderSound(Sound::Sample* target, std::size_t samples)
 	{
 		std::size_t result = 0;
-		while (samples)
+		while(samples)
 		{
 			const std::size_t got = Buffer->GetSamples(samples, target);
 			target += got;
 			samples -= got;
 			result += got;
-			if (0 == samples || !Renderer->RenderFrame())
+			if(0 == samples || !Renderer->RenderFrame())
 			{
 				break;
 			}
@@ -91,18 +91,18 @@ public:
 
 	std::size_t Seek(std::size_t samples)
 	{
-		if (samples < Buffer->GetCurrentSample())
+		if(samples < Buffer->GetCurrentSample())
 		{
 			Reset();
 		}
-		while (samples != Buffer->GetCurrentSample())
+		while(samples != Buffer->GetCurrentSample())
 		{
 			const std::size_t toDrop = samples - Buffer->GetCurrentSample();
-			if (const std::size_t dropped = Buffer->DropSamples(toDrop))
+			if(const std::size_t dropped = Buffer->DropSamples(toDrop))
 			{
 				continue;
 			}
-			if (!Renderer->RenderFrame())
+			if(!Renderer->RenderFrame())
 			{
 				break;
 			}
@@ -126,9 +126,9 @@ public:
 		const Parameters::Container::Ptr params = Parameters::Container::Create();
 		//copy initial properties
 		holder->GetModuleProperties()->Process(*params);
-		const BufferRender::Ptr buffer = boost::make_shared<BufferRender>();
+		const BufferRender::Ptr buffer = MakePtr<BufferRender>();
 		const Module::Renderer::Ptr renderer = holder->CreateRenderer(params, buffer);
-		return boost::make_shared<PlayerWrapper>(params, renderer, buffer);
+		return MakePtr<PlayerWrapper>(params, renderer, buffer);
 	}
 private:
 	const Parameters::Container::Ptr Params;

@@ -1,5 +1,5 @@
 /*
-ZXTune foobar2000 decoder component by djdron (C) 2013 - 2014
+ZXTune foobar2000 decoder component by djdron (C) 2013 - 2017
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -86,7 +86,7 @@ static const char* file_types[] =
 	// AY/YM
 	"as0", "asc", "ay", "ayc", "ftc", "gtr", "psc", "psg", "psm", "pt1", "pt2", "pt3", "sqt", "st1", "st3", "stc", "stp", "ts", "vtx", "ym",
 	// dac
-	"ahx", "pdt", "chi", "str", "dst", "sqd", "et1", "dmm", "669", "amf", "dbm", "dmf", "dtm", "dtt", "emod", "far", "fnk", "gdm", "gtk", "mod", "mtn", "imf", "ims", "it", "liq", "mdl", "med", "mtm", "okt", "pt36", "ptm", "rtm", "s3m", "sfx", "stim", "stm", "stx", "tcb", "ult", "xm",
+	"ahx", "hvl", "pdt", "chi", "str", "dst", "sqd", "et1", "dmm", "669", "amf", "dbm", "dmf", "dtm", "dtt", "emod", "far", "fnk", "gdm", "gtk", "mod", "mtn", "imf", "ims", "it", "liq", "mdl", "med", "mtm", "okt", "pt36", "ptm", "rtm", "s3m", "sfx", "stim", "stm", "stx", "tcb", "ult", "xm",
 	// fm
 	"tfc", "tfd", "tf0", "tfe",
 	// Sam Coupe
@@ -95,6 +95,8 @@ static const char* file_types[] =
 	"sid",
 	// NES/SNES
 	"spc", "nsf", "nsfe",
+	// MSX
+	"kss",
 	// Game Boy
 	"gbs",
 	// Atari

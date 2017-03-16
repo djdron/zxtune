@@ -78,5 +78,5 @@ set(FOOBAR_SDK_LIBRARIES
 
 add_library(foo_input_zxtune MODULE ${SRCS_CXX} ${SRCS_H})
 add_dependencies(foo_input_zxtune ${LIBS})
-target_link_libraries(foo_input_zxtune ${LIBS} ${ZLIB_LIBRARIES} ${FOOBAR_SDK_LIBRARIES})
+target_link_libraries(foo_input_zxtune ${LIBS} ${FOOBAR_SDK_LIBRARIES})
 set_property(TARGET foo_input_zxtune PROPERTY FOLDER "apps")

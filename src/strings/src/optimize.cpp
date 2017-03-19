@@ -21,7 +21,11 @@ namespace Strings
   String Optimize(const String& str)
   {
     String res(boost::algorithm::trim_copy_if(str, !boost::is_from_range('\x21', '\x7f')));
-    std::replace_if(res.begin(), res.end(), std::ptr_fun<int, int>(&std::iscntrl), '\?');
+	struct IsCntrlSafe
+	{
+		bool operator()(char ch) const { return ch >= 0 && std::iscntrl(ch); }
+	};
+    std::replace_if(res.begin(), res.end(), IsCntrlSafe(), '\?');
     return res;
   }
 }

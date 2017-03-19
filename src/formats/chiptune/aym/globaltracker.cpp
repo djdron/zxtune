@@ -880,7 +880,7 @@ namespace Chiptune
         : StartAddr(fromLE(hdr.Address))
       {
         AddArea(HEADER, 0);
-        AddArea(PATTERNS, GetStart(hdr.Patterns.front().Offsets.begin(), hdr.Patterns.back().Offsets.end(), StartAddr));
+        AddArea(PATTERNS, GetStart(hdr.Patterns.front().Offsets.data(), hdr.Patterns.back().Offsets.data() + hdr.Patterns.back().Offsets.size(), StartAddr));
         AddArea(SAMPLES, GetStart(hdr.SamplesOffsets.begin(), hdr.SamplesOffsets.end(), StartAddr));
         AddArea(ORNAMENTS, GetStart(hdr.OrnamentsOffsets.begin(), hdr.OrnamentsOffsets.end(), StartAddr));
         AddArea(END, size);

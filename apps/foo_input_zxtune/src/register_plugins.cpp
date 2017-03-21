@@ -17,44 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <core/plugins/archives/plugins.h>
 #include <core/plugins/players/plugins.h>
-
-bool enable_ay();
-bool enable_ym();
-bool enable_ts();
-bool enable_pt1();
-bool enable_pt2();
-bool enable_pt3();
-bool enable_stc();
-bool enable_st1();
-bool enable_st3();
-bool enable_asc();
-bool enable_stp();
-bool enable_txt();
-bool enable_psg();
-bool enable_pdt();
-bool enable_chi();
-bool enable_str();
-bool enable_dst();
-bool enable_sqd();
-bool enable_dmm();
-bool enable_psm();
-bool enable_gtr();
-bool enable_vtx();
-bool enable_tfc();
-bool enable_tfd();
-bool enable_tfe();
-bool enable_sqt();
-bool enable_psc();
-bool enable_ftc();
-bool enable_cop();
-bool enable_et1();
-bool enable_ayc();
-bool enable_spc();
-bool enable_mtc();
-bool enable_ahx();
-bool enable_xmp();
-bool enable_sid();
-bool enable_gme();
+#include "preferences.h"
 
 namespace ZXTune
 {
@@ -78,43 +41,43 @@ void RegisterArchivePlugins(ArchivePluginsRegistrator& registrator)
 void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator)
 {
 	//try TS & AY first
-	if(enable_ts())		RegisterTSSupport(registrator);
-	if(enable_ay())		RegisterAYSupport(registrator);
-	if(enable_pt3())	RegisterPT3Support(registrator);
-	if(enable_pt2())	RegisterPT2Support(registrator);
-	if(enable_stc())	RegisterSTCSupport(registrator);
-	if(enable_st1())	RegisterST1Support(registrator);
-	if(enable_st3())	RegisterST3Support(registrator);
-	if(enable_asc())	RegisterASCSupport(registrator);
-	if(enable_stp())	RegisterSTPSupport(registrator);
-	if(enable_txt())	RegisterTXTSupport(registrator);
-	if(enable_psg())	RegisterPSGSupport(registrator);
-	if(enable_pdt())	RegisterPDTSupport(registrator);
-	if(enable_chi())	RegisterCHISupport(registrator);
-	if(enable_str())	RegisterSTRSupport(registrator);
-	if(enable_dst())	RegisterDSTSupport(registrator);
-	if(enable_sqd())	RegisterSQDSupport(registrator);
-	if(enable_dmm())	RegisterDMMSupport(registrator);
-	if(enable_psm())	RegisterPSMSupport(registrator);
-	if(enable_gtr())	RegisterGTRSupport(registrator);
-	if(enable_pt1())	RegisterPT1Support(registrator);
-	if(enable_vtx())	RegisterVTXSupport(registrator);
-	if(enable_ym())		RegisterYMSupport(registrator);
-	if(enable_tfd())	RegisterTFDSupport(registrator);
-	if(enable_tfc())	RegisterTFCSupport(registrator);
-	if(enable_sqt())	RegisterSQTSupport(registrator);
-	if(enable_psc())	RegisterPSCSupport(registrator);
-	if(enable_ftc())	RegisterFTCSupport(registrator);
-	if(enable_cop())	RegisterCOPSupport(registrator);
-	if(enable_tfe())	RegisterTFESupport(registrator);
-	if(enable_xmp())	RegisterXMPPlugins(registrator);
-	if(enable_sid())	RegisterSIDPlugins(registrator);
-	if(enable_et1())	RegisterET1Support(registrator);
-	if(enable_ayc())	RegisterAYCSupport(registrator);
-	if(enable_spc())	RegisterSPCSupport(registrator);
-	if(enable_mtc())	RegisterMTCSupport(registrator);
-	if(enable_gme())	RegisterGMEPlugins(registrator);
-	if(enable_ahx())	RegisterAHXSupport(registrator);
+	if(EnableTS())	RegisterTSSupport(registrator);
+	if(EnableAY())	RegisterAYSupport(registrator);
+	if(EnablePT3())	RegisterPT3Support(registrator);
+	if(EnablePT2())	RegisterPT2Support(registrator);
+	if(EnableSTC())	RegisterSTCSupport(registrator);
+	if(EnableST1())	RegisterST1Support(registrator);
+	if(EnableST3())	RegisterST3Support(registrator);
+	if(EnableASC())	RegisterASCSupport(registrator);
+	if(EnableSTP())	RegisterSTPSupport(registrator);
+	if(EnableTXT())	RegisterTXTSupport(registrator);
+	if(EnablePSG())	RegisterPSGSupport(registrator);
+	if(EnablePDT())	RegisterPDTSupport(registrator);
+	if(EnableCHI())	RegisterCHISupport(registrator);
+	if(EnableSTR())	RegisterSTRSupport(registrator);
+	if(EnableDST())	RegisterDSTSupport(registrator);
+	if(EnableSQD())	RegisterSQDSupport(registrator);
+	if(EnableDMM())	RegisterDMMSupport(registrator);
+	if(EnablePSM())	RegisterPSMSupport(registrator);
+	if(EnableGTR())	RegisterGTRSupport(registrator);
+	if(EnablePT1())	RegisterPT1Support(registrator);
+	if(EnableVTX())	RegisterVTXSupport(registrator);
+	if(EnableYM())	RegisterYMSupport(registrator);
+	if(EnableTFD())	RegisterTFDSupport(registrator);
+	if(EnableTFC())	RegisterTFCSupport(registrator);
+	if(EnableSQT())	RegisterSQTSupport(registrator);
+	if(EnablePSC())	RegisterPSCSupport(registrator);
+	if(EnableFTC())	RegisterFTCSupport(registrator);
+	if(EnableCOP())	RegisterCOPSupport(registrator);
+	if(EnableTFE())	RegisterTFESupport(registrator);
+	if(EnableXMP())	RegisterXMPPlugins(registrator);
+	if(EnableSID())	RegisterSIDPlugins(registrator);
+	if(EnableET1())	RegisterET1Support(registrator);
+	if(EnableAYC())	RegisterAYCSupport(registrator);
+	if(EnableSPC())	RegisterSPCSupport(registrator);
+	if(EnableMTC())	RegisterMTCSupport(registrator);
+	if(EnableGME())	RegisterGMEPlugins(registrator);
+	if(EnableAHX())	RegisterAHXSupport(registrator);
 }
 
 }

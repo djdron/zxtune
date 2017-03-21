@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <boost/type_traits/is_signed.hpp>
 
 #include "player.h"
+#include "preferences.h"
 
 // Declaration of your component's version information
 // Since foobar2000 v1.0 having at least one of these in your DLL is mandatory to let the troubleshooter tell different versions of your component apart.
@@ -81,34 +82,141 @@ DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.6",
 // This will prevent users from renaming your component around (important for proper troubleshooter behaviors) or loading multiple instances of it.
 VALIDATE_COMPONENT_FILENAME("foo_input_zxtune.dll");
 
-static const char* file_types[] =
+struct eRegExt
+{
+	const char* ext;
+	bool (*enable)();
+};
+
+static const eRegExt file_types[] =
 {
 	// AY/YM
-	"as0", "asc", "ay", "ayc", "ftc", "gtr", "psc", "psg", "psm", "pt1", "pt2", "pt3", "sqt", "st1", "st3", "stc", "stp", "ts", "vtx", "ym",
+	{ "as0",	EnableASC	},
+	{ "asc",	EnableASC	},
+	{ "ay",		EnableAY	},
+	{ "ayc",	EnableAYC	},
+	{ "ftc",	EnableTFC	},
+	{ "gtr",	EnableGTR	},
+	{ "psc",	EnablePSC	},
+	{ "psg",	EnablePSG	},
+	{ "psm",	EnablePSM	},
+	{ "pt1",	EnablePT1	},
+	{ "pt2",	EnablePT2	},
+	{ "pt3",	EnablePT3	},
+	{ "sqt",	EnableSQT	},
+	{ "st1",	EnableST1	},
+	{ "st3",	EnableST3	},
+	{ "stc",	EnableSTC	},
+	{ "stp",	EnableSTP	},
+	{ "ts",		EnableTS	},
+	{ "vtx",	EnableVTX	},
+	{ "ym",		EnableYM	},
+
 	// dac
-	"ahx", "hvl", "pdt", "chi", "str", "dst", "sqd", "et1", "dmm", "669", "amf", "dbm", "dmf", "dtm", "dtt", "emod", "far", "fnk", "gdm", "gtk", "mod", "mtn", "imf", "ims", "it", "liq", "mdl", "med", "mtm", "okt", "pt36", "ptm", "rtm", "s3m", "sfx", "stim", "stm", "stx", "tcb", "ult", "xm",
+	{ "ahx",	EnableAHX	},
+	{ "hvl",	EnableAHX	},
+	{ "pdt",	EnablePDT	},
+	{ "chi",	EnableCHI	},
+	{ "str",	EnableSTR	},
+	{ "dst",	EnableDST	},
+	{ "sqd",	EnableSQD	},
+	{ "et1",	EnableET1	},
+	{ "dmm",	EnableDMM	},
+	{ "669",	EnableXMP	},
+	{ "amf",	EnableXMP	},
+	{ "dbm",	EnableXMP	},
+	{ "dmf",	EnableXMP	},
+	{ "dtm",	EnableXMP	},
+	{ "dtt",	EnableXMP	},
+	{ "emod",	EnableXMP	},
+	{ "far",	EnableXMP	},
+	{ "fnk",	EnableXMP	},
+	{ "gdm",	EnableXMP	},
+	{ "gtk",	EnableXMP	},
+	{ "mod",	EnableXMP	},
+	{ "mtn",	EnableXMP	},
+	{ "imf",	EnableXMP	},
+	{ "ims",	EnableXMP	},
+	{ "it",		EnableXMP	},
+	{ "liq",	EnableXMP	},
+	{ "mdl",	EnableXMP	},
+	{ "med",	EnableXMP	},
+	{ "mtm",	EnableXMP	},
+	{ "okt",	EnableXMP	},
+	{ "pt36",	EnableXMP	},
+	{ "ptm",	EnableXMP	},
+	{ "rtm",	EnableXMP	},
+	{ "s3m",	EnableXMP	},
+	{ "sfx",	EnableXMP	},
+	{ "stim",	EnableXMP	},
+	{ "stm",	EnableXMP	},
+	{ "stx",	EnableXMP	},
+	{ "tcb",	EnableXMP	},
+	{ "ult",	EnableXMP	},
+	{ "xm",		EnableXMP	},
+
 	// fm
-	"tfc", "tfd", "tf0", "tfe",
+	{ "tfc",	EnableTFC	},
+	{ "tfd",	EnableTFD	},
+	{ "tf0",	EnableTFE	},
+	{ "tfe",	EnableTFE	},
+
 	// Sam Coupe
-	"cop",
+	{ "cop",	EnableCOP	},
+
 	// C64
-	"sid",
+	{ "sid",	EnableSID	},
+
 	// NES/SNES
-	"spc", "nsf", "nsfe",
+	{ "spc",	EnableSPC	},
+	{ "nsf",	EnableGME	},
+	{ "nsfe",	EnableGME	},
+
 	// MSX
-	"kss",
+	{ "kss",	EnableGME	},
+
 	// Game Boy
-	"gbs",
+	{ "gbs",	EnableGME	},
+
 	// Atari
-	"sap",
+	{ "sap",	EnableGME	},
+
 	// TurboGrafX
-	"hes",
+	{ "hes",	EnableGME	},
+
 	// Multidevice
-	"mtc", "vgm", "gym",
+	{ "mtc",	EnableMTC	},
+	{ "vgm",	EnableGME	},
+	{ "gym",	EnableGME	},
+
 	// arch
-	"hrp", "scl", "szx", "trd", "cc3", "dsq", "esv", "fdi", "gam", "gamplus", "logo1", "$b", "$c", "$m", "hrm", "bin", "p", "lzs", "msp", "pcd", "td0", "tlz", "tlzp", "trs",
+	{ "hrp",	NULL		},
+	{ "scl",	NULL		},
+	{ "szx",	NULL		},
+	{ "trd",	NULL		},
+	{ "cc3",	NULL		},
+	{ "dsq",	NULL		},
+	{ "esv",	NULL		},
+	{ "fdi",	NULL		},
+	{ "gam",	NULL		},
+	{ "gamplus",NULL		},
+	{ "logo1",	NULL		},
+	{ "$b",		NULL		},
+	{ "$c",		NULL		},
+	{ "$m",		NULL		},
+	{ "hrm",	NULL		},
+	{ "bin",	NULL		},
+	{ "p",		NULL		},
+	{ "lzs",	NULL		},
+	{ "msp",	NULL		},
+	{ "pcd",	NULL		},
+	{ "td0",	NULL		},
+	{ "tlz",	NULL		},
+	{ "tlzp",	NULL		},
+	{ "trs",	NULL		},
+
 	// end
-	NULL
+	{ NULL,		NULL		},
 };
 
 static const char* ZXTUNE_SUBNAME = "ZXTUNE_SUBNAME";
@@ -308,9 +416,9 @@ public:
 	static bool g_is_our_content_type(const char * p_content_type) { return false; } // match against supported mime types here
 	static bool g_is_our_path(const char * p_path,const char * p_extension)
 	{
-		for(const char** ft = file_types; *ft; ++ft)
+		for(const eRegExt* reg = file_types; reg->ext; ++reg)
 		{
-			if(stricmp_utf8(p_extension, *ft) == 0)
+			if(stricmp_utf8(p_extension, reg->ext) == 0 && (!reg->enable || reg->enable()))
 				return true;
 		}
 		return false;
@@ -344,16 +452,16 @@ public:
 static input_factory_t<input_zxtune> g_input_zxtune_factory;
 
 static std::string ft_reg;
-static struct tFT_Init
+static struct eFT_Init
 {
-	tFT_Init()
+	eFT_Init()
 	{
-		for(const char** ft = file_types; *ft; ++ft)
+		for(const eRegExt* reg = file_types; reg->ext; ++reg)
 		{
 			if(!ft_reg.empty())
 				ft_reg += ";";
 			ft_reg += "*.";
-			ft_reg += *ft;
+			ft_reg += reg->ext;
 		}
 	}
 } ft_init;

@@ -1,3 +1,8 @@
+#ifndef __PLAYER_H__
+#define __PLAYER_H__
+
+#pragma once
+
 class BufferRender : public Sound::Receiver
 {
 public:
@@ -135,3 +140,5 @@ private:
 	const Module::Renderer::Ptr Renderer;
 	const BufferRender::Ptr Buffer;
 };
+
+#endif//__PLAYER_H__

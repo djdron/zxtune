@@ -187,6 +187,7 @@ static const eRegExt file_types[] =
 	// Multidevice
 	{ "mtc",	EnableMTC	},
 	{ "vgm",	EnableGME	},
+	{ "vgz",	EnableGME	},
 	{ "gym",	EnableGME	},
 
 	// arch

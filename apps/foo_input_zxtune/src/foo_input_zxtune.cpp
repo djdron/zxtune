@@ -66,7 +66,8 @@ DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.6",
 "AYEmul from S.Bulba\n"
 "AYFly from Ander\n"
 "xPlugins from elf/2\n"
-"Pusher from Himik/ZxZ\n\n"
+"Pusher from Himik/ZxZ\n"
+"hvl2wav from Xeron/IRIS\n\n"
 
 "Used 3rdparty libraries:\n"
 "boost C++ library\n"
@@ -76,7 +77,7 @@ DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.6",
 "libxmp from Claudio Matsuoka\n"
 "libsidplayfp from Simon White, Antti Lankila and Leandro Nini\n"
 "snes_spc from Shay Green\n"
-"Game Music Emu from Shay Green and Chris Moeller\n"
+"libgme from Shay Green and Chris Moeller\n"
 );
 
 // This will prevent users from renaming your component around (important for proper troubleshooter behaviors) or loading multiple instances of it.

@@ -124,7 +124,7 @@ char *copy_adjust(char *s, uint8 *r, int n)
 	strncpy(s, (char *)r, n);
 
 	for (i = 0; s[i] && i < n; i++) {
-		if (!isprint((int)s[i]) || ((uint8)s[i] > 127))
+		if (!isprint((unsigned char)s[i]) || ((uint8)s[i] > 127))
 			s[i] = '.';
 	}
 

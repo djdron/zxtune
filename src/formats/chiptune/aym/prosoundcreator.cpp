@@ -127,10 +127,10 @@ namespace Chiptune
 
       uint_t GetVersion() const
       {
-        if (std::isdigit(Version[0])
+        if (std::isdigit((unsigned char)Version[0])
             && Version[1] == '.'
-            && std::isdigit(Version[2])
-            && std::isdigit(Version[3]))
+            && std::isdigit((unsigned char)Version[2])
+            && std::isdigit((unsigned char)Version[3]))
         {
           return 100 * (Version[0] - '0') + 10 * (Version[2] - '0') + (Version[3] - '0');
         }

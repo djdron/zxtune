@@ -52,4 +52,5 @@ namespace ZXTune
   void RegisterMTCSupport(PlayerPluginsRegistrator& registrator);
   void RegisterGMEPlugins(PlayerPluginsRegistrator& registrator);
   void RegisterAHXSupport(PlayerPluginsRegistrator& registrator);
+  void RegisterHVLSupport(PlayerPluginsRegistrator& registrator);
 }

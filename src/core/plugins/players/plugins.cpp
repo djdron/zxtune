@@ -53,5 +53,6 @@ namespace ZXTune
     RegisterMTCSupport(registrator);
     RegisterGMEPlugins(registrator);
     RegisterAHXSupport(registrator);
+	RegisterHVLSupport(registrator);
   }
 }

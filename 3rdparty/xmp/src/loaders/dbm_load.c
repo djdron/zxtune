@@ -109,7 +109,7 @@ static int get_inst(struct module_data *m, int size, HIO_HANDLE *f, void *parm)
 		mod->xxi[i].sub[0].vol = hio_read16b(f);
 		c2spd = hio_read32b(f);
 		mod->xxs[snum].lps = hio_read32b(f);
-		mod->xxs[snum].lpe = mod->xxs[i].lps + hio_read32b(f);
+		mod->xxs[snum].lpe = mod->xxs[snum].lps + hio_read32b(f);
 		mod->xxi[i].sub[0].pan = 0x80 + (int16)hio_read16b(f);
 		if (mod->xxi[i].sub[0].pan > 0xff)
 			mod->xxi[i].sub[0].pan = 0xff;

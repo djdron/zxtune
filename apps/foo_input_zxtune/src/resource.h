@@ -41,9 +41,10 @@
 #define IDC_CHECK_XMP                   1035
 #define IDC_CHECK_SID                   1036
 #define IDC_CHECK_GME                   1037
-#define IDC_CHECK_LAST                  1037
-#define IDC_GROUP1                      1038
-#define IDC_GROUP2                      1039
+#define IDC_CHECK_HVL                   1038
+#define IDC_CHECK_LAST                  1038
+#define IDC_GROUP1                      1039
+#define IDC_GROUP2                      1040
 
 // Next default values for new objects
 // 

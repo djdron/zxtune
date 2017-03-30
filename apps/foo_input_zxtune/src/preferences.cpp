@@ -59,6 +59,7 @@ DECLARE_OPTION(EnableAYC,	0x7a375ed2, 0x3b32, 0x4bcb, 0x82, 0xdc, 0x6a, 0x21, 0x
 DECLARE_OPTION(EnableSPC,	0xa469c480, 0x1ec0, 0x4b90, 0x95, 0x45, 0x7f, 0xbe, 0x4c, 0x86, 0x31, 0xb2);
 DECLARE_OPTION(EnableMTC,	0x33738398, 0xdb20, 0x4957, 0xb6, 0x3a, 0xf4, 0xf8, 0xed, 0x04, 0x36, 0x5b);
 DECLARE_OPTION(EnableAHX,	0x20aa15ef, 0x62b8, 0x4d23, 0x9a, 0xe8, 0x8f, 0x8e, 0x42, 0x9c, 0x41, 0x91);
+DECLARE_OPTION(EnableHVL,	0x50aca341, 0x206e, 0x4749, 0x8d, 0xf6, 0x4a, 0x7d, 0xcd, 0x21, 0x62, 0xe1);
 DECLARE_OPTION(EnableXMP,	0x1e7fd7d6, 0x5dae, 0x4c7d, 0xbb, 0xae, 0xd0, 0x18, 0x14, 0x66, 0xfe, 0xc1);
 DECLARE_OPTION(EnableSID,	0x246b7e86, 0x1c96, 0x4254, 0x81, 0x00, 0xd6, 0x75, 0x33, 0x7f, 0xe8, 0x5e);
 DECLARE_OPTION(EnableGME,	0x59a72db7, 0x9ce9, 0x457d, 0x99, 0xec, 0x6a, 0x23, 0x3f, 0x1f, 0xfd, 0xf3);
@@ -128,6 +129,7 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
 	uButton_SetCheck(m_hWnd, IDC_CHECK_SPC, EnableSPC());
 	uButton_SetCheck(m_hWnd, IDC_CHECK_MTC, EnableMTC());
 	uButton_SetCheck(m_hWnd, IDC_CHECK_AHX, EnableAHX());
+	uButton_SetCheck(m_hWnd, IDC_CHECK_HVL, EnableHVL());
 	uButton_SetCheck(m_hWnd, IDC_CHECK_XMP, EnableXMP());
 	uButton_SetCheck(m_hWnd, IDC_CHECK_SID, EnableSID());
 	uButton_SetCheck(m_hWnd, IDC_CHECK_GME, EnableGME());
@@ -191,6 +193,7 @@ void CMyPreferences::apply()
 	EnableSPC(uButton_GetCheck(m_hWnd, IDC_CHECK_SPC));
 	EnableMTC(uButton_GetCheck(m_hWnd, IDC_CHECK_MTC));
 	EnableAHX(uButton_GetCheck(m_hWnd, IDC_CHECK_AHX));
+	EnableHVL(uButton_GetCheck(m_hWnd, IDC_CHECK_HVL));
 	EnableXMP(uButton_GetCheck(m_hWnd, IDC_CHECK_XMP));
 	EnableSID(uButton_GetCheck(m_hWnd, IDC_CHECK_SID));
 	EnableGME(uButton_GetCheck(m_hWnd, IDC_CHECK_GME));
@@ -233,6 +236,7 @@ bool CMyPreferences::HasChangedNeedRestart()
 			EnableSPC() != uButton_GetCheck(m_hWnd, IDC_CHECK_SPC) ||
 			EnableMTC() != uButton_GetCheck(m_hWnd, IDC_CHECK_MTC) ||
 			EnableAHX() != uButton_GetCheck(m_hWnd, IDC_CHECK_AHX) ||
+			EnableHVL() != uButton_GetCheck(m_hWnd, IDC_CHECK_HVL) ||
 			EnableXMP() != uButton_GetCheck(m_hWnd, IDC_CHECK_XMP) ||
 			EnableSID() != uButton_GetCheck(m_hWnd, IDC_CHECK_SID) ||
 			EnableGME() != uButton_GetCheck(m_hWnd, IDC_CHECK_GME);

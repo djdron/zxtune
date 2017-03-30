@@ -37,6 +37,7 @@ bool EnableAYC();
 bool EnableSPC();
 bool EnableMTC();
 bool EnableAHX();
+bool EnableHVL();
 bool EnableXMP();
 bool EnableSID();
 bool EnableGME();

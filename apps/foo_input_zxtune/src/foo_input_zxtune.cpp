@@ -115,7 +115,7 @@ static const eRegExt file_types[] =
 
 	// dac
 	{ "ahx",	EnableAHX	},
-	{ "hvl",	EnableAHX	},
+	{ "hvl",	EnableHVL	},
 	{ "pdt",	EnablePDT	},
 	{ "chi",	EnableCHI	},
 	{ "str",	EnableSTR	},

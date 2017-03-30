@@ -78,6 +78,7 @@ void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator)
 	if(EnableMTC())	RegisterMTCSupport(registrator);
 	if(EnableGME())	RegisterGMEPlugins(registrator);
 	if(EnableAHX())	RegisterAHXSupport(registrator);
+	if(EnableHVL())	RegisterHVLSupport(registrator);
 }
 
 }

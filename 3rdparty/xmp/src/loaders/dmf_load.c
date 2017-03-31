@@ -265,7 +265,7 @@ static int get_smpi(struct module_data *m, int size, HIO_HANDLE *f, void *parm)
 	struct xmp_module *mod = &m->mod;
 	struct local_data *data = (struct local_data *)parm;
 	int i, namelen, c3spd, flag;
-	uint8 name[30];
+	uint8 name[31];
 
 	mod->ins = mod->smp = hio_read8(f);
 

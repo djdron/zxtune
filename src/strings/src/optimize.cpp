@@ -12,20 +12,18 @@
 #include <strings/optimize.h>
 //std includes
 #include <algorithm>
-#include <cctype>
 //boost includes
 #include <boost/algorithm/string/trim.hpp>
 
 namespace Strings
 {
-  String Optimize(const String& str)
+  const auto IsAsciiNoSpace = boost::is_from_range('\x21', '\x7e');
+  const auto IsAscii = boost::is_from_range('\x20', '\x7e');
+  
+  String OptimizeAscii(StringView str, Char replacement)
   {
-    String res(boost::algorithm::trim_copy_if(str, !boost::is_from_range('\x21', '\x7f')));
-	struct IsCntrlSafe
-	{
-		bool operator()(char ch) const { return ch >= 0 && std::iscntrl(ch); }
-	};
-    std::replace_if(res.begin(), res.end(), IsCntrlSafe(), '\?');
+    auto res = boost::algorithm::trim_copy_if(str, !IsAsciiNoSpace).to_string();
+    std::replace_if(res.begin(), res.end(), !IsAscii, replacement);
     return res;
   }
 }

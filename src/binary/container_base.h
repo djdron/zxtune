@@ -17,15 +17,15 @@
 
 namespace Binary
 {
-  template<class BaseType, class DelegateType = Container>
+  template<class BaseType, class DelegateType = Binary::Container>
   class BaseContainer : public BaseType
   {
   public:
     explicit BaseContainer(typename DelegateType::Ptr delegate)
       : Delegate(std::move(delegate))
     {
-      static_assert(std::is_base_of<Container, BaseType>::value, "Template parameter should have Binary::Container base");
-      static_assert(std::is_base_of<Container, DelegateType>::value, "Template parameter should have Binary::Container base");
+      static_assert(std::is_base_of<Binary::Container, BaseType>::value, "Template parameter should have Binary::Container base");
+      static_assert(std::is_base_of<Binary::Container, DelegateType>::value, "Template parameter should have Binary::Container base");
     }
 
     const void* Start() const override

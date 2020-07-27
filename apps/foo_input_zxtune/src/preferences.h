@@ -41,5 +41,13 @@ bool EnableHVL();
 bool EnableXMP();
 bool EnableSID();
 bool EnableGME();
+bool EnablePSF();
+bool EnableUSF();
+bool EnableGSF();
+bool Enable2SF();
+bool EnableSDS();
+bool EnableASAP();
+bool EnableV2M();
+bool EnableVGM();
 
 #endif//__PREFERENCES_H__

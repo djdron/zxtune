@@ -1,5 +1,5 @@
 /*
-ZXTune foobar2000 decoder component by djdron (C) 2013 - 2017
+ZXTune foobar2000 decoder component by djdron (C) 2013 - 2020
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,11 +29,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //library includes
 #include <binary/container.h>
 #include <binary/container_factories.h>
-#include <time/stamp.h>
 #include <core/core_parameters.h>
 #include <core/module_open.h>
 #include <core/module_detect.h>
 #include <core/data_location.h>
+#include <core/src/location.h>
 #include <module/holder.h>
 #include <module/attributes.h>
 #include <parameters/container.h>
@@ -57,10 +57,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Since foobar2000 v1.0 having at least one of these in your DLL is mandatory to let the troubleshooter tell different versions of your component apart.
 // Note that it is possible to declare multiple components within one DLL, but it's strongly recommended to keep only one declaration per DLL.
 // As for 1.1, the version numbers are used by the component update finder to find updates; for that to work, you must have ONLY ONE declaration per DLL. If there are multiple declarations, the component is assumed to be outdated and a version number of "0" is assumed, to overwrite the component with whatever is currently on the site assuming that it comes with proper version numbers.
-DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.7",
-"ZXTune Player (C) 2008 - 2016 by Vitamin/CAIG.\n"
-"based on r3750 dec 06 2016\n"
-"foobar2000 plugin by djdron (C) 2013 - 2017.\n\n"
+DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.8",
+"ZXTune Player (C) 2008 - 2020 by Vitamin/CAIG.\n"
+"based on r4953 jul 23 2020\n"
+"foobar2000 plugin by djdron (C) 2013 - 2020.\n\n"
 
 "Used source codes from:\n"
 "AYEmul from S.Bulba\n"
@@ -234,7 +234,7 @@ enum
 };
 
 // No inheritance. Our methods get called over input framework templates. See input_singletrack_impl for descriptions of what each method does.
-class input_zxtune
+class input_zxtune : public input_stubs
 {
 public:
 	void open(service_ptr_t<file> p_filehint, const char * p_path,t_input_open_reason p_reason,abort_callback & p_abort) {
@@ -269,7 +269,7 @@ public:
 		};
 
 		ModuleDetector md(&input_modules);
-		Module::Detect(*params, ZXTune::CreateLocation(input_file), md);
+		Module::Detect(*params, input_file, md);
 		if(input_modules.empty())
 		{
 			input_file.reset();
@@ -305,7 +305,7 @@ public:
 	{
 		Parameters::IntType frameDuration = Parameters::ZXTune::Sound::FRAMEDURATION_DEFAULT;
 		props->FindValue(Parameters::ZXTune::Sound::FRAMEDURATION, frameDuration);
-		return double(frameDuration) / Time::Microseconds::PER_SECOND;
+		return double(frameDuration) / Parameters::ZXTune::Sound::FRAMEDURATION_PRECISION;
 	}
 
 	void get_info(t_uint32 p_subsong, file_info & p_info,abort_callback & p_abort)
@@ -328,7 +328,7 @@ public:
 		else
 		{
 			subname = SubName(p_subsong);
-			Module::Holder::Ptr m = Module::Open(*params, ZXTune::OpenLocation(*params, input_file, subname));
+			Module::Holder::Ptr m = Module::Open(*params, input_file, subname);
 			if(!m)
 				throw exception_io_unsupported_format();
 			mi = m->GetModuleInformation();
@@ -376,7 +376,7 @@ public:
 	void decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort_callback & p_abort)
 	{
 		std::string subname = SubName(p_subsong);
-		input_module = Module::Open(*params, ZXTune::OpenLocation(*params, input_file, subname));
+		input_module = Module::Open(*params, input_file, subname);
 		if(!input_module)
 			throw exception_io_unsupported_format(); 
 
@@ -424,6 +424,14 @@ public:
 				return true;
 		}
 		return false;
+	}
+
+	static const char* g_get_name() { return "ZXTune"; }
+	static GUID g_get_guid()
+	{
+		// {993F9A65-2A67-4BD5-97C2-2D4553E4EF96}
+		static const GUID ZXTune_GUID = { 0x993f9a65, 0x2a67, 0x4bd5, { 0x97, 0xc2, 0x2d, 0x45, 0x53, 0xe4, 0xef, 0x96 } };
+		return ZXTune_GUID;
 	}
 
 public:

@@ -1,191 +1,54 @@
-#### Audio Output Library ####
-project(libVgmTest)
-cmake_minimum_required(VERSION 3.12)
-include(CheckIncludeFile)
+project(libvgm)
 
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+add_definitions(-DNO_EXTERNAL_ROM -DSNDDEV_SELECT)
+add_definitions(-DSNDDEV_SN76496 -DEC_SN76496_MAME -DSNDDEV_YM2413 -DEC_YM2413_MAME)
+add_definitions(-DSNDDEV_YM2612 -DEC_YM2612_GPGX -DSNDDEV_YM2151 -DSNDDEV_SEGAPCM)
+add_definitions(-DSNDDEV_RF5C68 -DEC_RF5C68_MAME -DSNDEMU_RF5C68_GENS -DSNDDEV_YM2203 -DSNDDEV_YM2608 -DSNDDEV_YM2610)
+add_definitions(-DSNDDEV_YM3812 -DEC_YM3812_ADLIBEMU -DSNDDEV_YM3526 -DSNDDEV_Y8950)
+add_definitions(-DSNDDEV_YMF262 -DEC_YMF262_NUKED -DEC_YMF262_ADLIBEMU -DSNDDEV_YMF278B -DSNDDEV_YMZ280B -DSNDDEV_YMF271)
+add_definitions(-DSNDDEV_AY8910 -DEC_AY8910_EMU2149 -DSNDDEV_32X_PWM -DSNDDEV_GAMEBOY)
+add_definitions(-DSNDDEV_NES_APU -DEC_NES_NSFPLAY -DEC_NES_NSFP_FDS -DSNDDEV_YMW258 -DSNDDEV_UPD7759 -DSNDDEV_OKIM6258 -DSNDDEV_OKIM6295 -DSNDDEV_K051649 -DSNDDEV_K054539)
+add_definitions(-DSNDDEV_C6280 -DEC_C6280_OOTAKE -DSNDDEV_C140 -DSNDDEV_C219 -DSNDDEV_K053260 -DSNDDEV_POKEY)
+add_definitions(-DSNDDEV_QSOUND -DEC_QSOUND_CTR -DSNDDEV_SCSP -DSNDDEV_WSWAN -DSNDDEV_VBOY_VSU)
+add_definitions(-DSNDDEV_SAA1099 -DEC_SAA1099_VB -DSNDDEV_ES5503 -DSNDDEV_ES5506 -DSNDDEV_X1_010 -DSNDDEV_C352 -DSNDDEV_GA20)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/libs/cmake_modules/")
-
-if (POLICY CMP0042)
-	cmake_policy(SET CMP0042 NEW)
-endif ()
-
-check_include_file("stdint.h" HAVE_STDINT)
-if(HAVE_STDINT)
-	add_definitions("-D HAVE_STDINT_H")
-endif()
-
-if(MSVC)
-	set(CMAKE_DEBUG_POSTFIX "d")
-	if(MSVC_VERSION LESS 1400)
-		set(MSVC_POSTFIX "VC6")	# there are a few limitations for MSVC versions before 2005
-	elseif(CMAKE_CL_64)
-		set(MSVC_POSTFIX "Win64")
-	else()
-		set(MSVC_POSTFIX "Win32")
-	endif()
-	set(CMAKE_RELEASE_POSTFIX "_${MSVC_POSTFIX}${CMAKE_RELEASE_POSTFIX}")
-	set(CMAKE_DEBUG_POSTFIX "_${MSVC_POSTFIX}${CMAKE_DEBUG_POSTFIX}")
-	set(CMAKE_MINSIZEREL_POSTFIX "_${MSVC_POSTFIX}${CMAKE_MINSIZEREL_POSTFIX}")
-	set(CMAKE_RELWITHDEBINFO_POSTFIX "_${MSVC_POSTFIX}${CMAKE_RELWITHDEBINFO_POSTFIX}")
-	
-	set(ZLIB_ROOT "${PROJECT_SOURCE_DIR}/libs" CACHE PATH "ZLib directory")
-	set(Iconv_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/libs/iconv/include" CACHE PATH "directory with iconv headers")
-	set(Iconv_LIBRARY "${PROJECT_SOURCE_DIR}/libs/iconv/lib/libiconv.lib" CACHE FILEPATH "iconv library")
-	
-	if(NOT MSVC_VERSION LESS 1400)
-		add_definitions("/D _CRT_SECURE_NO_WARNINGS")
-	endif()
-endif()
-
-if(MINGW)
-	option(LINK_STATIC_LIBS "link with static libraries" ON)
-	if(LINK_STATIC_LIBS)
-		set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
-		set(CMAKE_CXX_STANDARD_LIBRARIES "-static-libgcc -static-libstdc++ -lwsock32 -lws2_32 ${CMAKE_CSS_STANDARD_LIBRARIES}")
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive")
-	endif()
-else()
-	option(LINK_STATIC_LIBS "build with static libraries" OFF)
-endif()
-
-if(CMAKE_COMPILER_IS_GNUCC)
-
-# assume Windows 2000 and later for GetConsoleWindow API call
-if(WIN32)
-	add_definitions("-D _WIN32_WINNT=0x500")
-endif()
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -D_DEBUG")
-
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wextra")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wpedantic")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-long-long -Wno-unused-value")
-
-# silence typical sound core warnings
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wno-unknown-pragmas")
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wno-sign-compare")
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wno-unused-variable -Wno-unused-const-variable -Wno-unused-function")
-
-# additional warnings from http://blog.httrack.com/blog/2014/03/09/what-are-your-gcc-flags/
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wpointer-arith -Winit-self -Wstrict-aliasing")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat -Wformat-security -Wformat-nonliteral")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector")
-#set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fstack-protector")
-
-set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-
-endif(CMAKE_COMPILER_IS_GNUCC)
-
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/sanitizers")
-find_package(Sanitizers)
-
-option(BUILD_LIBAUDIO "build audio output library" ON)
-option(BUILD_LIBEMU "build sound emulation library" ON)
-option(BUILD_LIBPLAYER "build player library" ON)
-option(BUILD_TESTS "build test programs" ON)
-option(BUILD_PLAYER "build player application" ON)
-option(BUILD_VGM2WAV "build sample vgm2wav application" ON)
-option(BUILD_SHARED "build shared versions of libraries" ON)
-option(USE_SANITIZERS "use sanitizers" ON)
-
-add_subdirectory(utils)
-if(USE_SANITIZERS)
-    add_sanitizers(utils)
-endif()
-
-if(BUILD_LIBAUDIO)
-	add_subdirectory(audio)
-	if(USE_SANITIZERS)
-		add_sanitizers(vgm-audio)
-		if(BUILD_SHARED)
-			add_sanitizers(vgm-audio_shared)
-		endif(BUILD_SHARED)
-	endif(USE_SANITIZERS)
-endif()
-
-if(BUILD_LIBEMU)
-	add_subdirectory(emu)
-	if(USE_SANITIZERS)
-		add_sanitizers(vgm-emu)
-		if(BUILD_SHARED)
-			add_sanitizers(vgm-emu_shared)
-		endif(BUILD_SHARED)
-	endif(USE_SANITIZERS)
-endif()
-
-if(BUILD_LIBPLAYER)
-	add_subdirectory(player)
-	if(USE_SANITIZERS)
-	add_sanitizers(vgm-player)
-		if(BUILD_SHARED)
-	        add_sanitizers(vgm-player_shared)
-		endif(BUILD_SHARED)
-	endif(USE_SANITIZERS)
-endif()
-
-
-if(BUILD_TESTS)
-
-add_executable(audiotest audiotest.c)
-target_include_directories(audiotest PRIVATE ${PROJECT_SOURCE_DIR})
-target_link_libraries(audiotest PRIVATE vgm-audio)
-if(USE_SANITIZERS)
-add_sanitizers(audiotest)
-endif(USE_SANITIZERS)
-
-add_executable(emutest emutest.c)
-target_include_directories(emutest PRIVATE ${PROJECT_SOURCE_DIR})
-target_link_libraries(emutest PRIVATE vgm-emu)
-if(USE_SANITIZERS)
-add_sanitizers(emutest)
-endif(USE_SANITIZERS)
-
-add_executable(audemutest audemutest.c)
-target_include_directories(audemutest PRIVATE ${PROJECT_SOURCE_DIR})
-target_link_libraries(audemutest PRIVATE vgm-audio vgm-emu)
-if(USE_SANITIZERS)
-add_sanitizers(audemutest)
-endif(USE_SANITIZERS)
-
-find_package(ZLIB REQUIRED)
-
-add_executable(vgmtest vgmtest.c player/dblk_compr.c)
-target_include_directories(vgmtest PRIVATE ${PROJECT_SOURCE_DIR})
-target_link_libraries(vgmtest PRIVATE ZLIB::ZLIB vgm-audio vgm-emu)
-if(USE_SANITIZERS)
-    add_sanitizers(vgmtest)
-endif(USE_SANITIZERS)
-
-endif(BUILD_TESTS)
-
-if(BUILD_PLAYER)
-add_executable(player player.cpp player/dblk_compr.c)
-target_include_directories(player PRIVATE ${PROJECT_SOURCE_DIR})
-target_link_libraries(player PRIVATE vgm-audio vgm-player)
-if(USE_SANITIZERS)
-    add_sanitizers(player)
-endif(USE_SANITIZERS)
-endif()
-
-if(BUILD_VGM2WAV)
-add_executable(vgm2wav vgm2wav.cpp)
-target_include_directories(vgm2wav PRIVATE ${PROJECT_SOURCE_DIR})
-target_link_libraries(vgm2wav PRIVATE vgm-player vgm-emu vgm-utils)
-if(USE_SANITIZERS)
-	add_sanitizers(vgm2wav)
-endif()
-endif()
-
-set(COMMON_HEADERS
-	common_def.h
-	stdbool.h
-	stdtype.h
+set(SRCS_C
+	"emu/SoundEmu.c" "emu/Resampler.c" "emu/panning.c" "emu/dac_control.c"
+	"utils/DataLoader.c" "utils/StrUtils-CPConv_Stub.c"
+	"player/helper.c" "player/dblk_compr.c"
+#mame default
+	"emu/cores/sn764intf.c" "emu/cores/sn76496.c" "emu/cores/2413intf.c" "emu/cores/ym2413.c"
+#gpgx default
+	"emu/cores/2612intf.c" "emu/cores/fmopn2612.c" "emu/cores/ym2151.c" "emu/cores/segapcm.c"
+#both cores used
+	"emu/cores/rf5cintf.c" "emu/cores/rf5c68.c" "emu/cores/scd_pcm.c" "emu/cores/opnintf.c"
+	"emu/cores/fmopn.c" "emu/cores/opnintf.c" "emu/cores/fmopn.c" "emu/cores/ymdeltat.c"
+#adlibemu default
+	"emu/cores/oplintf.c" "emu/cores/adlibemu_opl2.c" "emu/cores/fmopl.c" "emu/cores/oplintf.c"
+	"emu/cores/fmopl.c" "emu/cores/fmopl.c" "emu/cores/ymdeltat.c"
+#nuke default, adlib for 278b
+	"emu/cores/262intf.c" "emu/cores/nukedopl.c" "emu/cores/adlibemu_opl3.c" "emu/cores/ymf278b.c"
+	"emu/cores/ymz280b.c" "emu/cores/ymf271.c"
+#fcc_emu default
+	"emu/cores/ayintf.c" "emu/cores/emu2149.c" "emu/cores/pwm.c" "emu/cores/gb.c"
+#nsfp default with fds
+	"emu/cores/nesintf.c" "emu/cores/np_nes_apu.c" "emu/cores/np_nes_dmc.c" "emu/cores/np_nes_fds.c"
+	"emu/cores/multipcm.c" "emu/cores/upd7759.c" "emu/cores/okim6258.c" "emu/cores/okim6295.c"
+	"emu/cores/okiadpcm.c" "emu/cores/k051649.c" "emu/cores/k054539.c"
+#ootk default
+	"emu/cores/c6280intf.c" "emu/cores/Ootake_PSG.c" "emu/cores/c140.c" "emu/cores/c219.c"
+	"emu/cores/k053260.c" "emu/cores/pokey.c"
+#ctr default
+	"emu/cores/qsoundintf.c" "emu/cores/qsound_ctr.c" "emu/cores/scsp.c" "emu/cores/scspdsp.c"
+	"emu/cores/ws_audio.c" "emu/cores/vsu.c"
+#vbel default
+	"emu/cores/saaintf.c" "emu/cores/saa1099_vb.c" "emu/cores/es5503.c" "emu/cores/es5506.c"
+	"emu/cores/x1_010.c" "emu/cores/c352.c" "emu/cores/iremga20.c"
 )
 
-install(FILES ${COMMON_HEADERS} DESTINATION include/vgm)
+set(SRCS_C_CXX "player/playerbase.cpp" "player/vgmplayer.cpp" "player/vgmplayer_cmdhandler.cpp")
+
+file(GLOB SRCS_H "emu/*.h" "utils/*.h" "player/*.h" "emu/cores/*.h")
+
+add_library(vgm ${SRCS_H} ${SRCS_C} ${SRCS_C_CXX})
+set_property(TARGET vgm PROPERTY FOLDER "3rdparty")

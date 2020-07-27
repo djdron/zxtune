@@ -65,7 +65,8 @@ namespace ZXTune
   void RegisterV2MSupport(PlayerPluginsRegistrator& registrator);
   void RegisterVGMPlugins(PlayerPluginsRegistrator& registrator);
 
-  void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator)
+  void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator);
+#if 0
   {
     //try TS & AY first
     RegisterTSSupport(registrator);
@@ -118,4 +119,5 @@ namespace ZXTune
     RegisterV2MSupport(registrator);
     RegisterVGMPlugins(registrator);
   }
+#endif//
 }

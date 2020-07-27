@@ -1,5 +1,5 @@
 /*
-ZXTune foobar2000 decoder component by djdron (C) 2013 - 2017
+ZXTune foobar2000 decoder component by djdron (C) 2013 - 2020
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -16,11 +16,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <core/plugins/archives/plugins.h>
-#include <core/plugins/players/plugins.h>
+#include <core/plugins/players/plugins_list.h>
 #include "preferences.h"
 
 namespace ZXTune
 {
+
+void RegisterHVLSupport(PlayerPluginsRegistrator& registrator);
 
 void RegisterArchivePlugins(ArchivePluginsRegistrator& registrator)
 {
@@ -79,6 +81,14 @@ void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator)
 	if(EnableGME())	RegisterGMEPlugins(registrator);
 	if(EnableAHX())	RegisterAHXSupport(registrator);
 	if(EnableHVL())	RegisterHVLSupport(registrator);
+	if(EnablePSF())	RegisterPSFSupport(registrator);
+	if(EnableUSF())	RegisterUSFSupport(registrator);
+	if(EnableGSF())	RegisterGSFSupport(registrator);
+	if(Enable2SF())	Register2SFSupport(registrator);
+	if(EnableSDS())	RegisterSDSFSupport(registrator);
+	if(EnableASAP()) RegisterASAPPlugins(registrator);
+	if(EnableV2M())	RegisterV2MSupport(registrator);
+	if(EnableVGM())	RegisterVGMPlugins(registrator);
 }
 
 }

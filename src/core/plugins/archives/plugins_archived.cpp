@@ -29,6 +29,7 @@ namespace ZXTune
 
   using namespace Formats::Archived;
 
+#if 0
   const ContainerPluginDescription UNARCHIVES[] =
   {
     {"ZIP",     &CreateZipDecoder,     Capabilities::Container::Type::ARCHIVE | Capabilities::Container::Traits::DIRECTORIES},
@@ -38,7 +39,7 @@ namespace ZXTune
     {"7ZIP",    &Create7zipDecoder,    Capabilities::Container::Type::ARCHIVE | Capabilities::Container::Traits::DIRECTORIES},
     {"FSB",     &CreateFSBDecoder,     Capabilities::Container::Type::ARCHIVE | Capabilities::Container::Traits::PLAIN},
   };
-
+#endif
   const ContainerPluginDescription ZXUNARCHIVES[] =
   {
     {"TRD",     &CreateTRDDecoder,     Capabilities::Container::Type::DISKIMAGE | Capabilities::Container::Traits::PLAIN},
@@ -77,7 +78,7 @@ namespace ZXTune
       RegisterPlugin(desc, registrator);
     }
   }
-
+#if 0
   void RegisterArchiveContainers(ArchivePluginsRegistrator& registrator)
   {
     for (const auto& desc : UNARCHIVES)
@@ -85,7 +86,7 @@ namespace ZXTune
       RegisterPlugin(desc, registrator);
     }
   }
-
+#endif
   void RegisterZXArchiveContainers(ArchivePluginsRegistrator& registrator)
   {
     for (const auto& desc : ZXUNARCHIVES)

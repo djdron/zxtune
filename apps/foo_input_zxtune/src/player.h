@@ -14,9 +14,9 @@ public:
 	{
 	}
 
-	void ApplyData(Sound::Chunk::Ptr data) override
+	void ApplyData(Sound::Chunk data) override
 	{
-		Buffer.Put(data->begin(), data->size());
+		Buffer.Put(data.begin(), data.size());
 	}
 
 	void Flush() override

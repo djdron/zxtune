@@ -39,11 +39,6 @@ set(SRCS_C_CXX
 	"gme/Gb_Cpu.cpp"
 	"gme/Gb_Oscs.cpp"
 
-	"gme/Sap_Emu.cpp"
-	"gme/Sap_Core.cpp"
-	"gme/Sap_Apu.cpp"
-	"gme/Sap_Cpu.cpp"
-
 	"gme/Hes_Emu.cpp"
 	"gme/Hes_Core.cpp"
 	"gme/Hes_Apu.cpp"

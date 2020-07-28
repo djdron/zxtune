@@ -1,7 +1,5 @@
 project(libsnesspc)
 
-add_definitions(-DBLARGG_COMPILER_HAS_BOOL -DSPC_NO_COPY_STATE_FUNCS)
-
 file(GLOB SRCS_CXX "snes_spc/SNES_SPC.cpp" "snes_spc/SNES_SPC_misc.cpp" "snes_spc/SPC_DSP.cpp" "snes_spc/SPC_Filter.cpp")
 file(GLOB SRCS_H "snes_spc/*.h")
 

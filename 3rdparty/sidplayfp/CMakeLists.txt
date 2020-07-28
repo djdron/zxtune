@@ -1,6 +1,6 @@
 project(libsidplayfp)
 
-add_definitions(-DFAST_AND_ROUGH -DHAVE_CONFIG_H)
+add_definitions(-DHAVE_CONFIG_H)
 include_directories(".")
 include_directories("sidplayfp")
 

@@ -1,7 +1,7 @@
 project(libxmp)
 
 include_directories("include" "src")
-add_definitions(-DBUILDING_STATIC -DNO_VERSIONED_SYMBOLS -DDECRUNCH_MAX=0 -DNO_PROWIZARD)
+add_definitions(-DBUILDING_STATIC -DNO_VERSIONED_SYMBOLS -DDECRUNCH_MAX=0 -DNO_PROWIZARD -DNO_EXTERNALFILES)
 
 set(SRCS_C "src/virtual.c" "src/format.c" "src/misc.c" "src/period.c" "src/player.c" "src/read_event.c"
 	"src/dataio.c" "src/mkstemp.c" "src/fnmatch.c" "src/md5.c" "src/lfo.c" "src/envelope.c" "src/scan.c"
@@ -25,7 +25,7 @@ set(SRCS_C "src/virtual.c" "src/format.c" "src/misc.c" "src/period.c" "src/playe
 	"src/loaders/rtm_load.c" "src/loaders/dmf_load.c" "src/loaders/tcb_load.c" "src/loaders/dt_load.c" "src/loaders/gtk_load.c" "src/loaders/no_load.c"
 	"src/loaders/arch_load.c" "src/loaders/sym_load.c" "src/loaders/dtt_load.c" "src/loaders/mgt_load.c" "src/loaders/med2_load.c" "src/loaders/med3_load.c"
 	"src/loaders/med4_load.c" "src/loaders/ssmt_load.c" "src/loaders/dbm_load.c" "src/loaders/umx_load.c" "src/loaders/gdm_load.c"
-	"src/loaders/coco_load.c" "src/loaders/gal5_load.c" "src/loaders/gal4_load.c" "src/loaders/mfp_load.c"
+	"src/loaders/coco_load.c" "src/loaders/gal5_load.c" "src/loaders/gal4_load.c"
 	"src/loaders/polly_load.c" "src/loaders/asylum_load.c" "src/loaders/hmn_load.c"
 
 #	"src/loaders/prowizard/prowiz.c" "src/loaders/prowizard/ptktable.c" "src/loaders/prowizard/tuning.c" "src/loaders/prowizard/ac1d.c" "src/loaders/prowizard/di.c" "src/loaders/prowizard/eureka.c"

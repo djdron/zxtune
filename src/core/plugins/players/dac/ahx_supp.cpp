@@ -20,6 +20,7 @@ namespace ZXTune
 {
   void RegisterAHXSupport(PlayerPluginsRegistrator& registrator)
   {
+    {
       const Char ID[] = {'A', 'H', 'X', 0};
       const uint_t CAPS = Capabilities::Module::Type::TRACK | Capabilities::Module::Device::DAC;
 
@@ -27,10 +28,9 @@ namespace ZXTune
       const auto factory = Module::AHX::CreateFactory(decoder);
       const auto plugin = CreatePlayerPlugin(ID, CAPS, decoder, factory);
       registrator.RegisterPlugin(plugin);
-  }
+    }
 
-  void RegisterHVLSupport(PlayerPluginsRegistrator& registrator)
-  {
+    {
       const Char ID[] = {'H', 'V', 'L', 0};
       const uint_t CAPS = Capabilities::Module::Type::TRACK | Capabilities::Module::Device::DAC;
 
@@ -38,5 +38,6 @@ namespace ZXTune
       const auto factory = Module::AHX::CreateFactory(decoder);
       const auto plugin = CreatePlayerPlugin(ID, CAPS, decoder, factory);
       registrator.RegisterPlugin(plugin);
+    }
   }
 }

@@ -20,45 +20,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #undef UNICODE
 #undef min
 
-//common includes
-#include <contract.h>
-#include <cycle_buffer.h>
-#include <error_tools.h>
-#include <progress_callback.h>
-#include <make_ptr.h>
+#include "zxtune_player.h"
+
 //library includes
-#include <binary/container.h>
 #include <binary/container_factories.h>
-#include <core/core_parameters.h>
 #include <core/module_open.h>
 #include <core/module_detect.h>
-#include <core/data_location.h>
-#include <core/src/location.h>
-#include <module/holder.h>
 #include <module/attributes.h>
-#include <parameters/container.h>
 #include <sound/sound_parameters.h>
-#include <platform/version/api.h>
-
-//std includes
-#include <vector>
-
-//boost
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-#include <boost/static_assert.hpp>
-#include <boost/range/end.hpp>
-#include <boost/type_traits/is_signed.hpp>
-
-#include "player.h"
-#include "preferences.h"
 
 // Declaration of your component's version information
 // Since foobar2000 v1.0 having at least one of these in your DLL is mandatory to let the troubleshooter tell different versions of your component apart.
 // Note that it is possible to declare multiple components within one DLL, but it's strongly recommended to keep only one declaration per DLL.
 // As for 1.1, the version numbers are used by the component update finder to find updates; for that to work, you must have ONLY ONE declaration per DLL. If there are multiple declarations, the component is assumed to be outdated and a version number of "0" is assumed, to overwrite the component with whatever is currently on the site assuming that it comes with proper version numbers.
-DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.8",
-"ZXTune Player (C) 2008 - 2020 by Vitamin/CAIG.\n"
+DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.8",
+"ZXTune (C) 2008 - 2020 by Vitamin/CAIG.\n"
 "based on r4953 jul 23 2020\n"
 "foobar2000 plugin by djdron (C) 2013 - 2020.\n\n"
 
@@ -83,143 +59,7 @@ DECLARE_COMPONENT_VERSION("ZXTune Player", "0.0.8",
 // This will prevent users from renaming your component around (important for proper troubleshooter behaviors) or loading multiple instances of it.
 VALIDATE_COMPONENT_FILENAME("foo_input_zxtune.dll");
 
-struct eRegExt
-{
-	const char* ext;
-	bool (*enable)();
-};
-
-static const eRegExt file_types[] =
-{
-	// AY/YM
-	{ "as0",	EnableASC	},
-	{ "asc",	EnableASC	},
-	{ "ay",		EnableAY	},
-	{ "ayc",	EnableAYC	},
-	{ "ftc",	EnableTFC	},
-	{ "gtr",	EnableGTR	},
-	{ "psc",	EnablePSC	},
-	{ "psg",	EnablePSG	},
-	{ "psm",	EnablePSM	},
-	{ "pt1",	EnablePT1	},
-	{ "pt2",	EnablePT2	},
-	{ "pt3",	EnablePT3	},
-	{ "sqt",	EnableSQT	},
-	{ "st1",	EnableST1	},
-	{ "st3",	EnableST3	},
-	{ "stc",	EnableSTC	},
-	{ "stp",	EnableSTP	},
-	{ "ts",		EnableTS	},
-	{ "vtx",	EnableVTX	},
-	{ "ym",		EnableYM	},
-
-	// dac
-	{ "ahx",	EnableAHX	},
-	{ "hvl",	EnableHVL	},
-	{ "pdt",	EnablePDT	},
-	{ "chi",	EnableCHI	},
-	{ "str",	EnableSTR	},
-	{ "dst",	EnableDST	},
-	{ "sqd",	EnableSQD	},
-	{ "et1",	EnableET1	},
-	{ "dmm",	EnableDMM	},
-	{ "669",	EnableXMP	},
-	{ "amf",	EnableXMP	},
-	{ "dbm",	EnableXMP	},
-	{ "dmf",	EnableXMP	},
-	{ "dtm",	EnableXMP	},
-	{ "dtt",	EnableXMP	},
-	{ "emod",	EnableXMP	},
-	{ "far",	EnableXMP	},
-	{ "fnk",	EnableXMP	},
-	{ "gdm",	EnableXMP	},
-	{ "gtk",	EnableXMP	},
-	{ "mod",	EnableXMP	},
-	{ "mtn",	EnableXMP	},
-	{ "imf",	EnableXMP	},
-	{ "ims",	EnableXMP	},
-	{ "it",		EnableXMP	},
-	{ "liq",	EnableXMP	},
-	{ "mdl",	EnableXMP	},
-	{ "med",	EnableXMP	},
-	{ "mtm",	EnableXMP	},
-	{ "okt",	EnableXMP	},
-	{ "pt36",	EnableXMP	},
-	{ "ptm",	EnableXMP	},
-	{ "rtm",	EnableXMP	},
-	{ "s3m",	EnableXMP	},
-	{ "sfx",	EnableXMP	},
-	{ "stim",	EnableXMP	},
-	{ "stm",	EnableXMP	},
-	{ "stx",	EnableXMP	},
-	{ "tcb",	EnableXMP	},
-	{ "ult",	EnableXMP	},
-	{ "xm",		EnableXMP	},
-
-	// fm
-	{ "tfc",	EnableTFC	},
-	{ "tfd",	EnableTFD	},
-	{ "tf0",	EnableTFE	},
-	{ "tfe",	EnableTFE	},
-
-	// Sam Coupe
-	{ "cop",	EnableCOP	},
-
-	// C64
-	{ "sid",	EnableSID	},
-
-	// NES/SNES
-	{ "spc",	EnableSPC	},
-	{ "nsf",	EnableGME	},
-	{ "nsfe",	EnableGME	},
-
-	// MSX
-	{ "kss",	EnableGME	},
-
-	// Game Boy
-	{ "gbs",	EnableGME	},
-
-	// Atari
-	{ "sap",	EnableGME	},
-
-	// TurboGrafX
-	{ "hes",	EnableGME	},
-
-	// Multidevice
-	{ "mtc",	EnableMTC	},
-	{ "vgm",	EnableGME	},
-	{ "vgz",	EnableGME	},
-	{ "gym",	EnableGME	},
-
-	// arch
-	{ "hrp",	NULL		},
-	{ "scl",	NULL		},
-	{ "szx",	NULL		},
-	{ "trd",	NULL		},
-	{ "cc3",	NULL		},
-	{ "dsq",	NULL		},
-	{ "esv",	NULL		},
-	{ "fdi",	NULL		},
-	{ "gam",	NULL		},
-	{ "gamplus",NULL		},
-	{ "logo1",	NULL		},
-	{ "$b",		NULL		},
-	{ "$c",		NULL		},
-	{ "$m",		NULL		},
-	{ "hrm",	NULL		},
-	{ "bin",	NULL		},
-	{ "p",		NULL		},
-	{ "lzs",	NULL		},
-	{ "msp",	NULL		},
-	{ "pcd",	NULL		},
-	{ "td0",	NULL		},
-	{ "tlz",	NULL		},
-	{ "tlzp",	NULL		},
-	{ "trs",	NULL		},
-
-	// end
-	{ NULL,		NULL		},
-};
+const std::vector<std::string>& SupportedExts();
 
 static const char* ZXTUNE_SUBNAME = "ZXTUNE_SUBNAME";
 
@@ -383,7 +223,7 @@ public:
 		Module::Information::Ptr mi = input_module->GetModuleInformation();
 		if(!mi)
 			throw exception_io_unsupported_format(); 
-		input_player = PlayerWrapper::Create(input_module);
+		input_player = ZXTune::PlayerWrapper::Create(input_module);
 		if(!input_player)
 			throw exception_io_unsupported_format(); 
 	}
@@ -418,15 +258,15 @@ public:
 	static bool g_is_our_content_type(const char * p_content_type) { return false; } // match against supported mime types here
 	static bool g_is_our_path(const char * p_path,const char * p_extension)
 	{
-		for(const eRegExt* reg = file_types; reg->ext; ++reg)
+		for(auto& ext : SupportedExts())
 		{
-			if(stricmp_utf8(p_extension, reg->ext) == 0 && (!reg->enable || reg->enable()))
+			if(stricmp_utf8(p_extension, ext.c_str()) == 0)
 				return true;
 		}
 		return false;
 	}
 
-	static const char* g_get_name() { return "ZXTune"; }
+	static const char* g_get_name() { return "ZXTune Decoders"; }
 	static GUID g_get_guid()
 	{
 		// {993F9A65-2A67-4BD5-97C2-2D4553E4EF96}
@@ -452,7 +292,7 @@ public:
 	typedef std::vector<ModuleDesc> Modules;
 	Modules					input_modules;
 	Module::Holder::Ptr		input_module;
-	PlayerWrapper::Ptr		input_player;
+	ZXTune::PlayerWrapper::Ptr input_player;
 
 	Parameters::Accessor::Ptr params;
 
@@ -460,20 +300,3 @@ public:
 };
 
 static input_factory_t<input_zxtune> g_input_zxtune_factory;
-
-static std::string ft_reg;
-static struct eFT_Init
-{
-	eFT_Init()
-	{
-		for(const eRegExt* reg = file_types; reg->ext; ++reg)
-		{
-			if(!ft_reg.empty())
-				ft_reg += ";";
-			ft_reg += "*.";
-			ft_reg += reg->ext;
-		}
-	}
-} ft_init;
-
-DECLARE_FILE_TYPE("ZXTune Audio Files", ft_reg.c_str());

@@ -1,7 +1,15 @@
-#ifndef __PLAYER_H__
-#define __PLAYER_H__
+#ifndef __ZXTUNE_PLAYER_H__
+#define __ZXTUNE_PLAYER_H__
+
+#include <cycle_buffer.h>
+#include <make_ptr.h>
+#include <parameters/container.h>
+#include <module/holder.h>
 
 #pragma once
+
+namespace ZXTune
+{
 
 class BufferRender : public Sound::Receiver
 {
@@ -141,4 +149,7 @@ private:
 	const BufferRender::Ptr Buffer;
 };
 
-#endif//__PLAYER_H__
+}
+//namespace ZXTune
+
+#endif//__ZXTUNE_PLAYER_H__

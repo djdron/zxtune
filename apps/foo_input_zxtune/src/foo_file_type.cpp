@@ -72,6 +72,8 @@ const std::vector<std::string>& SupportedExts()
 			auto id = p->Get()->GetDescription()->Id();
 			Add(id);
 		}
+		if(res.empty())
+			return res;
 		for(auto ext : containers_exts)
 		{
 			Add(ext);

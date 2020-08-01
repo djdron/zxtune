@@ -58,7 +58,6 @@ DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.8",
 "vio2sf library by Christopher Snowhill\n"
 "Highly Threoretical library by Neill Corlett and Christopher Snowhill\n"
 "ASAP library by Piotr Fusik\n"
-"stb-vorbis library by Sean Barrett\n"
 "v2m-player library by Farbrausch and Joakim L. Gilje\n"
 "libvgm library by Valley Bell\n"
 );

@@ -12,17 +12,17 @@
 
 #include <cctype>
 
-bool IsAlpha(Char c)
+inline bool IsAlpha(Char c)
 {
   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
-bool IsDigit(Char c)
+inline bool IsDigit(Char c)
 {
-	return c >= '0' && c <= '9';
+  return c >= '0' && c <= '9';
 }
 
-bool IsAlNum(Char c)
+inline bool IsAlNum(Char c)
 {
   return IsDigit(c) || IsAlpha(c);
 }

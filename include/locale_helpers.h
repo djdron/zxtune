@@ -17,7 +17,12 @@ bool IsAlpha(Char c)
   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
+bool IsDigit(Char c)
+{
+	return c >= '0' && c <= '9';
+}
+
 bool IsAlNum(Char c)
 {
-  return std::isdigit(c) || IsAlpha(c);
+  return IsDigit(c) || IsAlpha(c);
 }

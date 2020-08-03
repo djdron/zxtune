@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <binary/container_factories.h>
 #include <core/module_open.h>
 #include <core/module_detect.h>
+#include <core/additional_files_resolve.h>
 #include <module/attributes.h>
 #include <sound/sound_parameters.h>
 
@@ -154,23 +155,55 @@ void input_zxtune::open(service_ptr_t<file> p_filehint, const char * p_path,t_in
 	if(p_reason == input_open_info_read)
 		ParseModules(p_abort);
 }
+class FoobarFilesSource : public Module::AdditionalFilesSource
+{
+public:
+	FoobarFilesSource(abort_callback& _abort, const std::string& _file_path) : m_abort(_abort), file_dir(_file_path.c_str())
+	{
+		file_dir.truncate_to_parent_path();
+	}
+	virtual Binary::Container::Ptr Get(const String& _name) const override
+	{
+		pfc::string8 file_path = file_dir;
+		file_path += _name.c_str();
+		service_ptr_t<file> file;
+		input_open_file_helper(file, file_path.c_str(), input_open_info_read, m_abort);
+		t_size size = (t_size)file->get_size(m_abort);
+		std::unique_ptr<Dump> data(new Dump(size));
+		file->read(&data->front(), size, m_abort);
+		auto input_file = Binary::CreateContainer(std::move(data));
+		if(!input_file)
+			throw exception_io_unsupported_format();
+		return input_file;
+	}
+private:
+	abort_callback& m_abort;
+	pfc::string8 file_dir;
+};
 void input_zxtune::ParseModules(abort_callback& p_abort)
 {
-	struct ModuleDetector : public Module::DetectCallback
+	struct ModuleDetector : public Module::DetectCallback, public FoobarFilesSource
 	{
-		ModuleDetector(Modules* _mods) : modules(_mods) {}
+		ModuleDetector(Modules* _mods, abort_callback& _abort, const std::string& _file_path) : modules(_mods), FoobarFilesSource(_abort, _file_path) {}
 		virtual void ProcessModule(ZXTune::DataLocation::Ptr location, ZXTune::Plugin::Ptr, Module::Holder::Ptr holder) const
 		{
 			ModuleDesc m;
 			m.module = holder;
 			m.subname = location->GetPath()->AsString();
+			if(m.subname.empty())
+			{
+				if(const auto files = dynamic_cast<const Module::AdditionalFiles*>(holder.get()))
+				{
+					Module::ResolveAdditionalFiles(*this, *files);
+				}
+			}
 			modules->push_back(m);
 		}
 		virtual Log::ProgressCallback* GetProgress() const { return NULL; }
 		Modules* modules;
 	};
 
-	ModuleDetector md(&input_modules);
+	ModuleDetector md(&input_modules, p_abort, m_file_path);
 	Module::Detect(*params, input_file, md);
 	if(input_modules.empty())
 	{
@@ -226,13 +259,14 @@ void input_zxtune::get_info(t_uint32 p_subsong, file_info & p_info,abort_callbac
 	else
 	{
 		subname = SubName(p_subsong);
-		Module::Holder::Ptr m = Module::Open(*params, input_file, subname);
+		Module::Holder::Ptr m = input_module;
 		if(!m)
 			throw exception_io_unsupported_format();
+
 		mi = m->GetModuleInformation();
-		props = m->GetModuleProperties();
 		if(!mi)
 			throw exception_io_unsupported_format();
+		props = m->GetModuleProperties();
 	}
 
 	double len = mi->FramesCount() * FrameDuration(props);
@@ -275,6 +309,15 @@ void input_zxtune::decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort
 	input_module = Module::Open(*params, input_file, subname);
 	if(!input_module)
 		throw exception_io_unsupported_format(); 
+
+	if(subname.empty())
+	{
+		if(const auto files = dynamic_cast<const Module::AdditionalFiles*>(input_module.get()))
+		{
+			FoobarFilesSource ffs(p_abort, m_file_path);
+			Module::ResolveAdditionalFiles(ffs, *files);
+		}
+	}
 
 	Module::Information::Ptr mi = input_module->GetModuleInformation();
 	if(!mi)

@@ -71,6 +71,8 @@ const std::vector<std::string>& SupportedExts()
 		{
 			auto id = p->Get()->GetDescription()->Id();
 			Add(id);
+			if(id == "AY")
+				Add("EMUL");
 		}
 		if(res.empty())
 			return res;

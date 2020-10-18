@@ -27,8 +27,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <core/module_open.h>
 #include <core/module_detect.h>
 #include <core/additional_files_resolve.h>
+#include <core/plugins/player_plugin.h>
 #include <module/attributes.h>
 #include <sound/sound_parameters.h>
+
+namespace ZXTune
+{
+extern std::vector<PlayerPlugin::Ptr> player_plugins;
+}
+//namespace ZXTune
 
 // Declaration of your component's version information
 // Since foobar2000 v1.0 having at least one of these in your DLL is mandatory to let the troubleshooter tell different versions of your component apart.
@@ -324,7 +331,17 @@ void input_zxtune::decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort
 		throw exception_io_unsupported_format(); 
 	input_player = ZXTune::PlayerWrapper::Create(input_module);
 	if(!input_player)
-		throw exception_io_unsupported_format(); 
+		throw exception_io_unsupported_format();
+
+	auto props = input_module->GetModuleProperties();
+	String type;
+	if(props && props->FindValue(Module::ATTR_TYPE, type))
+	{
+		using namespace ZXTune;
+		auto it = std::find_if(player_plugins.begin(), player_plugins.end(), [&type](const PlayerPlugin::Ptr& p) { return p->GetDescription()->Id() == type; });
+		if(it != player_plugins.end())
+			console::formatter() << "ZXTune: using codec " << type.c_str() << " (" << (*it)->GetDescription()->Description().c_str() << ")";
+	}
 }
 bool input_zxtune::decode_run(audio_chunk & p_chunk,abort_callback & p_abort)
 {

@@ -109,6 +109,12 @@ void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator)
 	RegisterV2MSupport(ppf);
 	RegisterVGMPlugins(ppf);
 	ppf.Filter(&registrator);
+	std::stable_sort(player_plugins.begin(), player_plugins.end(),
+		[](const PlayerPlugin::Ptr& p1, const PlayerPlugin::Ptr& p2)
+		{
+			return p1->GetDescription()->Id() < p2->GetDescription()->Id();
+		}
+	);
 }
 
 }

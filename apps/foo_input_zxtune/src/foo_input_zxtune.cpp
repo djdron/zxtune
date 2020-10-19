@@ -94,8 +94,21 @@ public:
 
 	void open(service_ptr_t<file> p_filehint, const char* p_path, t_input_open_reason p_reason, abort_callback& p_abort);
 	void close();
-	unsigned get_subsong_count() { return input_modules.size(); }
-	t_uint32 get_subsong(unsigned p_index) { return p_index + 1; }
+	unsigned get_subsong_count()
+	{
+		//@note: from input_info_reader: multi-subsong handling is disabled for remote files (see: filesystem::is_remote) for performance reasons.
+		//Remote files are always assumed to be single-subsong, with null index.
+		if(m_file->is_remote())
+			return 1;
+		return input_modules.size();
+	}
+	t_uint32 get_subsong(unsigned p_index)
+	{
+		if(get_subsong_count() > 1)
+			return p_index + 1; // numerate 1..count
+		else
+			return 0;
+	}
 	void get_info(t_uint32 p_subsong, file_info& p_info, abort_callback& p_abort);
 	t_filestats get_file_stats(abort_callback & p_abort) { return m_file->get_stats(p_abort); }
 
@@ -159,7 +172,7 @@ void input_zxtune::open(service_ptr_t<file> p_filehint, const char * p_path,t_in
 	input_file = Binary::CreateContainer(std::move(data));
 	if(!input_file)
 		throw exception_io_unsupported_format();
-	if(p_reason == input_open_info_read)
+	if(p_reason == input_open_info_read || m_file->is_remote())
 		ParseModules(p_abort);
 }
 class FoobarFilesSource : public Module::AdditionalFilesSource
@@ -253,13 +266,16 @@ void input_zxtune::get_info(t_uint32 p_subsong, file_info & p_info,abort_callbac
 	std::string subname;
 	if(!input_modules.empty())
 	{
-		if(p_subsong > input_modules.size())
-			throw exception_io_unsupported_format();
-		mi = input_modules[p_subsong - 1].module->GetModuleInformation();
-		props = input_modules[p_subsong - 1].module->GetModuleProperties();
+		t_uint32 idx = p_subsong;
+		if(idx > input_modules.size())
+			idx = input_modules.size();
+		if(idx)
+			--idx;
+		mi = input_modules[idx].module->GetModuleInformation();
+		props = input_modules[idx].module->GetModuleProperties();
 		if(!mi)
 			throw exception_io_unsupported_format();
-		subname = input_modules[p_subsong - 1].subname;
+		subname = input_modules[idx].subname;
 		if(!subname.empty())
 			p_info.meta_set(ZXTUNE_SUBNAME, subname.c_str());
 	}

@@ -95,21 +95,8 @@ public:
 
 	void open(service_ptr_t<file> p_filehint, const char* p_path, t_input_open_reason p_reason, abort_callback& p_abort);
 	void close();
-	unsigned get_subsong_count()
-	{
-		//@note: from input_info_reader: multi-subsong handling is disabled for remote files (see: filesystem::is_remote) for performance reasons.
-		//Remote files are always assumed to be single-subsong, with null index.
-		if(m_file->is_remote())
-			return 1;
-		return input_modules.size();
-	}
-	t_uint32 get_subsong(unsigned p_index)
-	{
-		if(get_subsong_count() > 1)
-			return p_index + 1; // numerate 1..count
-		else
-			return 0;
-	}
+	unsigned get_subsong_count();
+	t_uint32 get_subsong(unsigned p_index);
 	void get_info(t_uint32 p_subsong, file_info& p_info, abort_callback& p_abort);
 	t_filestats get_file_stats(abort_callback & p_abort) { return m_file->get_stats(p_abort); }
 
@@ -241,6 +228,21 @@ void input_zxtune::close()
 		input_module.reset();
 		input_file.reset();
 	}
+}
+unsigned input_zxtune::get_subsong_count()
+{
+	//@note: from input_info_reader: multi-subsong handling is disabled for remote files (see: filesystem::is_remote) for performance reasons.
+	//Remote files are always assumed to be single-subsong, with null index.
+	if(m_file->is_remote())
+		return 1;
+	return input_modules.size();
+}
+t_uint32 input_zxtune::get_subsong(unsigned p_index)
+{
+	if(get_subsong_count() > 1)
+		return p_index + 1; // numerate 1..count
+	else
+		return 0;
 }
 std::string input_zxtune::SubName(t_uint32 p_subsong)
 {

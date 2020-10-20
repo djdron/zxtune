@@ -44,7 +44,8 @@ extern std::vector<PlayerPlugin::Ptr> player_plugins;
 DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.8",
 "ZXTune (C) 2008 - 2020 by Vitamin/CAIG.\n"
 "based on r4953 jul 23 2020\n"
-"foobar2000 plugin by djdron (C) 2013 - 2020.\n\n"
+"foobar2000 plugin by djdron (C) 2013 - 2020.\n"
+"https://github.com/djdron/zxtune/tree/cmake\n\n"
 
 "Technical credits:\n"
 "AYEmul sources by S.Bulba\n"

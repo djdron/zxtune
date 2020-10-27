@@ -73,6 +73,8 @@ const std::vector<std::string>& SupportedExts()
 			Add(id);
 			if(id == "AY")
 				Add("EMUL");
+			else if(id == "OKT")
+				Add("OKTA");
 		}
 		if(res.empty())
 			return res;

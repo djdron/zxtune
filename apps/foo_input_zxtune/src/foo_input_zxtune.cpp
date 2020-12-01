@@ -285,6 +285,8 @@ void input_zxtune::get_info(t_uint32 p_subsong, file_info & p_info,abort_callbac
 	else
 	{
 		subname = SubName(p_subsong);
+		if(!input_module)
+			input_module = Module::Open(*params, input_file, subname);
 		Module::Holder::Ptr m = input_module;
 		if(!m)
 			throw exception_io_unsupported_format();
@@ -332,7 +334,8 @@ void input_zxtune::get_info(t_uint32 p_subsong, file_info & p_info,abort_callbac
 void input_zxtune::decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort_callback & p_abort)
 {
 	std::string subname = SubName(p_subsong);
-	input_module = Module::Open(*params, input_file, subname);
+	if(!input_module)
+		input_module = Module::Open(*params, input_file, subname);
 	if(!input_module)
 		throw exception_io_unsupported_format(); 
 

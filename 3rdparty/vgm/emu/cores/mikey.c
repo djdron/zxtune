@@ -82,7 +82,7 @@ const DEV_DECL sndDev_Mikey =
 };
 
 
-#if defined( _MSC_VER )
+#if 0//defined( _MSC_VER )
 
 #if _MSC_VER >= 1400
 #include <intrin.h>

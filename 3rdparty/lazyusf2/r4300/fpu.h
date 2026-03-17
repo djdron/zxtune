@@ -31,7 +31,7 @@
 
 #include "r4300.h"
 
-#ifdef _MSC_VER
+#if 0//def _MSC_VER
   #define M64P_FPU_INLINE static __inline
   #include <float.h>
   typedef enum { FE_TONEAREST = 0, FE_TOWARDZERO, FE_UPWARD, FE_DOWNWARD } eRoundType;

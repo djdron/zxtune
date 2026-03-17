@@ -1466,7 +1466,7 @@ FMT_INLINE auto umul128(uint64_t x, uint64_t y) noexcept -> uint128 {
 #if FMT_USE_INT128
   auto p = static_cast<native_uint128>(x) * static_cast<native_uint128>(y);
   return {static_cast<uint64_t>(p >> 64), static_cast<uint64_t>(p)};
-#elif defined(_MSC_VER) && defined(_M_AMD64)
+#elif defined(_MSC_VER) && defined(__x86_64__) && !defined(__arm64ec__)
   auto hi = uint64_t();
   auto lo = _umul128(x, y, &hi);
   return {hi, lo};

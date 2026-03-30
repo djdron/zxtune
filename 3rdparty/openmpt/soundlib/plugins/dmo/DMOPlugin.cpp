@@ -12,10 +12,11 @@
 
 #include "stdafx.h"
 
+#include "mpt/base/aligned_array.hpp"
 #if defined(MPT_WITH_DMO)
+#include "DMOPlugin.h"
 #include "mpt/uuid/guid.hpp"
 #include "../../Sndfile.h"
-#include "DMOPlugin.h"
 #include "../PluginManager.h"
 #include <uuids.h>
 #include <medparam.h>
@@ -35,7 +36,7 @@ OPENMPT_NAMESPACE_BEGIN
 #endif
 
 
-IMixPlugin* DMOPlugin::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin* DMOPlugin::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	CLSID clsid;
 	if(mpt::VerifyStringToCLSID(factory.dllPath.AsNative(), clsid))
@@ -69,7 +70,7 @@ IMixPlugin* DMOPlugin::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIX
 }
 
 
-DMOPlugin::DMOPlugin(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct, IMediaObject *pMO, IMediaObjectInPlace *pMOIP, uint32 uid)
+DMOPlugin::DMOPlugin(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct, IMediaObject *pMO, IMediaObjectInPlace *pMOIP, uint32 uid)
 	: IMixPlugin(factory, sndFile, mixStruct)
 	, m_pMediaObject(pMO)
 	, m_pMediaProcess(pMOIP)
@@ -82,10 +83,8 @@ DMOPlugin::DMOPlugin(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *m
 		m_pParamInfo = nullptr;
 	if (FAILED(m_pMediaObject->QueryInterface(IID_IMediaParams, (void **)&m_pMediaParams)))
 		m_pMediaParams = nullptr;
-	m_alignedBuffer.f32 = (float *)((((intptr_t)m_interleavedBuffer.f32) + 15) & ~15);
-
+	m_alignedBuffer.f32 = mpt::align_bytes<16, MIXBUFFERSIZE * 2>(m_interleavedBuffer.f32);
 	m_mixBuffer.Initialize(2, 2);
-	InsertIntoFactoryList();
 }
 
 
@@ -206,20 +205,15 @@ PlugParamValue DMOPlugin::GetParameter(PlugParamIndex index)
 {
 	if(index < GetNumParameters() && m_pParamInfo != nullptr && m_pMediaParams != nullptr)
 	{
-		MP_PARAMINFO mpi;
-		MP_DATA md;
-
-		MemsetZero(mpi);
-		md = 0;
+		MP_PARAMINFO mpi{};
+		MP_DATA md = 0;
 		if (m_pParamInfo->GetParamInfo(index, &mpi) == S_OK
 			&& m_pMediaParams->GetParam(index, &md) == S_OK)
 		{
-			float fValue, fMin, fMax, fDefault;
-
-			fValue = md;
-			fMin = mpi.mpdMinValue;
-			fMax = mpi.mpdMaxValue;
-			fDefault = mpi.mpdNeutralValue;
+			float fValue = md;
+			float fMin = mpi.mpdMinValue;
+			float fMax = mpi.mpdMaxValue;
+			//float fDefault = mpi.mpdNeutralValue;
 			if (mpi.mpType == MPT_BOOL)
 			{
 				fMin = 0;
@@ -234,12 +228,11 @@ PlugParamValue DMOPlugin::GetParameter(PlugParamIndex index)
 }
 
 
-void DMOPlugin::SetParameter(PlugParamIndex index, PlugParamValue value)
+void DMOPlugin::SetParameter(PlugParamIndex index, PlugParamValue value, PlayState *, CHANNELINDEX)
 {
 	if(index < GetNumParameters() && m_pParamInfo != nullptr && m_pMediaParams != nullptr)
 	{
-		MP_PARAMINFO mpi;
-		MemsetZero(mpi);
+		MP_PARAMINFO mpi{};
 		if (m_pParamInfo->GetParamInfo(index, &mpi) == S_OK)
 		{
 			float fMin = mpi.mpdMinValue;
@@ -253,7 +246,7 @@ void DMOPlugin::SetParameter(PlugParamIndex index, PlugParamValue value)
 			}
 			if (fMax > fMin) value *= (fMax - fMin);
 			value += fMin;
-			Limit(value, fMin, fMax);
+			value = mpt::safe_clamp(value, fMin, fMax);
 			if (mpi.mpType != MPT_FLOAT) value = mpt::round(value);
 			m_pMediaParams->SetParam(index, value);
 		}

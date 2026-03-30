@@ -9,7 +9,7 @@
  * This file includes the CDSPSincFilterGen class implementation that
  * generates FIR filters.
  *
- * r8brain-free-src Copyright (c) 2013-2021 Aleksey Vaneev
+ * r8brain-free-src Copyright (c) 2013-2022 Aleksey Vaneev
  * See the "LICENSE" file for license.
  */
 
@@ -34,14 +34,14 @@ public:
 	double Len2; ///< Required half filter kernel's length in samples (can be
 		///< a fractional value). Final physical kernel length will be
 		///< provided in the KernelLen variable. Len2 should be >= 2.
-		///<
+	double Len2i; ///< = 1.0 / Len2, initialized and used by some window
+		///< functions for optimization (should not be initialized by the
+		///< caller).
 	int KernelLen; ///< Resulting length of the filter kernel, this variable
 		///< is set after the call to one of the "init" functions.
-		///<
 	int fl2; ///< Internal "half kernel length" value. This value can be used
 		///< as filter's latency in samples (taps), this variable is set after
 		///< the call to one of the "init" functions.
-		///<
 
 	union
 	{
@@ -49,12 +49,10 @@ public:
 		{
 			double Freq1; ///< Required corner circular frequency 1 [0; pi].
 				///< Used only in the generateBand() function.
-				///<
 			double Freq2; ///< Required corner circular frequency 2 [0; pi].
 				///< Used only in the generateBand() function. The range
 				///< [Freq1; Freq2] defines a pass band for the generateBand()
 				///< function.
-				///<
 		};
 
 		struct
@@ -65,7 +63,6 @@ public:
 				///< produces 1 sample delay (with the latency equal to fl2),
 				///< at 1.0 value it produces 0 sample delay (with the latency
 				///< equal to fl2 - 1).
-				///<
 		};
 	};
 
@@ -77,18 +74,14 @@ public:
 	{
 		wftCosine, ///< Generalized cosine window function. No parameters
 			///< required. The "Power" parameter is optional.
-			///<
 		wftKaiser, ///< Kaiser window function. Requires the "Beta" parameter.
 			///< The "Power" parameter is optional.
-			///<
 		wftGaussian ///< Gaussian window function. Requires the "Sigma"
 			///< parameter. The "Power" parameter is optional.
-			///<
 	};
 
 	typedef double( CDSPSincFilterGen :: *CWindowFunc )(); ///< Window
 		///< calculation function pointer type.
-		///<
 
 	/**
 	 * Function initializes *this structure for generation of a window
@@ -116,8 +109,8 @@ public:
 
 	/**
 	 * Function initializes *this structure for generation of band-limited
-	 * sinc filter kernel. The generateBand() or generateBandPow() functions
-	 * should be used to calculate the filter.
+	 * sinc filter kernel. The generateBand() function should be used to
+	 * calculate the filter.
 	 *
 	 * @param WinType Window function type.
 	 * @param Params Window function's parameters. If NULL, the table values
@@ -135,8 +128,6 @@ public:
 
 		fl2 = (int) floor( Len2 );
 		KernelLen = fl2 + fl2 + 1;
-		f1.init( Freq1, 0.0 );
-		f2.init( Freq2, 0.0 );
 
 		setWindow( WinType, Params, UsePower, true );
 	}
@@ -245,15 +236,15 @@ public:
 
 	double calcWindowKaiser()
 	{
-		const double n = 1.0 - sqr( wn / Len2 + KaiserLen2Frac );
+		const double n = 1.0 - sqr( wn * Len2i + KaiserLen2Frac );
 		wn++;
 
-		if( n < 0.0 )
+		if( n <= 0.0 )
 		{
 			return( 0.0 );
 		}
 
-		return( besselI0( KaiserBeta * sqrt( n )) / KaiserDiv );
+		return( besselI0( KaiserBeta * sqrt( n )) * KaiserMul );
 	}
 
 	/**
@@ -262,7 +253,7 @@ public:
 
 	double calcWindowGaussian()
 	{
-		const double f = exp( -0.5 * sqr( wn / GaussianSigma +
+		const double f = exp( -0.5 * sqr( wn * GaussianSigmaI +
 			GaussianSigmaFrac ));
 
 		wn++;
@@ -277,12 +268,11 @@ public:
 	 * @param wfunc Window calculation function to use.
 	 */
 
-	template< class T >
-	void generateWindow( T* op,
+	void generateWindow( double* op,
 		CWindowFunc wfunc = &CDSPSincFilterGen :: calcWindowBlackman )
 	{
 		op += fl2;
-		T* op2 = op;
+		double* op2 = op;
 
 		int l = fl2;
 
@@ -303,11 +293,11 @@ public:
 		}
 		else
 		{
-			*op = pows(( *this.*wfunc )(), Power );
+			*op = pow_a(( *this.*wfunc )(), Power );
 
 			while( l > 0 )
 			{
-				const double v = pows(( *this.*wfunc )(), Power );
+				const double v = pow_a(( *this.*wfunc )(), Power );
 
 				op++;
 				op2--;
@@ -326,46 +316,87 @@ public:
 	 * @param wfunc Window calculation function to use.
 	 */
 
-	template< class T >
-	void generateBand( T* op,
+	void generateBand( double* op,
 		CWindowFunc wfunc = &CDSPSincFilterGen :: calcWindowBlackman )
 	{
-		op += fl2;
-		T* op2 = op;
-		f1.generate();
+		CSineGen f2( Freq2, 0.0, 1.0 / R8B_PI );
 		f2.generate();
+
+		op += fl2;
+		double* op2 = op;
+		const double pw = Power;
 		int t = 1;
 
-		if( Power < 0.0 )
+		if( Freq1 < 0x1p-42 )
 		{
-			*op = ( Freq2 - Freq1 ) * ( *this.*wfunc )() / M_PI;
-
-			while( t <= fl2 )
+			if( pw < 0.0 )
 			{
-				const double v = ( f2.generate() - f1.generate() ) *
-					( *this.*wfunc )() / t / M_PI;
+				*op = Freq2 * ( *this.*wfunc )() / R8B_PI;
 
-				op++;
-				op2--;
-				*op = v;
-				*op2 = v;
-				t++;
+				while( t <= fl2 )
+				{
+					const double v = f2.generate() * ( *this.*wfunc )() / t;
+					op++;
+					op2--;
+					*op = v;
+					*op2 = v;
+					t++;
+				}
+			}
+			else
+			{
+				*op = Freq2 * pow_a(( *this.*wfunc )(), pw ) / R8B_PI;
+
+				while( t <= fl2 )
+				{
+					const double v = f2.generate() *
+						pow_a(( *this.*wfunc )(), pw ) / t;
+
+					op++;
+					op2--;
+					*op = v;
+					*op2 = v;
+					t++;
+				}
 			}
 		}
 		else
 		{
-			*op = ( Freq2 - Freq1 ) * pows(( *this.*wfunc )(), Power ) / M_PI;
+			CSineGen f1( Freq1, 0.0, 1.0 / R8B_PI );
+			f1.generate();
 
-			while( t <= fl2 )
+			if( pw < 0.0 )
 			{
-				const double v = ( f2.generate() - f1.generate() ) *
-					pows(( *this.*wfunc )(), Power ) / t / M_PI;
+				*op = ( Freq2 - Freq1 ) * ( *this.*wfunc )() / R8B_PI;
 
-				op++;
-				op2--;
-				*op = v;
-				*op2 = v;
-				t++;
+				while( t <= fl2 )
+				{
+					const double v = ( f2.generate() - f1.generate() ) *
+						( *this.*wfunc )() / t;
+
+					op++;
+					op2--;
+					*op = v;
+					*op2 = v;
+					t++;
+				}
+			}
+			else
+			{
+				*op = ( Freq2 - Freq1 ) *
+					pow_a(( *this.*wfunc )(), pw ) / R8B_PI;
+
+				while( t <= fl2 )
+				{
+					const double v = ( f2.generate() - f1.generate() ) *
+						pow_a(( *this.*wfunc )(), pw ) / t;
+
+					op++;
+					op2--;
+					*op = v;
+					*op2 = v;
+					t++;
+				}
 			}
 		}
 	}
@@ -377,13 +408,12 @@ public:
 	 * @param wfunc Window calculation function to use.
 	 */
 
-	template< class T >
-	void generateHilbert( T* op,
+	void generateHilbert( double* op,
 		CWindowFunc wfunc = &CDSPSincFilterGen :: calcWindowBlackman )
 	{
-		static const double fvalues[ 2 ] = { 0.0, 2.0 };
+		static const double fvalues[ 2 ] = { 0.0, 2.0 / R8B_PI };
 		op += fl2;
-		T* op2 = op;
+		double* op2 = op;
 
 		( *this.*wfunc )();
 		*op = 0.0;
@@ -394,9 +424,7 @@ public:
 		{
 			while( t <= fl2 )
 			{
-				const double v = fvalues[ t & 1 ] *
-					( *this.*wfunc )() / t / M_PI;
-
+				const double v = fvalues[ t & 1 ] * ( *this.*wfunc )() / t;
 				op++;
 				op2--;
 				*op = v;
@@ -409,7 +437,7 @@ public:
 			while( t <= fl2 )
 			{
 				const double v = fvalues[ t & 1 ] *
-					pows( ( *this.*wfunc )(), Power ) / t / M_PI;
+					pow_a(( *this.*wfunc )(), Power ) / t;
 
 				op++;
 				op2--;
@@ -428,20 +456,17 @@ public:
 	 * @param opinc Output buffer increment, in "op" elements.
 	 */
 
-	template< class T >
-	void generateFrac( T* op,
+	void generateFrac( double* op,
 		CWindowFunc wfunc = &CDSPSincFilterGen :: calcWindowBlackman,
 		const int opinc = 1 )
 	{
 		R8BASSERT( opinc != 0 );
 
-		double f[ 2 ];
-		f[ 0 ] = sin( FracDelay * M_PI );
-		f[ 1 ] = -f[ 0 ];
-
+		const double pw = Power;
+		const double fd = FracDelay;
 		int t = -fl2;
 
-		if( t + FracDelay < -Len2 )
+		if( t + fd < -Len2 )
 		{
 			( *this.*wfunc )();
 			*op = 0.0;
@@ -449,23 +474,35 @@ public:
 			t++;
 		}
 
-		int mt = ( FracDelay >= 1.0 - 1e-13 && FracDelay <= 1.0 + 1e-13 ?
-			-1 : 0 );
+		double f = sin( fd * R8B_PI ) / R8B_PI;
 
-		if( Power < 0.0 )
+		if(( t & 1 ) != 0 )
+		{
+			f = -f;
+		}
+
+		int IsZeroX = ( fabs( fd - 1.0 ) < 0x1p-42 );
+		int mt = 0 - IsZeroX;
+		IsZeroX = ( IsZeroX || fabs( fd ) < 0x1p-42 );
+
+		if( pw < 0.0 )
 		{
 			while( t < mt )
 			{
-				*op = f[ t & 1 ] * ( *this.*wfunc )() / ( t + FracDelay ) /
-					M_PI;
-
+				*op = f * ( *this.*wfunc )() / ( t + fd );
 				op += opinc;
 				t++;
+				f = -f;
 			}
 
-			double ut = t + FracDelay;
-			*op = ( fabs( ut ) <= 1e-13 ? ( *this.*wfunc )() :
-				f[ t & 1 ] * ( *this.*wfunc )() / ut / M_PI );
+			if( IsZeroX ) // t+FracDelay==0
+			{
+				*op = ( *this.*wfunc )();
+			}
+			else
+			{
+				*op = f * ( *this.*wfunc )() / fd; // t==0
+			}
 
 			mt = fl2 - 2;
 
@@ -473,30 +510,34 @@ public:
 			{
 				op += opinc;
 				t++;
-				*op = f[ t & 1 ] * ( *this.*wfunc )() / ( t + FracDelay ) /
-					M_PI;
+				f = -f;
+				*op = f * ( *this.*wfunc )() / ( t + fd );
 			}
 
 			op += opinc;
 			t++;
-			ut = t + FracDelay;
-			*op = ( ut > Len2 ? 0.0 :
-				f[ t & 1 ] * ( *this.*wfunc )() / ut / M_PI );
+			f = -f;
+			const double ut = t + fd;
+			*op = ( ut > Len2 ? 0.0 : f * ( *this.*wfunc )() / ut );
 		}
 		else
 		{
 			while( t < mt )
 			{
-				*op = f[ t & 1 ] * pows( ( *this.*wfunc )(), Power ) /
-					( t + FracDelay ) / M_PI;
-
+				*op = f * pow_a(( *this.*wfunc )(), pw ) / ( t + fd );
 				op += opinc;
 				t++;
+				f = -f;
 			}
 
-			double ut = t + FracDelay;
-			*op = ( fabs( ut ) <= 1e-13 ? pows( ( *this.*wfunc )(), Power ) :
-				f[ t & 1 ] * pows( ( *this.*wfunc )(), Power ) / ut / M_PI );
+			if( IsZeroX ) // t+FracDelay==0
+			{
+				*op = pow_a(( *this.*wfunc )(), pw );
+			}
+			else
+			{
+				*op = f * pow_a(( *this.*wfunc )(), pw ) / fd; // t==0
+			}
 
 			mt = fl2 - 2;
 
@@ -504,35 +545,25 @@ public:
 			{
 				op += opinc;
 				t++;
-				*op = f[ t & 1 ] * pows( ( *this.*wfunc )(), Power ) /
-					( t + FracDelay ) / M_PI;
+				f = -f;
+				*op = f * pow_a(( *this.*wfunc )(), pw ) / ( t + fd );
 			}
 
 			op += opinc;
 			t++;
-			ut = t + FracDelay;
+			f = -f;
+			const double ut = t + FracDelay;
 			*op = ( ut > Len2 ? 0.0 :
-				f[ t & 1 ] * pows( ( *this.*wfunc )(), Power ) / ut / M_PI );
+				f * pow_a(( *this.*wfunc )(), pw ) / ut );
 		}
 	}
 
 private:
 	double Power; ///< The power factor used to raise the window function.
 		///< Equals a negative value if the power factor should not be used.
-		///<
-	CSineGen f1; ///< Sine function 1. Used in the generateBand() function.
-		///<
-	CSineGen f2; ///< Sine function 2. Used in the generateBand() function.
-		///<
-	int wn; ///< Window function integer position. 0 - center of the window
-		///< function. This variable may not be used by some window functions.
-		///<
 	CSineGen w1; ///< Cosine wave 1 for window function.
-		///<
 	CSineGen w2; ///< Cosine wave 2 for window function.
-		///<
 	CSineGen w3; ///< Cosine wave 3 for window function.
-		///<
 
 	union
 	{
@@ -540,22 +571,20 @@ private:
 		{
 			double KaiserBeta; ///< Kaiser window function's "Beta"
 				///< coefficient.
-				///<
-			double KaiserDiv; ///< Kaiser window function's divisor.
-				///<
+			double KaiserMul; ///< Kaiser window function's divisor, inverse.
 			double KaiserLen2Frac; ///< Equals FracDelay / Len2.
-				///<
 		};
 
 		struct
 		{
-			double GaussianSigma; ///< Gaussian window function's "Sigma"
-				///< coefficient.
-				///<
+			double GaussianSigmaI; ///< Gaussian window function's "Sigma"
+				///< coefficient, inverse.
 			double GaussianSigmaFrac; ///< Equals FracDelay / GaussianSigma.
-				///<
 		};
 	};
+
+	int wn; ///< Window function integer position. 0 - center of the window
+		///< function. This variable may not be used by some window functions.
 
 	/**
 	 * Function initializes Kaiser window function calculation. The FracDelay
@@ -585,8 +614,9 @@ private:
 			Power = ( UsePower ? fabs( Params[ 1 ]) : -1.0 );
 		}
 
-		KaiserDiv = besselI0( KaiserBeta );
-		KaiserLen2Frac = FracDelay / Len2;
+		KaiserMul = 1.0 / besselI0( KaiserBeta );
+		Len2i = 1.0 / Len2;
+		KaiserLen2Frac = FracDelay * Len2i;
 	}
 
 	/**
@@ -609,17 +639,18 @@ private:
 
 		if( Params == NULL )
 		{
-			GaussianSigma = 1.0;
+			GaussianSigmaI = 1.0;
 			Power = -1.0;
 		}
 		else
 		{
-			GaussianSigma = clampr( fabs( Params[ 0 ]), 1e-1, 100.0 );
+			GaussianSigmaI = clampr( fabs( Params[ 0 ]), 1e-1, 100.0 );
 			Power = ( UsePower ? fabs( Params[ 1 ]) : -1.0 );
 		}
 
-		GaussianSigma *= Len2;
-		GaussianSigmaFrac = FracDelay / GaussianSigma;
+		GaussianSigmaI *= Len2;
+		GaussianSigmaI = 1.0 / GaussianSigmaI;
+		GaussianSigmaFrac = FracDelay * GaussianSigmaI;
 	}
 
 	/**
@@ -648,23 +679,20 @@ private:
 		{
 			if( IsCentered )
 			{
-				w1.init( M_PI / Len2, M_PI * 0.5 );
-				w2.init( M_2PI / Len2, M_PI * 0.5 );
-				w3.init( M_3PI / Len2, M_PI * 0.5 );
+				w1.init( R8B_PI / Len2, R8B_PId2 );
+				w2.init( R8B_2PI / Len2, R8B_PId2 );
+				w3.init( R8B_3PI / Len2, R8B_PId2 );
 			}
 			else
 			{
-				const double step1 = M_PI / Len2;
-				w1.init( step1, M_PI * 0.5 - step1 * fl2 +
-					step1 * FracDelay );
+				const double step1 = R8B_PI / Len2;
+				w1.init( step1, R8B_PId2 - step1 * fl2 + step1 * FracDelay );
 
-				const double step2 = M_2PI / Len2;
-				w2.init( step2, M_PI * 0.5 - step2 * fl2 +
-					step2 * FracDelay );
+				const double step2 = R8B_2PI / Len2;
+				w2.init( step2, R8B_PId2 - step2 * fl2 + step2 * FracDelay );
 
-				const double step3 = M_3PI / Len2;
-				w3.init( step3, M_PI * 0.5 - step3 * fl2 +
-					step3 * FracDelay );
+				const double step3 = R8B_3PI / Len2;
+				w3.init( step3, R8B_PId2 - step3 * fl2 + step3 * FracDelay );
 			}
 
 			Power = ( UsePower && Params != NULL ? Params[ 0 ] : -1.0 );

@@ -11,17 +11,19 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
-#include <string>
 #include "openmpt/base/FlagSet.hpp"
-#include <map>
 #include <bitset>
+#include <map>
 
 OPENMPT_NAMESPACE_BEGIN
 
-#define HOTKEYF_MIDI 0x10      // modifier mask for MIDI CCs
-#define HOTKEYF_RSHIFT 0x20    // modifier mask for right Shift key
-#define HOTKEYF_RCONTROL 0x40  // modifier mask for right Ctrl key
-#define HOTKEYF_RALT 0x80      // modifier mask for right Alt key
+enum
+{
+	HOTKEYF_MIDI     = 0x10,  // Modifier mask for MIDI CCs
+	HOTKEYF_RSHIFT   = 0x20,  // Modifier mask for right Shift key
+	HOTKEYF_RCONTROL = 0x40,  // Modifier mask for right Ctrl key
+	HOTKEYF_RALT     = 0x80,  // Modifier mask for right Alt key
+};
 
 enum InputTargetContext : int8
 {
@@ -63,17 +65,17 @@ enum KeyEventType : int8
 DECLARE_FLAGSET(KeyEventType)
 
 
-enum CommandID
+enum CommandID : int
 {
-	kcCommandSetNumNotes = 33,  // kcVPEndNotes - kcVPStartNotes
+	kcCommandSetNumNotes = 59,  // kcVPEndNotes - kcVPStartNotes
 
-	kcNull = -1,
+	kcNull = 0,  // Must be same as unhandled SendMessage result
 	kcFirst,
 
 	//Global
 	kcGlobalStart = kcFirst,
 	kcStartFile = kcGlobalStart,
-	kcFileNew = kcGlobalStart,
+	kcFileNew = kcStartFile,
 	kcFileOpen,
 	kcFileAppend,
 	kcFileClose,
@@ -82,22 +84,27 @@ enum CommandID
 	kcFileSaveAs,
 	kcFileSaveCopy,
 	kcFileSaveTemplate,
+	kcFileOpenTemplate,
 	kcFileSaveAsWave,
 	kcFileSaveAsMP3,
 	kcFileSaveMidi,
+	kcFileSaveOPL,
 	kcFileExportCompat,
-	kcPrevDocument,
-	kcNextDocument,
 	kcFileImportMidiLib,
 	kcFileAddSoundBank,
-	kcEndFile = kcFileAddSoundBank,
+	kcPrevDocument,
+	kcNextDocument,
+	kcEndFile = kcNextDocument,
 
 	kcStartPlayCommands,
 	kcPlayPauseSong = kcStartPlayCommands,
 	kcPauseSong,
+	kcPlayStopSong,
 	kcStopSong,
 	kcPlaySongFromStart,
+	kcPlaySongFromCursorPause,
 	kcPlaySongFromCursor,
+	kcPlaySongFromPatternPause,
 	kcPlaySongFromPattern,
 	kcPlayPatternFromStart,
 	kcPlayPatternFromCursor,
@@ -151,24 +158,35 @@ enum CommandID
 	kcShowMacroConfig,
 	kcViewMIDImapping,
 	kcViewEditHistory,
+	kcViewToggle,
 	kcSwitchToInstrLibrary,
 	kcHelp,
 	kcEndView = kcHelp,
 
 	kcStartMisc,
-	kcPrevInstrument = kcStartMisc,
+	kcContextMenu = kcStartMisc,
+	kcPrevInstrument,
 	kcNextInstrument,
 	kcPrevOctave,
 	kcNextOctave,
-	kcPrevOrder,
+	kcPrevNextOrderStart,
+	kcPrevOrder = kcPrevNextOrderStart,
 	kcNextOrder,
-	kcEndMisc = kcNextOrder,
+	kcPrevOrderAtMeasureEnd,
+	kcNextOrderAtMeasureEnd,
+	kcPrevOrderAtBeatEnd,
+	kcNextOrderAtBeatEnd,
+	kcPrevOrderAtRowEnd,
+	kcNextOrderAtRowEnd,
+	kcPrevNextOrderEnd = kcNextOrderAtRowEnd,
+	kcEndMisc = kcPrevNextOrderEnd,
 
 	kcDummyShortcut,
 	kcGlobalEnd = kcDummyShortcut,
 
+	kcStartPatternGeneral,
 	//Pattern Navigation
-	kcStartPatNavigation,
+	kcStartPatNavigation = kcStartPatternGeneral,
 	kcStartJumpSnap = kcStartPatNavigation,
 	kcPatternJumpDownh1 = kcStartJumpSnap,
 	kcPatternJumpUph1,
@@ -178,7 +196,9 @@ enum CommandID
 	kcPatternSnapUph1,
 	kcPatternSnapDownh2,
 	kcPatternSnapUph2,
-	kcEndJumpSnap = kcPatternSnapUph2,
+	kcPrevEntryInColumn,
+	kcNextEntryInColumn,
+	kcEndJumpSnap = kcNextEntryInColumn,
 	kcStartPlainNavigate,
 	kcNavigateDown = kcStartPlainNavigate,
 	kcNavigateUp,
@@ -209,6 +229,8 @@ enum CommandID
 	kcPatternSnapUph1Select,
 	kcPatternSnapDownh2Select,
 	kcPatternSnapUph2Select,
+	kcPrevEntryInColumnSelect,
+	kcNextEntryInColumnSelect,
 	kcNavigateDownSelect,
 	kcNavigateUpSelect,
 	kcNavigateDownBySpacingSelect,
@@ -227,7 +249,23 @@ enum CommandID
 
 	//Pattern Editing
 	kcStartPatternEditing,
-	kcStartSelect = kcStartPatternEditing,
+
+	kcStartGotoColumn = kcStartPatternEditing,
+	kcGotoNoteColumn = kcStartGotoColumn,
+	kcGotoInstrColumn,
+	kcGotoVolumeColumn,
+	kcGotoCommandColumn,
+	kcGotoParamColumn,
+	kcEndGotoColumn = kcGotoParamColumn,
+
+	kcStartPatternScrolling,
+	kcPatternScrollLeft = kcStartPatternScrolling,
+	kcPatternScrollRight,
+	kcPatternScrollUp,
+	kcPatternScrollDown,
+	kcEndPatternScrolling = kcPatternScrollDown,
+
+	kcStartSelect,
 	kcSelect = kcStartSelect,
 	kcSelectWithNav,
 	kcSelectOff,
@@ -251,7 +289,9 @@ enum CommandID
 	kcEndSelect = kcCopyAndLoseSelection,
 
 	kcStartPatternClipboard,
-	kcCutPatternChannel = kcStartPatternClipboard,
+	kcCursorCopy = kcStartPatternClipboard,
+	kcCursorPaste,
+	kcCutPatternChannel,
 	kcCutPattern,
 	kcCopyPatternChannel,
 	kcCopyPattern,
@@ -262,15 +302,14 @@ enum CommandID
 	kcClipboardNext,
 	kcEndPatternClipboard = kcClipboardNext,
 
-	kcStartPatternEditMisc,
-	kcToggleFollowSong = kcStartPatternEditMisc,
-	kcCursorCopy,
-	kcCursorPaste,
-	kcFindInstrument,
-	kcPrevEntryInColumn,
-	kcNextEntryInColumn,
-	kcPatternRecord,
+	kcStartPatternMisc,
+	kcToggleFollowSong = kcStartPatternMisc,
+	kcChangeLoopStatus,
 	kcPatternPlayRow,
+	kcPatternGoto,
+	kcFindInstrument,
+	kcPatternRecord,
+	kcToggleMetronome,
 	kcSetSpacing,
 	kcSetSpacing0,
 	kcSetSpacing1,
@@ -285,24 +324,34 @@ enum CommandID
 	kcIncreaseSpacing,
 	kcDecreaseSpacing,
 	kcSwitchToOrderList,
-	kcNewPattern,
-	kcDuplicatePattern,
-	kcSplitPattern,
 	kcPatternEditPCNotePlugin,
 	kcTogglePluginEditor,
 	kcShowNoteProperties,
 	kcShowPatternProperties,
 	kcShowSplitKeyboardSettings,
+	kcPatternVisualizeEffect,
+	kcPatternOpenRandomizer,
 	kcChordEditor,
-	kcChangeLoopStatus,
 	kcShowEditMenu,
+	kcShowChannelCtxMenu,
+	kcShowChannelPluginCtxMenu,
 	kcTimeAtRow,
 	kcLockPlaybackToRows,
 	kcQuantizeSettings,
+	kcTogglePatternPlayRow,
 	kcToggleOverflowPaste,
 	kcToggleNoteOffRecordPC,
 	kcToggleNoteOffRecordMIDI,
-	kcEndPatternEditMisc = kcToggleNoteOffRecordMIDI,
+	kcToggleOctaveTransposeMIDI,
+	kcToggleContinueSongOnMIDINote,
+	kcToggleContinueSongOnMIDIPlayEvents,
+	kcToggleRecordMIDIVelocity,
+	kcToggleRecordMIDIPitchBend,
+	kcToggleRecordMIDICCs,
+	kcToggleVisibilityInstrColumn,
+	kcToggleVisibilityVolumeColumn,
+	kcToggleVisibilityEffectColumn,
+	kcEndPatternMisc = kcToggleVisibilityEffectColumn,
 
 	kcStartChannelKeys,
 	kcChannelMute = kcStartChannelKeys,
@@ -323,6 +372,7 @@ enum CommandID
 	kcChannelMoveRight,
 	kcChannelSettings,
 	kcEndChannelKeys = kcChannelSettings,
+
 	kcBeginTranspose,
 	kcTransposeUp = kcBeginTranspose,
 	kcTransposeDown,
@@ -335,18 +385,36 @@ enum CommandID
 	kcDataEntryUpCoarse,
 	kcDataEntryDownCoarse,
 	kcEndTranspose = kcDataEntryDownCoarse,
+	kcBeginTransposeStop,
+	kcTransposeUpStop = kcBeginTransposeStop,
+	kcTransposeDownStop,
+	kcTransposeOctUpStop,
+	kcTransposeOctDownStop,
+	kcTransposeCustomStop,
+	kcTransposeCustomQuickStop,
+	kcDataEntryUpStop,
+	kcDataEntryDownStop,
+	kcDataEntryUpCoarseStop,
+	kcDataEntryDownCoarseStop,
+	kcEndTransposeStop = kcDataEntryDownCoarseStop,
+
+	kcStartPatternEditMisc,
+	kcNewPattern = kcStartPatternEditMisc,
+	kcDuplicatePattern,
+	kcSplitPattern,
 	kcPatternAmplify,
 	kcPatternInterpolateNote,
 	kcPatternInterpolateInstr,
 	kcPatternInterpolateVol,
 	kcPatternInterpolateEffect,
-	kcPatternVisualizeEffect,
-	kcPatternOpenRandomizer,
-	kcPatternGoto,
 	kcPatternSetInstrument,
 	kcPatternSetInstrumentNotEmpty,
 	kcPatternGrowSelection,
 	kcPatternShrinkSelection,
+	kcPatternExpand,
+	kcPatternShrink,
+	kcEndPatternEditMisc = kcPatternShrink,
+
 	//	kcClearSelection,
 	kcClearRow,
 	kcClearField,
@@ -367,9 +435,11 @@ enum CommandID
 	kcPrevSequence,
 	kcNextSequence,
 	kcEndPatternEditing = kcNextSequence,
+	kcEndPatternGeneral = kcEndPatternEditing,
 
 	//Notes
-	kcVPStartNotes,
+	kcStartNoteColumn,
+	kcVPStartNotes = kcStartNoteColumn,
 	kcVPNoteC_0 = kcVPStartNotes,
 	kcVPNoteCS0,
 	kcVPNoteD_0,
@@ -404,7 +474,33 @@ enum CommandID
 	kcVPNoteG_2,
 	kcVPNoteGS2,
 	kcVPNoteA_3,
-	kcVPEndNotes = kcVPNoteA_3,
+	kcVPNoteAS3,
+	kcVPNoteB_3,
+	kcVPNoteC_3,
+	kcVPNoteCS3,
+	kcVPNoteD_3,
+	kcVPNoteDS3,
+	kcVPNoteE_3,
+	kcVPNoteF_3,
+	kcVPNoteFS3,
+	kcVPNoteG_3,
+	kcVPNoteGS3,
+	kcVPNoteA_4,
+	kcVPNoteAS4,
+	kcVPNoteB_4,
+	kcVPNoteC_4,
+	kcVPNoteCS4,
+	kcVPNoteD_4,
+	kcVPNoteDS4,
+	kcVPNoteE_4,
+	kcVPNoteF_4,
+	kcVPNoteFS4,
+	kcVPNoteG_4,
+	kcVPNoteGS4,
+	kcVPNoteA_5,
+	kcVPNoteAS5,
+	kcVPNoteB_5,
+	kcVPEndNotes = kcVPNoteB_5,
 
 	//Note stops
 	kcVPStartNoteStops,
@@ -442,7 +538,33 @@ enum CommandID
 	kcVPNoteStopG_2,
 	kcVPNoteStopGS2,
 	kcVPNoteStopA_3,
-	kcVPEndNoteStops = kcVPNoteStopA_3,
+	kcVPNoteStopAS3,
+	kcVPNoteStopB_3,
+	kcVPNoteStopC_3,
+	kcVPNoteStopCS3,
+	kcVPNoteStopD_3,
+	kcVPNoteStopDS3,
+	kcVPNoteStopE_3,
+	kcVPNoteStopF_3,
+	kcVPNoteStopFS3,
+	kcVPNoteStopG_3,
+	kcVPNoteStopGS3,
+	kcVPNoteStopA_4,
+	kcVPNoteStopAS4,
+	kcVPNoteStopB_4,
+	kcVPNoteStopC_4,
+	kcVPNoteStopCS4,
+	kcVPNoteStopD_4,
+	kcVPNoteStopDS4,
+	kcVPNoteStopE_4,
+	kcVPNoteStopF_4,
+	kcVPNoteStopFS4,
+	kcVPNoteStopG_4,
+	kcVPNoteStopGS4,
+	kcVPNoteStopA_5,
+	kcVPNoteStopAS5,
+	kcVPNoteStopB_5,
+	kcVPEndNoteStops = kcVPNoteStopB_5,
 
 	//Chords
 	kcVPStartChords,
@@ -480,7 +602,33 @@ enum CommandID
 	kcVPChordG_2,
 	kcVPChordGS2,
 	kcVPChordA_3,
-	kcVPEndChords = kcVPChordA_3,
+	kcVPChordAS3,
+	kcVPChordB_3,
+	kcVPChordC_3,
+	kcVPChordCS3,
+	kcVPChordD_3,
+	kcVPChordDS3,
+	kcVPChordE_3,
+	kcVPChordF_3,
+	kcVPChordFS3,
+	kcVPChordG_3,
+	kcVPChordGS3,
+	kcVPChordA_4,
+	kcVPChordAS4,
+	kcVPChordB_4,
+	kcVPChordC_4,
+	kcVPChordCS4,
+	kcVPChordD_4,
+	kcVPChordDS4,
+	kcVPChordE_4,
+	kcVPChordF_4,
+	kcVPChordFS4,
+	kcVPChordG_4,
+	kcVPChordGS4,
+	kcVPChordA_5,
+	kcVPChordAS5,
+	kcVPChordB_5,
+	kcVPEndChords = kcVPChordA_5,
 
 	//Chord Stops
 	kcVPStartChordStops,
@@ -518,7 +666,33 @@ enum CommandID
 	kcVPChordStopG_2,
 	kcVPChordStopGS2,
 	kcVPChordStopA_3,
-	kcVPEndChordStops = kcVPChordStopA_3,
+	kcVPChordStopAS3,
+	kcVPChordStopB_3,
+	kcVPChordStopC_3,
+	kcVPChordStopCS3,
+	kcVPChordStopD_3,
+	kcVPChordStopDS3,
+	kcVPChordStopE_3,
+	kcVPChordStopF_3,
+	kcVPChordStopFS3,
+	kcVPChordStopG_3,
+	kcVPChordStopGS3,
+	kcVPChordStopA_4,
+	kcVPChordStopAS4,
+	kcVPChordStopB_4,
+	kcVPChordStopC_4,
+	kcVPChordStopCS4,
+	kcVPChordStopD_4,
+	kcVPChordStopDS4,
+	kcVPChordStopE_4,
+	kcVPChordStopF_4,
+	kcVPChordStopFS4,
+	kcVPChordStopG_4,
+	kcVPChordStopGS4,
+	kcVPChordStopA_5,
+	kcVPChordStopAS5,
+	kcVPChordStopB_5,
+	kcVPEndChordStops = kcVPChordStopB_5,
 
 	//Set octave from note column
 	kcSetOctave0,
@@ -556,7 +730,7 @@ enum CommandID
 	kcNotePC,
 	kcNotePCS,
 	kcEndNoteMisc = kcNotePCS,
-
+	kcEndNoteColumn = kcEndNoteMisc,
 
 	//Set instruments
 	kcSetIns0,
@@ -572,7 +746,8 @@ enum CommandID
 
 	//Volume stuff
 	kcSetVolumeStart,
-	kcSetVolume0 = kcSetVolumeStart,
+	kcStartVolumeDigits = kcSetVolumeStart,
+	kcSetVolume0 = kcStartVolumeDigits,
 	kcSetVolume1,
 	kcSetVolume2,
 	kcSetVolume3,
@@ -582,22 +757,31 @@ enum CommandID
 	kcSetVolume7,
 	kcSetVolume8,
 	kcSetVolume9,
-	kcSetVolumeVol,           //v
-	kcSetVolumePan,           //p
-	kcSetVolumeVolSlideUp,    //c
-	kcSetVolumeVolSlideDown,  //d
-	kcSetVolumeFineVolUp,     //a
-	kcSetVolumeFineVolDown,   //b
-	kcSetVolumeVibratoSpd,    //u
-	kcSetVolumeVibrato,       //h
-	kcSetVolumeXMPanLeft,     //l
-	kcSetVolumeXMPanRight,    //r
-	kcSetVolumePortamento,    //g
-	kcSetVolumeITPortaUp,     //f
-	kcSetVolumeITPortaDown,   //e
-	kcSetVolumeITUnused,      //:
-	kcSetVolumeITOffset,      //o
-	kcSetVolumeEnd = kcSetVolumeITOffset,
+	kcSetVolumeA,
+	kcSetVolumeB,
+	kcSetVolumeC,
+	kcSetVolumeD,
+	kcSetVolumeE,
+	kcSetVolumeF,
+	kcEndVolumeDigits = kcSetVolumeF,
+	kcStartVolumeCommands,
+	kcSetVolumeVol = kcStartVolumeCommands,  //v
+	kcSetVolumePan,                          //p
+	kcSetVolumeVolSlideUp,                   //c
+	kcSetVolumeVolSlideDown,                 //d
+	kcSetVolumeFineVolUp,                    //a
+	kcSetVolumeFineVolDown,                  //b
+	kcSetVolumeVibratoSpd,                   //u
+	kcSetVolumeVibrato,                      //h
+	kcSetVolumeXMPanLeft,                    //l
+	kcSetVolumeXMPanRight,                   //r
+	kcSetVolumePortamento,                   //g
+	kcSetVolumeITPortaUp,                    //f
+	kcSetVolumeITPortaDown,                  //e
+	kcSetVolumeITUnused,                     //:
+	kcSetVolumeITOffset,                     //o
+	kcEndVolumeCommands = kcSetVolumeITOffset,
+	kcSetVolumeEnd = kcEndVolumeCommands,
 
 	//Effect params
 	kcSetFXParam0,
@@ -617,9 +801,8 @@ enum CommandID
 	kcSetFXParamE,
 	kcSetFXParamF,
 
-	//Effect commands. ORDER IS CRUCIAL.
+	//Effect commands. ORDER IS CRUCIAL and must match EffectCommand enum!
 	kcSetFXStart,
-	kcFixedFXStart = kcSetFXStart,
 	kcSetFXarp = kcSetFXStart,  //0,j
 	kcSetFXportUp,              //1,f
 	kcSetFXportDown,            //2,e
@@ -651,17 +834,18 @@ enum CommandID
 	kcSetFXpanSlide,            //p,p
 	kcSetFXsetEnvPos,           //l,?
 	kcSetFXmacro,               //z,z
-	kcFixedFXend = kcSetFXmacro,
-	kcSetFXmacroSlide,      //?,\ ,
-	kcSetFXdelaycut,        //?,:
-	kcSetFXextension,       //?,#
-	kcSetFXFinetune,        //?,+
-	kcSetFXFinetuneSmooth,  //?,*
-	kcSetFXEnd = kcSetFXFinetuneSmooth,
+	kcSetFXuserBegin,
+	kcSetFXmacroSlide = kcSetFXuserBegin,  //?,\ ,
+	kcSetFXdelaycut,                       //?,:
+	kcSetFXextension,                      //?,#
+	kcSetFXFinetune,                       //?,+
+	kcSetFXFinetuneSmooth,                 //?,*
+	kcSetFXuserEnd = kcSetFXFinetuneSmooth,
+	kcSetFXDummy,           //W, 
+	kcSetFXEnd = kcSetFXDummy,
 
-	kcStartInstrumentMisc,
-	// Note: Order must be the same as kcStartSampleMisc because commands are propagated!
-	kcInstrumentLoad = kcStartInstrumentMisc,
+	kcStartInsEnvelopeEdit,
+	kcInstrumentLoad = kcStartInsEnvelopeEdit,
 	kcInstrumentSave,
 	kcInstrumentNew,
 	kcInstrumentEnvelopeLoad,
@@ -700,36 +884,55 @@ enum CommandID
 	kcInstrumentEnvelopeSetSustainLoopStart,
 	kcInstrumentEnvelopeSetSustainLoopEnd,
 	kcInstrumentEnvelopeToggleReleaseNode,
-	kcEndInstrumentMisc = kcInstrumentEnvelopeToggleReleaseNode,
 
-	kcStartInstrumentCtrlMisc,
-	kcInstrumentCtrlLoad = kcStartInstrumentCtrlMisc,
+	kcInstrumentStartNotes,
+	kcInstrumentEndNotes = kcInstrumentStartNotes + kcCommandSetNumNotes,
+	kcInstrumentStartNoteStops,
+	kcInstrumentEndNoteStops = kcInstrumentStartNoteStops + kcCommandSetNumNotes,
+	kcEndInsEnvelopeEdit = kcInstrumentEndNoteStops,
+
+	kcStartInstrumentCtrl,
+	kcInstrumentCtrlLoad = kcStartInstrumentCtrl,
 	kcInstrumentCtrlSave,
 	kcInstrumentCtrlNew,
 	kcInstrumentCtrlDuplicate,
-	kcInsNoteMapEditSampleMap,
+	kcEndInstrumentCtrl = kcInstrumentCtrlDuplicate,
+
+	kcStartInsNoteMap,
+	kcInsNoteMapEditSampleMap = kcStartInsNoteMap,
 	kcInsNoteMapEditSample,
 	kcInsNoteMapCopyCurrentNote,
 	kcInsNoteMapCopyCurrentSample,
 	kcInsNoteMapReset,
+	kcInsNoteMapTransposeSamples,
 	kcInsNoteMapRemove,
 	kcInsNoteMapTransposeUp,
 	kcInsNoteMapTransposeDown,
 	kcInsNoteMapTransposeOctUp,
 	kcInsNoteMapTransposeOctDown,
-	kcEndInstrumentCtrlMisc = kcInsNoteMapTransposeOctDown,
 
-	kcStartSampleMisc,
-	kcSampleLoad = kcStartSampleMisc,
+	kcInsNoteMapStartNotes,
+	kcInsNoteMapEndNotes = kcInsNoteMapStartNotes + kcCommandSetNumNotes,
+	kcInsNoteMapStartNoteStops,
+	kcInsNoteMapEndNoteStops = kcInsNoteMapStartNoteStops + kcCommandSetNumNotes,
+	kcEndInsNoteMap = kcInsNoteMapEndNoteStops,
+
+	kcStartSampleView,
+	kcStartSampleMisc = kcStartSampleView,
+	kcSampleNew = kcStartSampleMisc,
+	kcSampleLoad,
+	kcSampleLoadRaw,
 	kcSampleSave,
-	kcSampleNew,
 	kcSampleDuplicate,
 	kcSampleInitializeOPL,
 	kcSampleTransposeUp,
 	kcSampleTransposeDown,
 	kcSampleTransposeOctUp,
 	kcSampleTransposeOctDown,
-	kcEndSampleMisc = kcSampleTransposeOctDown,
+	kcSampleFinetuneUp,
+	kcSampleFinetuneDown,
+	kcSampleToggleFollowPlayCursor,
+	kcEndSampleMisc = kcSampleToggleFollowPlayCursor,
 
 	kcStartSampleEditing,
 	kcSampleTrim = kcStartSampleEditing,
@@ -753,11 +956,16 @@ enum CommandID
 	kcSampleCenterSustainEnd,
 	kcSampleConvertPingPongLoop,
 	kcSampleConvertPingPongSustain,
+	kcSampleConvertNormalLoopToSustain,
+	kcSampleConvertSustainLoopToNormal,
+	kcSampleToggleNormalLoop,
+	kcSampleToggleSustainLoop,
 	kcSample8Bit,
 	kcSampleMonoMix,
 	kcSampleMonoLeft,
 	kcSampleMonoRight,
 	kcSampleMonoSplit,
+	kcSampleSendSelectionToNew,
 	kcSampleStereoSep,
 	kcSampleUpsample,
 	kcSampleDownsample,
@@ -772,40 +980,40 @@ enum CommandID
 
 	kcStartSampleCues,
 	kcEndSampleCues = kcStartSampleCues + 8,
-	kcSampleSlice,
-	kcEndSampleCueGroup = kcSampleSlice,
+	kcSampleSliceCuePoints,
+	kcSampleSliceGrid,
+	kcEndSampleCueGroup = kcSampleSliceGrid,
 
 	kcSampStartNotes,
 	kcSampEndNotes = kcSampStartNotes + kcCommandSetNumNotes,
 	kcSampStartNoteStops,
 	kcSampEndNoteStops = kcSampStartNoteStops + kcCommandSetNumNotes,
+	kcEndSampleView = kcSampEndNoteStops,
 
-	kcInstrumentStartNotes,
-	kcInstrumentEndNotes = kcInstrumentStartNotes + kcCommandSetNumNotes,
-	kcInstrumentStartNoteStops,
-	kcInstrumentEndNoteStops = kcInstrumentStartNoteStops + kcCommandSetNumNotes,
+	kcStartTreeViewCommands,
+	kcTreeViewStopPreview = kcStartTreeViewCommands,
+	kcTreeViewSwitchViews,
+	kcTreeViewOpen,
+	kcTreeViewPlay,
+	kcTreeViewInsert,
+	kcTreeViewDuplicate,
+	kcTreeViewDelete,
+	kcTreeViewDeletePermanently,
+	kcTreeViewMoveUp,
+	kcTreeViewMoveDown,
+	kcTreeViewRename,
+	kcTreeViewSendToEditorInsertNew,
+	kcTreeViewFolderUp,
+	kcTreeViewFind,
+	kcTreeViewSortByName,
+	kcTreeViewSortByDate,
+	kcTreeViewSortBySize,
 
 	kcTreeViewStartNotes,
 	kcTreeViewEndNotes = kcTreeViewStartNotes + kcCommandSetNumNotes,
 	kcTreeViewStartNoteStops,
 	kcTreeViewEndNoteStops = kcTreeViewStartNoteStops + kcCommandSetNumNotes,
-
-	kcInsNoteMapStartNotes,
-	kcInsNoteMapEndNotes = kcInsNoteMapStartNotes + kcCommandSetNumNotes,
-	kcInsNoteMapStartNoteStops,
-	kcInsNoteMapEndNoteStops = kcInsNoteMapStartNoteStops + kcCommandSetNumNotes,
-
-	kcVSTGUIStartNotes,
-	kcVSTGUIEndNotes = kcVSTGUIStartNotes + kcCommandSetNumNotes,
-	kcVSTGUIStartNoteStops,
-	kcVSTGUIEndNoteStops = kcVSTGUIStartNoteStops + kcCommandSetNumNotes,
-
-	kcCommentsStartNotes,
-	kcCommentsEndNotes = kcCommentsStartNotes + kcCommandSetNumNotes,
-	kcCommentsStartNoteStops,
-	kcCommentsEndNoteStops = kcCommentsStartNoteStops + kcCommandSetNumNotes,
-
-	kcTreeViewStopPreview,
+	kcEndTreeViewCommands = kcTreeViewEndNoteStops,
 
 	kcStartVSTGUICommands,
 	kcVSTGUIPrevPreset = kcStartVSTGUICommands,
@@ -817,7 +1025,12 @@ enum CommandID
 	kcVSTGUIToggleRecordMIDIOut,
 	kcVSTGUIToggleSendKeysToPlug,
 	kcVSTGUIBypassPlug,
-	kcEndVSTGUICommands = kcVSTGUIBypassPlug,
+
+	kcVSTGUIStartNotes,
+	kcVSTGUIEndNotes = kcVSTGUIStartNotes + kcCommandSetNumNotes,
+	kcVSTGUIStartNoteStops,
+	kcVSTGUIEndNoteStops = kcVSTGUIStartNoteStops + kcCommandSetNumNotes,
+	kcEndVSTGUICommands = kcVSTGUIEndNoteStops,
 
 	kcStartOrderlistCommands,
 	// Orderlist edit
@@ -861,12 +1074,19 @@ enum CommandID
 	kcOrderlistPatIgnore,
 	kcOrderlistPatInvalid,
 	kcEndOrderlistNum = kcOrderlistPatInvalid,
+	kcStartOrderlistMisc,
 	// Playback lock
-	kcStartOrderlistLock,
-	kcOrderlistLockPlayback = kcStartOrderlistLock,
+	kcOrderlistLockPlayback = kcStartOrderlistMisc,
 	kcOrderlistUnlockPlayback,
-	kcEndOrderlistLock = kcOrderlistUnlockPlayback,
-	kcEndOrderlistCommands = kcEndOrderlistLock,
+	kcStartOrderlistQueue,
+	kcOrderlistQueueAtPatternEnd = kcStartOrderlistQueue,
+	kcOrderlistQueueAtMeasureEnd,
+	kcOrderlistQueueAtBeatEnd,
+	kcOrderlistQueueAtRowEnd,
+	kcEndOrderlistQueue = kcOrderlistQueueAtRowEnd,
+	kcOrderlistStreamExport,
+	kcEndOrderlistMisc = kcOrderlistStreamExport,
+	kcEndOrderlistCommands = kcEndOrderlistMisc,
 
 	kcStartChnSettingsCommands,
 	kcChnSettingsPrev = kcStartChnSettingsCommands,
@@ -879,7 +1099,13 @@ enum CommandID
 	kcStartCommentsCommands,
 	kcToggleSmpInsList = kcStartCommentsCommands,
 	kcExecuteSmpInsListItem,
-	kcEndCommentsCommands = kcExecuteSmpInsListItem,
+	kcRenameSmpInsListItem,
+
+	kcCommentsStartNotes,
+	kcCommentsEndNotes = kcCommentsStartNotes + kcCommandSetNumNotes,
+	kcCommentsStartNoteStops,
+	kcCommentsEndNoteStops = kcCommentsStartNoteStops + kcCommandSetNumNotes,
+	kcEndCommentsCommands = kcCommentsEndNoteStops,
 
 	kcNumCommands,
 };
@@ -963,6 +1189,9 @@ public:
 	}
 	LPARAM AsLPARAM() const { return AsUint32(); }
 
+	// True if key combination only consists of modifier keys
+	bool IsModifierCombination() const;
+
 	// Key combination to string
 	static CString GetContextText(InputTargetContext ctx);
 	CString GetContextText() const { return GetContextText(Context()); }
@@ -982,8 +1211,6 @@ public:
 using KeyMap = std::multimap<KeyCombination, CommandID>;
 using KeyMapRange = std::pair<KeyMap::const_iterator, KeyMap::const_iterator>;
 
-//KeyMap
-
 struct KeyCommand
 {
 	static constexpr uint32 Dummy = 1u << 31;
@@ -991,14 +1218,14 @@ struct KeyCommand
 	static constexpr uint32 UIDMask = Hidden - 1u;
 
 	std::vector<KeyCombination> kcList;
-	CString Message;
+	CString name;
 
 protected:
 	uint32 UID = 0;
 
 public:
 	KeyCommand() = default;
-	KeyCommand(uint32 uid, const TCHAR *message = _T(""), std::vector<KeyCombination> keys = {});
+	KeyCommand(uint32 uid, const TCHAR *commandName = _T(""), std::vector<KeyCombination> keys = {});
 
 	// Unique ID for on-disk keymap format.
 	// Note that hidden commands do not have a unique ID, because they are never written to keymap files.
@@ -1011,53 +1238,30 @@ public:
 };
 
 
-enum RuleID
+enum class KeyboardPreset
 {
-	krPreventDuplicate,
-	krDeleteOldOnConflict,
-
-	krAllowNavigationWithSelection,
-	krAllowSelectionWithNavigation,
-	krAutoSelectOff,
-	krAllowSelectCopySelectCombos,
-	krLockNotesToChords,
-	krNoteOffOnKeyRelease,
-	krPropagateNotes,
-	krReassignDigitsToOctaves,
-	krAutoSpacing,
-	krCheckModifiers,
-	krPropagateSampleManipulation,
-	kNumRules
+	MPT,
+	IT,
+	FT2,
 };
+
 
 struct CModSpecifications;
 
 class CCommandSet
 {
-protected:
-	//util
-	void SetupCommands();
-	void SetupContextHierarchy();
-	CString EnforceAll(KeyCombination kc, CommandID cmd, bool adding);
-
-	CommandID FindCmd(uint32 uid) const;
-	bool KeyCombinationConflict(KeyCombination kc1, KeyCombination kc2, bool checkEventConflict = true) const;
-
-	const CModSpecifications *m_oldSpecs = nullptr;
-	KeyCommand m_commands[kcNumCommands];
-	std::bitset<kCtxMaxInputContexts> m_isParentContext[kCtxMaxInputContexts];
-	std::bitset<kNumRules> m_enforceRule;
-
 public:
 	CCommandSet();
 
 	// Population
 	CString Add(KeyCombination kc, CommandID cmd, bool overwrite, int pos = -1, bool checkEventConflict = true);
-	CString Remove(KeyCombination kc, CommandID cmd);
-	CString Remove(int pos, CommandID cmd);
+	void Remove(KeyCombination kc, CommandID cmd);
+	void Remove(int pos, CommandID cmd);
 
-	std::pair<CommandID, KeyCombination> IsConflicting(KeyCombination kc, CommandID cmd, bool checkEventConflict = true) const;
+	std::pair<CommandID, KeyCombination> IsConflicting(KeyCombination kc, CommandID cmd, bool checkEventConflict = true, bool checkSameCommand = true) const;
 	bool IsCrossContextConflict(KeyCombination kc1, KeyCombination kc2) const;
+
+	static InputTargetContext ContextFromCommand(CommandID cmd);
 
 	// Tranformation
 	bool QuickChange_SetEffects(const CModSpecifications &modSpecs);
@@ -1065,18 +1269,60 @@ public:
 
 	// Communication
 	KeyCombination GetKey(CommandID cmd, UINT key) const { return m_commands[cmd].kcList[key]; }
-	bool isHidden(UINT c) const { return m_commands[c].IsHidden(); }
+	mpt::span<const KeyCombination> GetKeyChoices(CommandID cmd) const { return mpt::as_span(m_commands[cmd].kcList); }
+	bool IsHidden(UINT c) const { return m_commands[c].IsHidden(); }
+	// cppcheck false-positive
+	// cppcheck-suppress negativeContainerIndex
 	int GetKeyListSize(CommandID cmd) const { return (cmd != kcNull) ? static_cast<int>(m_commands[cmd].kcList.size()) : 0; }
-	CString GetCommandText(CommandID cmd) const { return m_commands[cmd].Message; }
-	CString GetKeyTextFromCommand(CommandID c, UINT key) const;
+	// cppcheck false-positive
+	// cppcheck-suppress negativeContainerIndex
+	CString GetCommandText(CommandID cmd) const { return m_commands[cmd].name; }
+	CString GetKeyTextFromCommand(CommandID c, UINT key = uint32_max) const;
+	CString FormatConflict(KeyCombination kc, CommandID conflictCommand, KeyCombination conflictCombination) const;
 
 	// Pululation ;)
-	void Copy(const CCommandSet *source);  // Copy the contents of a commandset into this command set
+	void Copy(const CCommandSet &source);  // Copy the contents of a commandset into this command set
 	void GenKeyMap(KeyMap &km);            // Generate a keymap from this command set
 	bool SaveFile(const mpt::PathString &filename);
 	bool LoadFile(const mpt::PathString &filename);
-	bool LoadFile(std::istream &iStrm, const mpt::ustring &filenameDescription, const bool fillExistingSet = false);
-	bool LoadDefaultKeymap();
+	bool LoadFile(std::istream &iStrm, const mpt::ustring &filenameDescription);
+	void LoadDefaultKeymap(KeyboardPreset preset = KeyboardPreset::MPT);
+
+	static bool MustBeModifierKey(CommandID id);
+
+protected:
+	void SetupCommands();
+	void SetupContextHierarchy();
+	void EnforceAll(KeyCombination kc, CommandID cmd, bool adding);
+
+	CommandID FindCmd(uint32 uid) const;
+	bool KeyCombinationConflict(KeyCombination kc1, KeyCombination kc2, bool checkEventConflict = true) const;
+
+	void ApplyDefaultKeybindings(KeyboardPreset preset, const Version onlyCommandsAfterVersion = {});
+
+	enum RuleID
+	{
+		krPreventDuplicate,
+		krDeleteOldOnConflict,
+
+		krAllowNavigationWithSelection,
+		krAllowSelectionWithNavigation,
+		krAutoSelectOff,
+		krAllowSelectCopySelectCombos,
+		krLockNotesToChords,
+		krNoteOffOnKeyRelease,
+		krPropagateNotes,
+		krReassignDigitsToOctaves,
+		krAutoSpacing,
+		krCheckModifiers,
+		krPropagateSampleManipulation,
+		kNumRules
+	};
+
+	const CModSpecifications *m_currentModSpecs = nullptr;
+	std::array<KeyCommand, kcNumCommands> m_commands;
+	std::bitset<kCtxMaxInputContexts> m_isParentContext[kCtxMaxInputContexts];
+	std::bitset<kNumRules> m_enforceRule;
 };
 
 OPENMPT_NAMESPACE_END

@@ -1,7 +1,7 @@
 /*
 	parse: spawned from common; clustering around stream/frame parsing
 
-	copyright ?-2020 by the mpg123 project - free software under the terms of the LGPL 2.1
+	copyright ?-2023 by the mpg123 project - free software under the terms of the LGPL 2.1
 	see COPYING and AUTHORS files in distribution or http://mpg123.org
 	initially written by Michael Hipp & Thomas Orgis
 */
@@ -30,7 +30,7 @@
 
 #include "mpeghead.h"
 
-#include "debug.h"
+#include "../common/debug.h"
 
 #define bsbufid(fr) (fr)->bsbuf==(fr)->bsspace[0] ? 0 : ((fr)->bsbuf==fr->bsspace[1] ? 1 : ( (fr)->bsbuf==(fr)->bsspace[0]+512 ? 2 : ((fr)->bsbuf==fr->bsspace[1]+512 ? 3 : -1) ) )
 
@@ -63,22 +63,23 @@ static const int tabsel_123[2][3][16] =
 
 static const long freqs[9] = { 44100, 48000, 32000, 22050, 24000, 16000 , 11025 , 12000 , 8000 };
 
-static int decode_header(mpg123_handle *fr,unsigned long newhead, int *freeformat_count);
-static int skip_junk(mpg123_handle *fr, unsigned long *newheadp, long *headcount);
-static int do_readahead(mpg123_handle *fr, unsigned long newhead);
+static int decode_header(mpg123_handle *fr, struct frame_header *hdr, unsigned long newhead, int *freeformat_count);
+static void apply_header(mpg123_handle *fr, struct frame_header *hdr);
+static int skip_junk(mpg123_handle *fr, unsigned long *newheadp, long *headcount, struct frame_header *nhdr);
+static int do_readahead(mpg123_handle *fr, struct frame_header *nhdr, unsigned long newhead);
 static int wetwork(mpg123_handle *fr, unsigned long *newheadp);
 
 /* These two are to be replaced by one function that gives all the frame parameters (for outsiders).*/
 /* Those functions are unsafe regarding bad arguments (inside the mpg123_handle), but just returning anything would also be unsafe, the caller code has to be trusted. */
 
-int frame_bitrate(mpg123_handle *fr)
+int INT123_frame_bitrate(mpg123_handle *fr)
 {
-	return tabsel_123[fr->lsf][fr->lay-1][fr->bitrate_index];
+	return tabsel_123[fr->hdr.lsf][fr->hdr.lay-1][fr->hdr.bitrate_index];
 }
 
-long frame_freq(mpg123_handle *fr)
+long INT123_frame_freq(mpg123_handle *fr)
 {
-	return freqs[fr->sampling_frequency];
+	return freqs[fr->hdr.sampling_frequency];
 }
 
 /* compiler is smart enought to inline this one or should I really do it as macro...? */
@@ -141,8 +142,8 @@ static int check_lame_tag(mpg123_handle *fr)
 		Mono                                17       9
 	*/
 	int lame_offset = (fr->stereo == 2)
-	? (fr->lsf ? 17 : 32)
-	: (fr->lsf ? 9  : 17);
+	? (fr->hdr.lsf ? 17 : 32)
+	: (fr->hdr.lsf ? 9  : 17);
 
 	if(fr->p.flags & MPG123_IGNORE_INFOFRAME) goto check_lame_tag_no;
 
@@ -154,7 +155,7 @@ static int check_lame_tag(mpg123_handle *fr)
 		for the actual data, have to check if each byte of information is present.
 		But: 4 B Info/Xing + 4 B flags is bare minimum.
 	*/
-	if(fr->framesize < lame_offset+8) goto check_lame_tag_no;
+	if(fr->hdr.framesize < lame_offset+8) goto check_lame_tag_no;
 
 	/* only search for tag when all zero before it (apart from checksum) */
 	for(i=2; i < lame_offset; ++i) if(fr->bsbuf[i] != 0) goto check_lame_tag_no;
@@ -190,7 +191,7 @@ static int check_lame_tag(mpg123_handle *fr)
 
 	/* From now on, I have to carefully check if the announced data is actually
 	   there! I'm always returning 'yes', though.  */
-	#define check_bytes_left(n) if(fr->framesize < lame_offset+n) \
+	#define check_bytes_left(n) if(fr->hdr.framesize < lame_offset+n) \
 		goto check_lame_tag_yes
 	if(xing_flags & 1) /* total bitstream frames */
 	{
@@ -203,12 +204,12 @@ static int check_lame_tag(mpg123_handle *fr)
 		else
 		{
 			/* Check for endless stream, but: TRACK_MAX_FRAMES sensible at all? */
-			fr->track_frames = long_tmp > TRACK_MAX_FRAMES ? 0 : (off_t) long_tmp;
+			fr->track_frames = long_tmp > TRACK_MAX_FRAMES ? 0 : (int64_t) long_tmp;
 #ifdef GAPLESS
 			/* All or nothing: Only if encoder delay/padding is known, we'll cut
 			   samples for gapless. */
 			if(fr->p.flags & MPG123_GAPLESS)
-			frame_gapless_init(fr, fr->track_frames, 0, 0);
+			INT123_frame_gapless_init(fr, fr->track_frames, 0, 0);
 #endif
 			if(VERBOSE3) fprintf(stderr, "Note: Xing: %lu frames\n", long_tmp);
 		}
@@ -228,14 +229,14 @@ static int check_lame_tag(mpg123_handle *fr)
 			   ignoring leading ID3v2 data. Trailing tags (ID3v1) seem to be 
 			   included, though. */
 			if(fr->rdat.filelen < 1)
-			fr->rdat.filelen = (off_t) long_tmp + fr->audio_start; /* Overflow? */
+			fr->rdat.filelen = (int64_t) long_tmp + fr->audio_start; /* Overflow? */
 			else
 			{
-				if((off_t)long_tmp != fr->rdat.filelen - fr->audio_start && NOQUIET)
+				if((int64_t)long_tmp != fr->rdat.filelen - fr->audio_start && NOQUIET)
 				{ /* 1/filelen instead of 1/(filelen-start), my decision */
 					double diff = 100.0/fr->rdat.filelen
 					            * ( fr->rdat.filelen - fr->audio_start
-					                - (off_t)long_tmp );
+					                - (int64_t)long_tmp );
 					if(diff < 0.) diff = -diff;
 
 					if(VERBOSE3) fprintf(stderr
@@ -253,7 +254,7 @@ static int check_lame_tag(mpg123_handle *fr)
 	if(xing_flags & 0x4) /* TOC */
 	{
 		check_bytes_left(100);
-		frame_fill_toc(fr, fr->bsbuf+lame_offset);
+		INT123_frame_fill_toc(fr, fr->bsbuf+lame_offset);
 		lame_offset += 100;
 	}
 	if(xing_flags & 0x8) /* VBR quality */
@@ -279,8 +280,8 @@ static int check_lame_tag(mpg123_handle *fr)
 		float peak = 0;
 		float gain_offset = 0; /* going to be +6 for old lame that used 83dB */
 		char nb[10];
-		off_t pad_in;
-		off_t pad_out;
+		int64_t pad_in;
+		int64_t pad_out;
 		memcpy(nb, fr->bsbuf+lame_offset, 9);
 		nb[9] = 0;
 		if(VERBOSE3) fprintf(stderr, "Note: Info: Encoder: %s\n", nb);
@@ -413,7 +414,7 @@ static int check_lame_tag(mpg123_handle *fr)
 		fr->enc_padding = (int)pad_out;
 		#ifdef GAPLESS
 		if(fr->p.flags & MPG123_GAPLESS)
-		frame_gapless_init(fr, fr->track_frames, pad_in, pad_out);
+		INT123_frame_gapless_init(fr, fr->track_frames, pad_in, pad_out);
 		#endif
 		/* final: 24 B LAME data */
 	}
@@ -443,10 +444,10 @@ static int head_compatible(unsigned long fred, unsigned long bret)
 static void halfspeed_prepare(mpg123_handle *fr)
 {
 	/* save for repetition */
-	if(fr->p.halfspeed && fr->lay == 3)
+	if(fr->p.halfspeed && fr->hdr.lay == 3)
 	{
 		debug("halfspeed - reusing old bsbuf ");
-		memcpy (fr->ssave, fr->bsbuf, fr->ssize);
+		memcpy (fr->ssave, fr->bsbuf, fr->hdr.ssize);
 	}
 }
 
@@ -461,9 +462,9 @@ static int halfspeed_do(mpg123_handle *fr)
 			debug("repeat!");
 			fr->to_decode = fr->to_ignore = TRUE;
 			--fr->halfphase;
-			set_pointer(fr, 0, 0);
-			if(fr->lay == 3) memcpy (fr->bsbuf, fr->ssave, fr->ssize);
-			if(fr->error_protection) fr->crc = getbits(fr, 16); /* skip crc */
+			INT123_set_pointer(fr, 0, 0);
+			if(fr->hdr.lay == 3) memcpy (fr->bsbuf, fr->ssave, fr->hdr.ssize);
+			if(fr->hdr.error_protection) fr->crc = getbits(fr, 16); /* skip crc */
 			return 1;
 		}
 		else
@@ -491,15 +492,16 @@ else if(ret == PARSE_END){ ret=0; goto read_frame_bad; } \
 	That's a big one: read the next frame. 1 is success, <= 0 is some error
 	Special error READER_MORE means: Please feed more data and try again.
 */
-int read_frame(mpg123_handle *fr)
+int INT123_read_frame(mpg123_handle *fr)
 {
 	/* TODO: rework this thing */
 	int freeformat_count = 0;
 	unsigned long newhead;
-	off_t framepos;
+	 // Start with current frame header state as copy for roll-back ability.
+	struct frame_header nhdr = fr->hdr;
+	int64_t framepos;
 	int ret;
 	/* stuff that needs resetting if complete frame reading fails */
-	int oldsize  = fr->framesize;
 	int oldphase = fr->halfphase;
 
 	/* The counter for the search-first-header loop.
@@ -507,11 +509,12 @@ int read_frame(mpg123_handle *fr)
 	   when repeatedly headers are found that do not have valid followup headers. */
 	long headcount = 0;
 
-	fr->fsizeold=fr->framesize;       /* for Layer3 */
+	fr->fsizeold=fr->hdr.framesize;       /* for Layer3 */
 
 	if(halfspeed_do(fr) == 1) return 1;
 
 	/* From now on, old frame data is tainted by parsing attempts. */
+	// Handling premature effects of decode_header now, more decoupling would be welcome.
 	fr->to_decode = fr->to_ignore = FALSE;
 
 	if( fr->p.flags & MPG123_NO_FRANKENSTEIN &&
@@ -521,9 +524,9 @@ int read_frame(mpg123_handle *fr)
 #endif
 		) )
 	{
-		mdebug( "stopping parsing at %"OFF_P
+		mdebug( "stopping parsing at %"PRIi64
 			" frames as indicated fixed track length"
-		,	(off_p)fr->num+1 );
+		,	fr->num+1 );
 		return 0;
 	}
 
@@ -532,7 +535,7 @@ read_again:
 	   This is essential to prevent endless looping, always going back to the beginning when feeder buffer is exhausted. */
 	if(fr->rd->forget != NULL) fr->rd->forget(fr);
 
-	debug2("trying to get frame %"OFF_P" at %"OFF_P, (off_p)fr->num+1, (off_p)fr->rd->tell(fr));
+	debug2("trying to get frame %"PRIi64" at %"PRIi64, fr->num+1, fr->rd->tell(fr));
 	if((ret = fr->rd->head_read(fr,&newhead)) <= 0){ debug1("need more? (%i)", ret); goto read_frame_bad;}
 
 init_resync:
@@ -540,13 +543,13 @@ init_resync:
 #ifdef SKIP_JUNK
 	if(!fr->firsthead && !head_check(newhead))
 	{
-		ret = skip_junk(fr, &newhead, &headcount);
+		ret = skip_junk(fr, &newhead, &headcount, &nhdr);
 		JUMP_CONCLUSION(ret);
 	}
 #endif
 
 	ret = head_check(newhead);
-	if(ret) ret = decode_header(fr, newhead, &freeformat_count);
+	if(ret) ret = decode_header(fr, &nhdr, newhead, &freeformat_count);
 
 	JUMP_CONCLUSION(ret); /* That only continues for ret == PARSE_BAD or PARSE_GOOD. */
 	if(ret == PARSE_BAD)
@@ -561,7 +564,7 @@ init_resync:
 	{
 		ret = fr->p.flags & MPG123_NO_READAHEAD
 		?	PARSE_GOOD
-		:	do_readahead(fr, newhead);
+		:	do_readahead(fr, &nhdr, newhead);
 		/* readahead can fail mit NEED_MORE, in which case we must also make the just read header available again for next go */
 		if(ret < 0) fr->rd->back_bytes(fr, 4);
 		JUMP_CONCLUSION(ret);
@@ -573,8 +576,8 @@ init_resync:
 	{
 		if(fr->firsthead && !head_compatible(fr->firsthead, newhead))
 		{
-			mdebug( "stopping before reading frame %"OFF_P
-				" as its header indicates Frankenstein coming for you", (off_p)fr->num );
+			mdebug( "stopping before reading frame %"PRIi64
+				" as its header indicates Frankenstein coming for you", fr->num );
 			return 0;
 		}
 	}
@@ -585,8 +588,8 @@ init_resync:
 	{
 		unsigned char *newbuf = fr->bsspace[fr->bsnum]+512;
 		/* read main data into memory */
-		debug2("read frame body of %i at %"OFF_P, fr->framesize, framepos+4);
-		if((ret=fr->rd->read_frame_body(fr,newbuf,fr->framesize))<0)
+		debug2("read frame body of %i at %"PRIi64, nhdr.framesize, framepos+4);
+		if((ret=fr->rd->read_frame_body(fr,newbuf,nhdr.framesize))<0)
 		{
 			/* if failed: flip back */
 			debug1("%s", ret == MPG123_NEED_MORE ? "need more" : "read error");
@@ -596,6 +599,10 @@ init_resync:
 		fr->bsbuf = newbuf;
 	}
 	fr->bsnum = (fr->bsnum + 1) & 1;
+
+	// We read the frame body, time to apply the matching header.
+	// Even if erroring out later, the header state needs to match the body.
+	apply_header(fr, &nhdr);
 
 	if(!fr->firsthead)
 	{
@@ -608,7 +615,7 @@ init_resync:
 			fr->audio_start = framepos;
 			/* Only check for LAME  tag at beginning of whole stream
 			   ... when there indeed is one in between, it's the user's problem. */
-			if(fr->lay == 3 && check_lame_tag(fr) == 1)
+			if(fr->hdr.lay == 3 && check_lame_tag(fr) == 1)
 			{ /* ...in practice, Xing/LAME tags are layer 3 only. */
 				if(fr->rd->forget != NULL) fr->rd->forget(fr);
 
@@ -616,23 +623,24 @@ init_resync:
 				goto read_again;
 			}
 			/* now adjust volume */
-			do_rva(fr);
+			INT123_do_rva(fr);
 		}
 
 		debug2("fr->firsthead: %08lx, audio_start: %li", fr->firsthead, (long int)fr->audio_start);
 	}
 
-	set_pointer(fr, 0, 0);
+	INT123_set_pointer(fr, 0, 0);
+
+	// No use of nhdr from here on. It is fr->hdr now!
 
 	/* Question: How bad does the floating point value get with repeated recomputation?
 	   Also, considering that we can play the file or parts of many times. */
 	if(++fr->mean_frames != 0)
 	{
-		fr->mean_framesize = ((fr->mean_frames-1)*fr->mean_framesize+compute_bpf(fr)) / fr->mean_frames ;
+		fr->mean_framesize = ((fr->mean_frames-1)*fr->mean_framesize+INT123_compute_bpf(fr)) / fr->mean_frames ;
 	}
 	++fr->num; /* 0 for first frame! */
-	debug4("Frame %"OFF_P" %08lx %i, next filepos=%"OFF_P, 
-	(off_p)fr->num, newhead, fr->framesize, (off_p)fr->rd->tell(fr));
+	debug4("Frame %"PRIi64" %08lx %i, next filepos=%"PRIi64, fr->num, newhead, fr->hdr.framesize, fr->rd->tell(fr));
 	if(!(fr->state_flags & FRAME_FRANKENSTEIN) && (
 		(fr->track_frames > 0 && fr->num >= fr->track_frames)
 #ifdef GAPLESS
@@ -641,11 +649,13 @@ init_resync:
 	))
 	{
 		fr->state_flags |= FRAME_FRANKENSTEIN;
-		if(NOQUIET) fprintf(stderr, "\nWarning: Encountered more data after announced end of track (frame %"OFF_P"/%"OFF_P"). Frankenstein!\n", (off_p)fr->num, 
+		if(NOQUIET)
+			fprintf(stderr, "\nWarning: Encountered more data after announced"
+				" end of track (frame %"PRIi64"/%"PRIi64"). Frankenstein!\n", fr->num,
 #ifdef GAPLESS
-		fr->gapless_frames > 0 ? (off_p)fr->gapless_frames : 
+				fr->gapless_frames > 0 ? fr->gapless_frames : 
 #endif
-		(off_p)fr->track_frames);
+				fr->track_frames);
 	}
 
 	halfspeed_prepare(fr);
@@ -656,7 +666,7 @@ init_resync:
 	/* Keep track of true frame positions in our frame index.
 	   but only do so when we are sure that the frame number is accurate... */
 	if((fr->state_flags & FRAME_ACCURATE) && FI_NEXT(fr->index, fr->num))
-	fi_add(&fr->index, framepos);
+	INT123_fi_add(&fr->index, framepos);
 #endif
 
 	if(fr->silent_resync > 0) --fr->silent_resync;
@@ -664,7 +674,7 @@ init_resync:
 	if(fr->rd->forget != NULL) fr->rd->forget(fr);
 
 	fr->to_decode = fr->to_ignore = TRUE;
-	if(fr->error_protection) fr->crc = getbits(fr, 16); /* skip crc */
+	if(fr->hdr.error_protection) fr->crc = getbits(fr, 16); /* skip crc */
 
 	/*
 		Let's check for header change after deciding that the new one is good
@@ -711,7 +721,6 @@ read_frame_bad:
 
 	fr->silent_resync = 0;
 	if(fr->err == MPG123_OK) fr->err = MPG123_ERR_READER;
-	fr->framesize = oldsize;
 	fr->halfphase = oldphase;
 	/* That return code might be inherited from some feeder action, or reader error. */
 	return ret;
@@ -725,9 +734,9 @@ read_frame_bad:
  * <0: error codes, possibly from feeder buffer (NEED_MORE)
  *  PARSE_BAD: cannot get the framesize for some reason and shall silentry try the next possible header (if this is no free format stream after all...)
  */
-static int guess_freeformat_framesize(mpg123_handle *fr, unsigned long oldhead)
+static int guess_freeformat_framesize(mpg123_handle *fr, unsigned long oldhead, int *framesize)
 {
-	long i;
+	int i;
 	int ret;
 	unsigned long head;
 	if(!(fr->rdat.flags & (READER_SEEKABLE|READER_BUFFERED)))
@@ -748,7 +757,7 @@ static int guess_freeformat_framesize(mpg123_handle *fr, unsigned long oldhead)
 		if((head & HDR_SAMEMASK) == (oldhead & HDR_SAMEMASK))
 		{
 			fr->rd->back_bytes(fr,i+1);
-			fr->framesize = i-3;
+			*framesize = i-3;
 			return PARSE_GOOD; /* Success! */
 		}
 	}
@@ -760,13 +769,18 @@ static int guess_freeformat_framesize(mpg123_handle *fr, unsigned long oldhead)
 /*
  * decode a header and write the information
  * into the frame structure
- * Return values are compatible with those of read_frame, namely:
+ * Return values are compatible with those of INT123_read_frame, namely:
  *  1: success
  *  0: no valid header
  * <0: some error
  * You are required to do a head_check() before calling!
+ *
+ * This now only operates on a frame header struct, not the full frame structure.
+ * The scope is limited to parsing header information and determining the size of
+ * the frame body to read. Everything else belongs into a later stage of applying
+ * header information to the main decoder frame structure.
  */
-static int decode_header(mpg123_handle *fr,unsigned long newhead, int *freeformat_count)
+static int decode_header(mpg123_handle *fr, struct frame_header *fh, unsigned long newhead, int *freeformat_count)
 {
 #ifdef DEBUG /* Do not waste cycles checking the header twice all the time. */
 	if(!head_check(newhead))
@@ -777,43 +791,42 @@ static int decode_header(mpg123_handle *fr,unsigned long newhead, int *freeforma
 	/* For some reason, the layer and sampling freq settings used to be wrapped
 	   in a weird conditional including MPG123_NO_RESYNC. What was I thinking?
 	   This information has to be consistent. */
-	fr->lay = 4 - HDR_LAYER_VAL(newhead);
+	fh->lay = 4 - HDR_LAYER_VAL(newhead);
 
 	if(HDR_VERSION_VAL(newhead) & 0x2)
 	{
-		fr->lsf = (HDR_VERSION_VAL(newhead) & 0x1) ? 0 : 1;
-		fr->mpeg25 = 0;
-		fr->sampling_frequency = HDR_SAMPLERATE_VAL(newhead) + (fr->lsf*3);
+		fh->lsf = (HDR_VERSION_VAL(newhead) & 0x1) ? 0 : 1;
+		fh->mpeg25 = 0;
+		fh->sampling_frequency = HDR_SAMPLERATE_VAL(newhead) + (fh->lsf*3);
 	}
 	else
 	{
-		fr->lsf = 1;
-		fr->mpeg25 = 1;
-		fr->sampling_frequency = 6 + HDR_SAMPLERATE_VAL(newhead);
+		fh->lsf = 1;
+		fh->mpeg25 = 1;
+		fh->sampling_frequency = 6 + HDR_SAMPLERATE_VAL(newhead);
 	}
 
 	#ifdef DEBUG
 	/* seen a file where this varies (old lame tag without crc, track with crc) */
-	if((HDR_CRC_VAL(newhead)^0x1) != fr->error_protection) debug("changed crc bit!");
+	if((HDR_CRC_VAL(newhead)^0x1) != fh->error_protection) debug("changed crc bit!");
 	#endif
-	fr->error_protection = HDR_CRC_VAL(newhead)^0x1;
-	fr->bitrate_index    = HDR_BITRATE_VAL(newhead);
-	fr->padding          = HDR_PADDING_VAL(newhead);
-	fr->extension        = HDR_PRIVATE_VAL(newhead);
-	fr->mode             = HDR_CHANNEL_VAL(newhead);
-	fr->mode_ext         = HDR_CHANEX_VAL(newhead);
-	fr->copyright        = HDR_COPYRIGHT_VAL(newhead);
-	fr->original         = HDR_ORIGINAL_VAL(newhead);
-	fr->emphasis         = HDR_EMPHASIS_VAL(newhead);
-	fr->freeformat       = !(newhead & HDR_BITRATE);
+	fh->error_protection = HDR_CRC_VAL(newhead)^0x1;
+	fh->bitrate_index    = HDR_BITRATE_VAL(newhead);
+	fh->padding          = HDR_PADDING_VAL(newhead);
+	fh->extension        = HDR_PRIVATE_VAL(newhead);
+	fh->mode             = HDR_CHANNEL_VAL(newhead);
+	fh->mode_ext         = HDR_CHANEX_VAL(newhead);
+	fh->copyright        = HDR_COPYRIGHT_VAL(newhead);
+	fh->original         = HDR_ORIGINAL_VAL(newhead);
+	fh->emphasis         = HDR_EMPHASIS_VAL(newhead);
+	fh->freeformat       = !(newhead & HDR_BITRATE);
 
-	fr->stereo = (fr->mode == MPG_MD_MONO) ? 1 : 2;
 
 	/* we can't use tabsel_123 for freeformat, so trying to guess framesize... */
-	if(fr->freeformat)
+	if(fh->freeformat)
 	{
 		/* when we first encounter the frame with freeformat, guess framesize */
-		if(fr->freeformat_framesize < 0)
+		if(fh->freeformat_framesize < 0)
 		{
 			int ret;
 			if(fr->p.flags & MPG123_NO_READAHEAD)
@@ -828,12 +841,12 @@ static int decode_header(mpg123_handle *fr,unsigned long newhead, int *freeforma
 				if(VERBOSE3) error("You fooled me too often. Refusing to guess free format frame size _again_.");
 				return PARSE_BAD;
 			}
-			ret = guess_freeformat_framesize(fr, newhead);
+			ret = guess_freeformat_framesize(fr, newhead, &(fh->framesize));
 			if(ret == PARSE_GOOD)
 			{
-				fr->freeformat_framesize = fr->framesize - fr->padding;
+				fh->freeformat_framesize = fh->framesize - fh->padding;
 				if(VERBOSE2)
-				fprintf(stderr, "Note: free format frame size %li\n", fr->freeformat_framesize);
+				fprintf(stderr, "Note: free format frame size %i\n", fh->freeformat_framesize);
 			}
 			else
 			{
@@ -848,80 +861,108 @@ static int decode_header(mpg123_handle *fr,unsigned long newhead, int *freeforma
 		/* freeformat should be CBR, so the same framesize can be used at the 2nd reading or later */
 		else
 		{
-			fr->framesize = fr->freeformat_framesize + fr->padding;
+			fh->framesize = fh->freeformat_framesize + fh->padding;
 		}
 	}
-
-	switch(fr->lay)
+	switch(fh->lay)
 	{
 #ifndef NO_LAYER1
 		case 1:
-			fr->spf = 384;
-			fr->do_layer = do_layer1;
-			if(!fr->freeformat)
+			if(!fh->freeformat)
 			{
-				long fs = (long) tabsel_123[fr->lsf][0][fr->bitrate_index] * 12000;
-				fs /= freqs[fr->sampling_frequency];
-				fs = ((fs+fr->padding)<<2)-4;
-				fr->framesize = (int)fs;
+				long fs = (long) tabsel_123[fh->lsf][0][fh->bitrate_index] * 12000;
+				fs /= freqs[fh->sampling_frequency];
+				fs = ((fs+fh->padding)<<2)-4;
+				fh->framesize = (int)fs;
 			}
 		break;
 #endif
 #ifndef NO_LAYER2
 		case 2:
-			fr->spf = 1152;
-			fr->do_layer = do_layer2;
-			if(!fr->freeformat)
+			if(!fh->freeformat)
 			{
-				debug2("bitrate index: %i (%i)", fr->bitrate_index, tabsel_123[fr->lsf][1][fr->bitrate_index] );
-				long fs = (long) tabsel_123[fr->lsf][1][fr->bitrate_index] * 144000;
-				fs /= freqs[fr->sampling_frequency];
-				fs += fr->padding - 4;
-				fr->framesize = (int)fs;
+				debug2("bitrate index: %i (%i)", fh->bitrate_index, tabsel_123[fh->lsf][1][fh->bitrate_index] );
+				long fs = (long) tabsel_123[fh->lsf][1][fh->bitrate_index] * 144000;
+				fs /= freqs[fh->sampling_frequency];
+				fs += fh->padding - 4;
+				fh->framesize = (int)fs;
 			}
 		break;
 #endif
 #ifndef NO_LAYER3
 		case 3:
-			fr->spf = fr->lsf ? 576 : 1152; /* MPEG 2.5 implies LSF.*/
-			fr->do_layer = do_layer3;
-			if(fr->lsf)
-			fr->ssize = (fr->stereo == 1) ? 9 : 17;
+			if(fh->lsf)
+			fh->ssize = (fh->mode == MPG_MD_MONO) ? 9 : 17;
 			else
-			fr->ssize = (fr->stereo == 1) ? 17 : 32;
+			fh->ssize = (fh->mode == MPG_MD_MONO) ? 17 : 32;
 
-			if(fr->error_protection)
-			fr->ssize += 2;
+			if(fh->error_protection)
+			fh->ssize += 2;
 
-			if(!fr->freeformat)
+			if(!fh->freeformat)
 			{
-				long fs = (long) tabsel_123[fr->lsf][2][fr->bitrate_index] * 144000;
-				fs /= freqs[fr->sampling_frequency]<<(fr->lsf);
-				fs += fr->padding - 4;
-				fr->framesize = fs;
+				long fs = (long) tabsel_123[fh->lsf][2][fh->bitrate_index] * 144000;
+				fs /= freqs[fh->sampling_frequency]<<(fh->lsf);
+				fs += fh->padding - 4;
+				fh->framesize = fs;
 			}
-			if(fr->framesize < fr->ssize)
+			if(fh->framesize < fh->ssize)
 			{
 				if(NOQUIET)
 					error2( "Frame smaller than mandatory side info (%i < %i)!"
-					,	fr->framesize, fr->ssize );
+					,	fh->framesize, fh->ssize );
 				return PARSE_BAD;
 			}
 		break;
 #endif 
 		default:
-			if(NOQUIET) error1("Layer type %i not supported in this build!", fr->lay); 
+			if(NOQUIET) error1("Layer type %i not supported in this build!", fh->lay); 
 
 			return PARSE_BAD;
 	}
-	if (fr->framesize > MAXFRAMESIZE)
+	if (fh->framesize > MAXFRAMESIZE)
 	{
-		if(NOQUIET) error1("Frame size too big: %d", fr->framesize+4-fr->padding);
+		if(NOQUIET) error1("Frame size too big: %d", fh->framesize+4-fh->padding);
 
 		return PARSE_BAD;
 	}
 	return PARSE_GOOD;
 }
+
+// Apply decoded header structure to frame struct, including
+// main decoder function pointer.
+static void apply_header(mpg123_handle *fr, struct frame_header *hdr)
+{
+	// copy the whole struct, do some postprocessing
+	fr->hdr = *hdr;
+	fr->stereo = (fr->hdr.mode == MPG_MD_MONO) ? 1 : 2;
+	switch(fr->hdr.lay)
+	{
+#ifndef NO_LAYER1
+		case 1:
+			fr->spf = 384;
+			fr->do_layer = INT123_do_layer1;
+		break;
+#endif
+#ifndef NO_LAYER2
+		case 2:
+			fr->spf = 1152;
+			fr->do_layer = INT123_do_layer2;
+		break;
+#endif
+#ifndef NO_LAYER3
+		case 3:
+			fr->spf = fr->hdr.lsf ? 576 : 1152; /* MPEG 2.5 implies LSF.*/
+			fr->do_layer = INT123_do_layer3;
+#endif 
+		break;
+		default:
+			// No error checking/message here, been done in decode_header().
+			fr->spf = 0;
+			fr->do_layer = NULL;
+	}
+}
+
 
 /* Prepare for bit reading. Two stages:
   0. Layers 1 and 2, side info for layer 3
@@ -929,39 +970,39 @@ static int decode_header(mpg123_handle *fr,unsigned long newhead, int *freeforma
      This overwrites side info needed for stage 0.
 
   Continuing to read bits after layer 3 side info shall fail unless
-  set_pointer() is called to refresh things. 
+  INT123_set_pointer() is called to refresh things.
 */
-void set_pointer(mpg123_handle *fr, int part2, long backstep)
+void INT123_set_pointer(mpg123_handle *fr, int part2, long backstep)
 {
 	fr->bitindex = 0;
-	if(fr->lay == 3)
+	if(fr->hdr.lay == 3)
 	{
 		if(part2)
 		{
-			fr->wordpointer = fr->bsbuf + fr->ssize - backstep;
+			fr->wordpointer = fr->bsbuf + fr->hdr.ssize - backstep;
 			if(backstep)
 				memcpy( fr->wordpointer, fr->bsbufold+fr->fsizeold-backstep
 				,	backstep );
-			fr->bits_avail = (long)(fr->framesize - fr->ssize + backstep)*8;
+			fr->bits_avail = (long)(fr->hdr.framesize - fr->hdr.ssize + backstep)*8;
 		}
 		else
 		{
 			fr->wordpointer = fr->bsbuf;
-			fr->bits_avail  = fr->ssize*8;
+			fr->bits_avail  = fr->hdr.ssize*8;
 		}
 	}
 	else
 	{
 		fr->wordpointer = fr->bsbuf;
-		fr->bits_avail  = fr->framesize*8;
+		fr->bits_avail  = fr->hdr.framesize*8;
 	}
 }
 
 /********************************/
 
-double compute_bpf(mpg123_handle *fr)
+double INT123_compute_bpf(mpg123_handle *fr)
 {
-	return (fr->framesize > 0) ? fr->framesize + 4.0 : 1.0;
+	return (fr->hdr.framesize > 0) ? fr->hdr.framesize + 4.0 : 1.0;
 }
 
 int attribute_align_arg mpg123_spf(mpg123_handle *mh)
@@ -977,18 +1018,18 @@ double attribute_align_arg mpg123_tpf(mpg123_handle *fr)
 	double tpf;
 	if(fr == NULL || !fr->firsthead) return MPG123_ERR;
 
-	tpf = (double) bs[fr->lay];
-	tpf /= freqs[fr->sampling_frequency] << (fr->lsf);
+	tpf = (double) bs[fr->hdr.lay];
+	tpf /= freqs[fr->hdr.sampling_frequency] << (fr->hdr.lsf);
 	return tpf;
 }
 
-int attribute_align_arg mpg123_position(mpg123_handle *fr, off_t no, off_t buffsize,
-	off_t  *current_frame,   off_t  *frames_left,
+int attribute_align_arg mpg123_position64(mpg123_handle *fr, int64_t no, int64_t buffsize,
+	int64_t  *current_frame,   int64_t  *frames_left,
 	double *current_seconds, double *seconds_left)
 {
 	double tpf;
 	double dt = 0.0;
-	off_t cur, left;
+	int64_t cur, left;
 	double curs, lefts;
 
 	if(!fr || !fr->rd) return MPG123_ERR;
@@ -1009,9 +1050,9 @@ int attribute_align_arg mpg123_position(mpg123_handle *fr, off_t no, off_t buffs
 	if(fr->rdat.filelen >= 0)
 	{
 		double bpf;
-		off_t t = fr->rd->tell(fr);
-		bpf = fr->mean_framesize ? fr->mean_framesize : compute_bpf(fr);
-		left = (off_t)((double)(fr->rdat.filelen-t)/bpf);
+		int64_t t = fr->rd->tell(fr);
+		bpf = fr->mean_framesize ? fr->mean_framesize : INT123_compute_bpf(fr);
+		left = (int64_t)((double)(fr->rdat.filelen-t)/bpf);
 		/* no can be different for prophetic purposes, file pointer is always associated with fr->num! */
 		if(fr->num != no)
 		{
@@ -1044,29 +1085,12 @@ int attribute_align_arg mpg123_position(mpg123_handle *fr, off_t no, off_t buffs
 	return MPG123_OK;
 }
 
-int get_songlen(mpg123_handle *fr,int no)
-{
-	double tpf;
-	
-	if(!fr)
-		return 0;
-	
-	if(no < 0) {
-		if(!fr->rd || fr->rdat.filelen < 0)
-			return 0;
-		no = (int) ((double) fr->rdat.filelen / compute_bpf(fr));
-	}
-
-	tpf = mpg123_tpf(fr);
-	return (int) (no*tpf);
-}
-
 /* first attempt of read ahead check to find the real first header; cannot believe what junk is out there! */
-static int do_readahead(mpg123_handle *fr, unsigned long newhead)
+static int do_readahead(mpg123_handle *fr, struct frame_header *nhdr, unsigned long newhead)
 {
 	unsigned long nexthead = 0;
 	int hd = 0;
-	off_t start, oret;
+	int64_t start, oret;
 	int ret;
 
 	if( ! (!fr->firsthead && fr->rdat.flags & (READER_SEEKABLE|READER_BUFFERED)) )
@@ -1074,9 +1098,9 @@ static int do_readahead(mpg123_handle *fr, unsigned long newhead)
 
 	start = fr->rd->tell(fr);
 
-	debug2("doing ahead check with BPF %d at %"OFF_P, fr->framesize+4, (off_p)start);
+	debug2("doing ahead check with BPF %d at %"PRIi64, nhdr->framesize+4, start);
 	/* step framesize bytes forward and read next possible header*/
-	if((oret=fr->rd->skip_bytes(fr, fr->framesize))<0)
+	if((oret=fr->rd->skip_bytes(fr, nhdr->framesize))<0)
 	{
 		if(oret==READER_ERROR && NOQUIET) error("cannot seek!");
 
@@ -1093,7 +1117,7 @@ static int do_readahead(mpg123_handle *fr, unsigned long newhead)
 	}
 	if(hd == MPG123_NEED_MORE) return PARSE_MORE;
 
-	debug1("After fetching next header, at %"OFF_P, (off_p)fr->rd->tell(fr));
+	debug1("After fetching next header, at %"PRIi64, fr->rd->tell(fr));
 	if(!hd)
 	{
 		if(NOQUIET) warning("Cannot read next header, a one-frame stream? Duh...");
@@ -1121,7 +1145,7 @@ static int handle_id3v2(mpg123_handle *fr, unsigned long newhead)
 {
 	int ret;
 	fr->oldhead = 0; /* Think about that. Used to be present only for skipping of junk, not resync-style wetwork. */
-	ret = parse_new_id3(fr, newhead);
+	ret = INT123_parse_new_id3(fr, newhead);
 	if     (ret < 0) return ret;
 #ifndef NO_ID3V2
 	else if(ret > 0){ debug("got ID3v2"); fr->metaflags  |= MPG123_NEW_ID3|MPG123_ID3; }
@@ -1140,7 +1164,7 @@ static int handle_apetag(mpg123_handle *fr, unsigned long newhead)
 	int back_bytes = 3;
 	fr->oldhead = 0;
 
-	debug1("trying to read remaining APE header at %"OFF_P, (off_p)fr->rd->tell(fr));
+	debug1("trying to read remaining APE header at %"PRIi64, fr->rd->tell(fr));
 	/* Apetag headers are 32 bytes, newhead contains 4, read the rest */
 	if((ret=fr->rd->fullread(fr,apebuf,28)) < 0)
 		return ret;
@@ -1148,7 +1172,7 @@ static int handle_apetag(mpg123_handle *fr, unsigned long newhead)
 	if(ret < 28)
 		goto apetag_bad;
 	
-	debug1("trying to parse APE header at %"OFF_P, (off_p)fr->rd->tell(fr));
+	debug1("trying to parse APE header at %"PRIi64, fr->rd->tell(fr));
 	/* Apetags start with "APETAGEX", "APET" is already tested. */
 	if(strncmp((char *)apebuf,"AGEX",4) != 0)
 		goto apetag_bad;
@@ -1171,8 +1195,8 @@ static int handle_apetag(mpg123_handle *fr, unsigned long newhead)
 	|	((unsigned long)apebuf[10]<<16)
 	|	((unsigned long)apebuf[9]<<8)
 	|	apebuf[8];
-	debug2( "skipping %lu bytes of APE data at %"OFF_P
-	,	val, (off_p)fr->rd->tell(fr) );
+	debug2( "skipping %lu bytes of APE data at %"PRIi64
+	,	val, fr->rd->tell(fr) );
 	/* If encountering EOF here, things are just at an end. */
 	if((ret=fr->rd->skip_bytes(fr,val)) < 0)
 		return ret;
@@ -1211,7 +1235,7 @@ static int forget_head_shift(mpg123_handle *fr, unsigned long *newheadp, int for
 }
 
 /* watch out for junk/tags on beginning of stream by invalid header */
-static int skip_junk(mpg123_handle *fr, unsigned long *newheadp, long *headcount)
+static int skip_junk(mpg123_handle *fr, unsigned long *newheadp, long *headcount, struct frame_header *nhdr)
 {
 	int ret;
 	int freeformat_count = 0;
@@ -1267,7 +1291,7 @@ static int skip_junk(mpg123_handle *fr, unsigned long *newheadp, long *headcount
 		if(++forgetcount > FORGET_INTERVAL) forgetcount = 0;
 		if((ret=forget_head_shift(fr, &newhead, !forgetcount))<=0) return ret;
 
-		if(head_check(newhead) && (ret=decode_header(fr, newhead, &freeformat_count))) break;
+		if(head_check(newhead) && (ret=decode_header(fr, nhdr, newhead, &freeformat_count))) break;
 	} while(1);
 	if(ret<0) return ret;
 
@@ -1277,7 +1301,7 @@ static int skip_junk(mpg123_handle *fr, unsigned long *newheadp, long *headcount
 		fr->err = MPG123_RESYNC_FAIL;
 		return PARSE_ERR;
 	}
-	else debug1("hopefully found one at %"OFF_P, (off_p)fr->rd->tell(fr));
+	else debug1("hopefully found one at %"PRIi64, fr->rd->tell(fr));
 
 	/* If the new header ist good, it is already decoded. */
 	*newheadp = newhead;
@@ -1320,8 +1344,8 @@ static int wetwork(mpg123_handle *fr, unsigned long *newheadp)
 	}
 	else if(NOQUIET && fr->silent_resync == 0)
 	{
-		fprintf(stderr,"Note: Illegal Audio-MPEG-Header 0x%08lx at offset %"OFF_P".\n",
-			newhead, (off_p)fr->rd->tell(fr)-4);
+		fprintf(stderr,"Note: Illegal Audio-MPEG-Header 0x%08lx at offset %"PRIi64".\n",
+			newhead, fr->rd->tell(fr)-4);
 	}
 
 	/* Now we got something bad at hand, try to recover. */
@@ -1352,7 +1376,7 @@ static int wetwork(mpg123_handle *fr, unsigned long *newheadp)
 
 				return ret ? ret : PARSE_END;
 			}
-			if(VERBOSE3) debug3("resync try %li at %"OFF_P", got newhead 0x%08lx", try, (off_p)fr->rd->tell(fr),  newhead);
+			if(VERBOSE3) debug3("resync try %li at %"PRIi64", got newhead 0x%08lx", try, fr->rd->tell(fr),  newhead);
 		} while(!head_check(newhead));
 
 		*newheadp = newhead;

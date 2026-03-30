@@ -8,71 +8,90 @@
 
 #if MPT_DETECTED_NLOHMANN_JSON
 #include "mpt/string/types.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 #endif // MPT_DETECTED_NLOHMANN_JSON
 
 #if MPT_DETECTED_NLOHMANN_JSON
-#include <optional>
-#endif // MPT_DETECTED_NLOHMANN_JSON
-
-#if MPT_DETECTED_NLOHMANN_JSON
-#if MPT_COMPILER_CLANG
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmismatched-tags"
-#endif // MPT_COMPILER_CLANG
+#if MPT_COMPILER_MSVC
+#pragma warning(push)
+#pragma warning(disable : 28020)
+#endif // MPT_COMPILER_MSVC
 #include <nlohmann/json.hpp>
-#if MPT_COMPILER_CLANG
-#pragma clang diagnostic pop
-#endif // MPT_COMPILER_CLANG
+#if MPT_COMPILER_MSVC
+#pragma warning(pop)
+#endif // MPT_COMPILER_MSVC
 #endif // MPT_DETECTED_NLOHMANN_JSON
 
+#if !defined(MPT_BUILD_MSVC)
+#if NLOHMANN_JSON_VERSION_MAJOR < 3
+#define MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
+#elif (NLOHMANN_JSON_VERSION_MAJOR == 3) && (NLOHMANN_JSON_VERSION_MINOR < 12)
+#define MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
+#elif (NLOHMANN_JSON_VERSION_MAJOR == 3) && (NLOHMANN_JSON_VERSION_MINOR == 12) && (NLOHMANN_JSON_VERSION_PATCH < 1)
+#define MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
+#endif
+#endif
+
+#ifdef MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
+#include <optional>
+#endif // MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
 
 
 namespace nlohmann {
+
+
+
 template <>
 struct adl_serializer<mpt::ustring> {
 	static void to_json(json & j, const mpt::ustring & val) {
-		j = mpt::convert<std::string>(mpt::common_encoding::utf8, val);
+		j = mpt::transcode<std::string>(mpt::common_encoding::utf8, val);
 	}
 	static void from_json(const json & j, mpt::ustring & val) {
-		val = mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, j.get<std::string>());
+		val = mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, j.get<std::string>());
 	}
 };
+
 template <typename Tvalue>
 struct adl_serializer<std::map<mpt::ustring, Tvalue>> {
 	static void to_json(json & j, const std::map<mpt::ustring, Tvalue> & val) {
 		std::map<std::string, Tvalue> utf8map;
-		for (const auto & value : val)
-		{
-			utf8map[mpt::convert<std::string>(mpt::common_encoding::utf8, value.first)] = value.second;
+		for (const auto & value : val) {
+			utf8map[mpt::transcode<std::string>(mpt::common_encoding::utf8, value.first)] = value.second;
 		}
 		j = std::move(utf8map);
 	}
 	static void from_json(const json & j, std::map<mpt::ustring, Tvalue> & val) {
 		std::map<std::string, Tvalue> utf8map = j.get<std::map<std::string, Tvalue>>();
 		std::map<mpt::ustring, Tvalue> result;
-		for (const auto & value : utf8map)
-		{
-			result[mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, value.first)] = value.second;
+		for (const auto & value : utf8map) {
+			result[mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, value.first)] = value.second;
 		}
 		val = std::move(result);
 	}
 };
+
+
+
+#ifdef MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
+
 template <typename Tvalue>
 struct adl_serializer<std::optional<Tvalue>> {
 	static void to_json(json & j, const std::optional<Tvalue> & val) {
 		j = (val ? json{*val} : json{nullptr});
 	}
 	static void from_json(const json & j, std::optional<Tvalue> & val) {
-		if (!j.is_null())
-		{
+		if (!j.is_null()) {
 			val = j.get<Tvalue>();
-		} else
-		{
+		} else {
 			val = std::nullopt;
 		}
 	}
 };
+
+#endif // MPT_JSON_JSON_NLOHMANN_JSON_QUIRK_NO_STD_OPTIONAL
+
+
+
 } // namespace nlohmann
 
 

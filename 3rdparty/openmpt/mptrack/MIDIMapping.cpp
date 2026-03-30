@@ -9,8 +9,8 @@
 
 
 #include "stdafx.h"
-#include "Moddoc.h"
 #include "MIDIMapping.h"
+#include "Moddoc.h"
 #include "../common/FileReader.h"
 #include "../soundlib/MIDIEvents.h"
 #include "../soundlib/plugins/PlugInterface.h"
@@ -141,13 +141,11 @@ bool CMIDIMapper::OnMIDImsg(const DWORD midimsg, PLUGINDEX &mappedIndex, PlugPar
 
 		if(plugindex > 0 && plugindex <= MAX_MIXPLUGINS)
 		{
-#ifndef NO_PLUGINS
 			IMixPlugin *pPlug = m_rSndFile.m_MixPlugins[plugindex - 1].pMixPlugin;
 			if(!pPlug) continue;
 			pPlug->SetParameter(param, val / 16383.0f);
 			if(m_rSndFile.GetpModDoc() != nullptr)
 				m_rSndFile.GetpModDoc()->SetModified();
-#endif // NO_PLUGINS
 		}
 		if(d.GetCaptureMIDI())
 		{
@@ -165,6 +163,16 @@ void CMIDIMapper::Swap(const size_t a, const size_t b)
 	{
 		std::swap(m_Directives[a], m_Directives[b]);
 		Sort();
+	}
+}
+
+
+void CMIDIMapper::MovePlugin(PLUGINDEX from, PLUGINDEX to)
+{
+	for (auto &d : m_Directives)
+	{
+		if(d.GetPlugIndex() == from + 1u)
+			d.SetPlugIndex(to + 1u);
 	}
 }
 

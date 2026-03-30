@@ -24,7 +24,8 @@ struct CModSpecifications
 {
 	/// Returns modtype corresponding to given file extension. The extension string
 	/// may begin with or without dot, e.g. both ".it" and "it" will be handled correctly.
-	static MODTYPE ExtensionToType(std::string ext); // (encoded in UTF8)
+	static MODTYPE ExtensionToType(std::string ext); // (encoded in ASCII)
+	static MODTYPE ExtensionToType(mpt::ustring ext);
 
 	// Return true if format supports given note.
 	bool HasNote(ModCommand::NOTE note) const;
@@ -32,11 +33,15 @@ struct CModSpecifications
 	bool HasCommand(ModCommand::COMMAND cmd) const;
 	// Return corresponding effect letter for this format
 	char GetEffectLetter(ModCommand::COMMAND cmd) const;
-	char GetVolEffectLetter(ModCommand::VOLCMD cmd) const;
+	char GetVolEffectLetter(ModCommand::VOLCMD volcmd) const;
+	static char GetGenericVolEffectLetter(ModCommand::VOLCMD volcmd);
 
 	// NOTE: If changing order, update all initializations in .cpp file.
 	MODTYPE internalType;       // Internal MODTYPE value
-	const char *fileExtension;  // File extension without dot (encoded in UTF8).
+	const char *fileExtension;  // File extension without dot (encoded in ASCII).
+	mpt::ustring GetFileExtension() const { return mpt::ToUnicode(mpt::Charset::ASCII, fileExtension); }
+	mpt::ustring GetFileExtensionLower() const { return mpt::ToUnicode(mpt::Charset::ASCII, mpt::ToLowerCaseAscii(fileExtension)); }
+	mpt::ustring GetFileExtensionUpper() const { return mpt::ToUnicode(mpt::Charset::ASCII, mpt::ToUpperCaseAscii(fileExtension)); }
 	ModCommand::NOTE noteMin;   // Minimum note index (index starts from 1)
 	ModCommand::NOTE noteMax;   // Maximum note index (index starts from 1)
 	PATTERNINDEX patternsMax;
@@ -78,8 +83,8 @@ struct CModSpecifications
 	bool hasFractionalTempo;         // Are fractional tempos allowed?
 	const char *commands;            // An array holding all commands this format supports; commands that are not supported are marked with "?"
 	const char *volcommands;         // Ditto, but for volume column
-	MPT_CONSTEXPRINLINE TEMPO GetTempoMin() const { return TEMPO(tempoMinInt, 0); }
-	MPT_CONSTEXPRINLINE TEMPO GetTempoMax() const { return TEMPO(tempoMaxInt, 0); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr TEMPO GetTempoMin() const { return TEMPO(tempoMinInt, 0); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr TEMPO GetTempoMax() const { return TEMPO(tempoMaxInt, 0); }
 };
 
 

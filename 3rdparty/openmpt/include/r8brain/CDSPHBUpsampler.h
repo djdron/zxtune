@@ -8,7 +8,7 @@
  *
  * This file includes half-band upsampling class.
  *
- * r8brain-free-src Copyright (c) 2013-2021 Aleksey Vaneev
+ * r8brain-free-src Copyright (c) 2013-2022 Aleksey Vaneev
  * See the "LICENSE" file for license.
  */
 
@@ -38,6 +38,9 @@ public:
 	 * @param SteepIndex Steepness index - 0=steepest. Corresponds to general
 	 * upsampling/downsampling ratio, e.g. at 4x 0 is used, at 8x 1 is used,
 	 * etc.
+	 * @param[out] flt Resulting pointer to filter taps.
+	 * @param[out] fltt Resulting filter's half-length, in samples (taps).
+	 * @param[out] att Resulting filter's attenuation (the closest found).
 	 */
 
 	static void getHBFilter( const double ReqAtten, const int SteepIndex,
@@ -319,6 +322,9 @@ public:
 	 * @param SteepIndex Steepness index - 0=steepest. Corresponds to general
 	 * upsampling/downsampling ratio, e.g. at 4x 0 is used, at 8x 1 is used,
 	 * etc.
+	 * @param[out] flt Resulting pointer to filter taps.
+	 * @param[out] fltt Resulting filter's half-length, in samples (taps).
+	 * @param[out] att Resulting filter's attenuation (the closest found).
 	 */
 
 	static void getHBFilterThird( const double ReqAtten, const int SteepIndex,
@@ -551,15 +557,21 @@ public:
 	 * @param SteepIndex Steepness index - 0=steepest. Corresponds to general
 	 * upsampling ratio, e.g. at 4x upsampling 0 is used, at 8x upsampling 1
 	 * is used, etc.
-	 * @param IsThird "True" if 1/3 resampling is performed.
+	 * @param IsThird "True" if 1/3 of frequency response resampling is
+	 * performed.
 	 * @param PrevLatency Latency, in samples (any value >=0), which was left
 	 * in the output signal by a previous process. Whole-number latency will
 	 * be consumed by *this object while remaining fractional latency can be
 	 * obtained via the getLatencyFrac() function.
+	 * @param aDoConsumeLatency "True" if the output latency should be
+	 * consumed. Does not apply to the fractional part of the latency (if such
+	 * part is available).
 	 */
 
 	CDSPHBUpsampler( const double ReqAtten, const int SteepIndex,
-		const bool IsThird, const double PrevLatency )
+		const bool IsThird, const double PrevLatency,
+		const bool aDoConsumeLatency = true )
+		: DoConsumeLatency( aDoConsumeLatency )
 	{
 		static const CConvolveFn FltConvFn[ 14 ] = {
 			&CDSPHBUpsampler :: convolve1, &CDSPHBUpsampler :: convolve2,
@@ -570,26 +582,45 @@ public:
 			&CDSPHBUpsampler :: convolve11, &CDSPHBUpsampler :: convolve12,
 			&CDSPHBUpsampler :: convolve13, &CDSPHBUpsampler :: convolve14 };
 
+		const double* fltp0;
 		int fltt;
 		double att;
 
 		if( IsThird )
 		{
-			getHBFilterThird( ReqAtten, SteepIndex, fltp, fltt, att );
+			getHBFilterThird( ReqAtten, SteepIndex, fltp0, fltt, att );
 		}
 		else
 		{
-			getHBFilter( ReqAtten, SteepIndex, fltp, fltt, att );
+			getHBFilter( ReqAtten, SteepIndex, fltp0, fltt, att );
 		}
+
+		// Copy obtained filter to address-aligned buffer.
+
+		fltp = alignptr( FltBuf, 16 );
+		memcpy( fltp, fltp0, fltt * sizeof( fltp[ 0 ]));
 
 		convfn = FltConvFn[ fltt - 1 ];
 		fll = fltt - 1;
 		fl2 = fltt;
 		flo = fll + fl2;
+		BufRP = Buf + fll;
 
 		LatencyFrac = PrevLatency * 2.0;
 		Latency = (int) LatencyFrac;
 		LatencyFrac -= Latency;
+
+		R8BASSERT( Latency >= 0 );
+
+		if( DoConsumeLatency )
+		{
+			flb = BufLen - fll;
+		}
+		else
+		{
+			Latency += fl2 + fl2;
+			flb = BufLen - flo;
+		}
 
 		R8BCONSOLE( "CDSPHBUpsampler: sti=%i third=%i taps=%i att=%.1f "
 			"io=2/1\n", SteepIndex, (int) IsThird, fltt, att );
@@ -597,9 +628,14 @@ public:
 		clear();
 	}
 
+	virtual int getInLenBeforeOutPos( const int ReqOutPos ) const
+	{
+		return( fl2 + (int) (( Latency + LatencyFrac + ReqOutPos ) * 0.5 ));
+	}
+
 	virtual int getLatency() const
 	{
-		return( 0 );
+		return( DoConsumeLatency ? 0 : Latency );
 	}
 
 	virtual double getLatencyFrac() const
@@ -616,13 +652,21 @@ public:
 
 	virtual void clear()
 	{
-		LatencyLeft = Latency;
-		BufLeft = 0;
-		WritePos = 0;
-		ReadPos = BufLen - fll; // Set "read" position to
-			// account for filter's latency.
+		if( DoConsumeLatency )
+		{
+			LatencyLeft = Latency;
+			BufLeft = 0;
+		}
+		else
+		{
+			LatencyLeft = 0;
+			BufLeft = fl2;
+		}
 
-		memset( &Buf[ ReadPos ], 0, fll * sizeof( double ));
+		WritePos = 0;
+		ReadPos = flb; // Set "read" position to account for filter's latency.
+
+		memset( &Buf[ ReadPos ], 0, ( BufLen - flb ) * sizeof( Buf[ 0 ]));
 	}
 
 	virtual int process( double* ip, int l, double*& op0 )
@@ -633,18 +677,17 @@ public:
 
 		while( l > 0 )
 		{
-			// Add new input samples to both halves of the ring buffer.
+			// Copy new input samples to the ring buffer.
 
-			const int b = min( min( l, BufLen - WritePos ),
-				BufLen - fll - BufLeft );
+			const int b = min( l, min( BufLen - WritePos, flb - BufLeft ));
 
 			double* const wp1 = Buf + WritePos;
-			memcpy( wp1, ip, b * sizeof( double ));
+			memcpy( wp1, ip, b * sizeof( wp1[ 0 ]));
+			const int ec = flo - WritePos;
 
-			if( WritePos < flo )
+			if( ec > 0 )
 			{
-				const int c = min( b, flo - WritePos );
-				memcpy( wp1 + BufLen, wp1, c * sizeof( double ));
+				memcpy( wp1 + BufLen, ip, min( b, ec ) * sizeof( wp1[ 0 ]));
 			}
 
 			ip += b;
@@ -652,21 +695,24 @@ public:
 			l -= b;
 			BufLeft += b;
 
-			if( BufLeft > fl2 )
-			{
-				const int c = BufLeft - fl2;
+			// Produce output.
 
-				double* const opend = op + c + c;
-				( *convfn )( op, opend, fltp, Buf + fll, ReadPos );
+			const int c = BufLeft - fl2;
+
+			if( c > 0 )
+			{
+				double* const opend = op + c * 2;
+				( *convfn )( op, opend, fltp, BufRP, ReadPos );
 
 				op = opend;
+				ReadPos = ( ReadPos + c ) & BufLenMask;
 				BufLeft -= c;
 			}
 		}
 
 		int ol = (int) ( op - op0 );
 
-		if( LatencyLeft > 0 )
+		if( LatencyLeft != 0 )
 		{
 			if( LatencyLeft >= ol )
 			{
@@ -683,217 +729,60 @@ public:
 	}
 
 private:
-	static const int BufLenBits = 8; ///< The length of the ring buffer,
+	static const int BufLenBits = 9; ///< The length of the ring buffer,
 		///< expressed as Nth power of 2. This value can be reduced if it is
 		///< known that only short input buffers will be passed to the
 		///< interpolator. The minimum value of this parameter is 5, and
 		///< 1 << BufLenBits should be at least 3 times larger than the
 		///< FilterLen.
-		///<
 	static const int BufLen = 1 << BufLenBits; ///< The length of the ring
-		///< buffer. The actual length is twice as long to allow "beyond max
-		///< position" positioning.
-		///<
+		///< buffer. The actual length is longer, to permit "beyond bounds"
+		///< positioning.
 	static const int BufLenMask = BufLen - 1; ///< Mask used for quick buffer
 		///< position wrapping.
-		///<
 	double Buf[ BufLen + 27 ]; ///< The ring buffer, including overrun
 		///< protection for the largest filter.
-		///<
-	const double* fltp; ///< Half-band filter taps.
-		///<
-	int fll; ///< Input latency.
-		///<
+	double FltBuf[ 14 + 2 ]; ///< Holder for half-band filter taps, used with
+		///< 16-byte address-aligning, for SIMD use.
+	const double* BufRP; ///< Offseted Buf pointer at ReadPos=0.
+	double* fltp; ///< Half-band filter taps, points to FltBuf.
+	int fll; ///< Input latency (left-hand filter length).
 	int fl2; ///< Right-side filter length.
-		///<
 	int flo; ///< Overrrun length.
-		///<
-	int Latency; ///< Initial latency that should be removed from the output.
-		///<
+	int flb; ///< Initial buffer read position.
 	double LatencyFrac; ///< Fractional latency left on the output.
-		///<
+	int Latency; ///< Initial latency that should be removed from the output.
+	int LatencyLeft; ///< Latency left to remove.
 	int BufLeft; ///< The number of samples left in the buffer to process.
-		///< When this value is below FilterLenD2Plus1, the interpolation
-		///< cycle ends.
-		///<
+		///< When this value is below "fl2", the interpolation cycle ends.
 	int WritePos; ///< The current buffer write position. Incremented together
 		///< with the BufLeft variable.
-		///<
 	int ReadPos; ///< The current buffer read position.
-		///<
-	int LatencyLeft; ///< Latency left to remove.
-		///<
+	bool DoConsumeLatency; ///< "True" if the output latency should be
+		///< consumed. Does not apply to the fractional part of the latency
+		///< (if such part is available).
+
 	typedef void( *CConvolveFn )( double* op, double* const opend,
-		const double* const flt, const double* const rp0, int& ReadPos0 ); ///<
-		///< Convolution funtion type.
-		///<
+		const double* const flt, const double* const rp0, int rpos ); ///<
+		///< Convolution function type.
 	CConvolveFn convfn; ///< Convolution function in use.
-		///<
 
 #define R8BHBC1( fn ) \
 	static void fn( double* op, double* const opend, const double* const flt, \
-		const double* const rp0, int& ReadPos0 ) \
+		const double* const rp0, int rpos ) \
 	{ \
-		int rpos = ReadPos0; \
-		while( op < opend ) \
+		while( op != opend ) \
 		{ \
 			const double* const rp = rp0 + rpos; \
-			op[ 0 ] = rp[ 0 ]; \
-			op[ 1 ] =
+			op[ 0 ] = rp[ 0 ];
 
 #define R8BHBC2 \
 			rpos = ( rpos + 1 ) & BufLenMask; \
 			op += 2; \
 		} \
-		ReadPos0 = rpos; \
 	}
 
-	R8BHBC1( convolve1 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve2 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve3 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve4 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve5 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve6 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve7 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve8 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve9 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]) +
-				flt[ 8 ] * ( rp[ 9 ] + rp[ -8 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve10 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]) +
-				flt[ 8 ] * ( rp[ 9 ] + rp[ -8 ]) +
-				flt[ 9 ] * ( rp[ 10 ] + rp[ -9 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve11 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]) +
-				flt[ 8 ] * ( rp[ 9 ] + rp[ -8 ]) +
-				flt[ 9 ] * ( rp[ 10 ] + rp[ -9 ]) +
-				flt[ 10 ] * ( rp[ 11 ] + rp[ -10 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve12 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]) +
-				flt[ 8 ] * ( rp[ 9 ] + rp[ -8 ]) +
-				flt[ 9 ] * ( rp[ 10 ] + rp[ -9 ]) +
-				flt[ 10 ] * ( rp[ 11 ] + rp[ -10 ]) +
-				flt[ 11 ] * ( rp[ 12 ] + rp[ -11 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve13 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]) +
-				flt[ 8 ] * ( rp[ 9 ] + rp[ -8 ]) +
-				flt[ 9 ] * ( rp[ 10 ] + rp[ -9 ]) +
-				flt[ 10 ] * ( rp[ 11 ] + rp[ -10 ]) +
-				flt[ 11 ] * ( rp[ 12 ] + rp[ -11 ]) +
-				flt[ 12 ] * ( rp[ 13 ] + rp[ -12 ]);
-	R8BHBC2
-
-	R8BHBC1( convolve14 )
-				flt[ 0 ] * ( rp[ 1 ] + rp[ 0 ]) +
-				flt[ 1 ] * ( rp[ 2 ] + rp[ -1 ]) +
-				flt[ 2 ] * ( rp[ 3 ] + rp[ -2 ]) +
-				flt[ 3 ] * ( rp[ 4 ] + rp[ -3 ]) +
-				flt[ 4 ] * ( rp[ 5 ] + rp[ -4 ]) +
-				flt[ 5 ] * ( rp[ 6 ] + rp[ -5 ]) +
-				flt[ 6 ] * ( rp[ 7 ] + rp[ -6 ]) +
-				flt[ 7 ] * ( rp[ 8 ] + rp[ -7 ]) +
-				flt[ 8 ] * ( rp[ 9 ] + rp[ -8 ]) +
-				flt[ 9 ] * ( rp[ 10 ] + rp[ -9 ]) +
-				flt[ 10 ] * ( rp[ 11 ] + rp[ -10 ]) +
-				flt[ 11 ] * ( rp[ 12 ] + rp[ -11 ]) +
-				flt[ 12 ] * ( rp[ 13 ] + rp[ -12 ]) +
-				flt[ 13 ] * ( rp[ 14 ] + rp[ -13 ]);
-	R8BHBC2
+#include "CDSPHBUpsampler.inc"
 
 #undef R8BHBC1
 #undef R8BHBC2

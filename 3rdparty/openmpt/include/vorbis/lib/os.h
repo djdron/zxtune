@@ -62,11 +62,9 @@ void *_alloca(size_t size);
 
 #endif /* _V_IFDEFJAIL_H_ */
 
-#if !defined(__DJGPP__) /* OpenMPT */
 #ifdef HAVE_ALLOCA_H
 #  include <alloca.h>
 #endif
-#endif /* OpenMPT */
 
 #ifdef USE_MEMORY_H
 #  include <memory.h>
@@ -153,6 +151,9 @@ static __inline void vorbis_fpu_restore(vorbis_fpu_control fpu){
 
 typedef ogg_int16_t vorbis_fpu_control;
 
+#if defined(_MSC_VER)  /* OpenMPT */
+#include <intrin.h>  /* OpenMPT */
+#endif  /* OpenMPT */
 #include <emmintrin.h>
 static __inline int vorbis_ftoi(double f){
         return _mm_cvtsd_si32(_mm_load_sd(&f));

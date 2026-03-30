@@ -4,6 +4,7 @@
 
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "openmpt/all/PlatformFixes.hpp"
 
 #include "SoundDeviceManager.hpp"
 
@@ -227,7 +228,7 @@ void Manager::ReEnumerate(bool firstRun)
 #if defined(MPT_WITH_PORTAUDIO)
 		typeDefault[MPT_UFORMAT_MESSAGE("PortAudio-{}")(paJACK)].value = Info::DefaultFor::ProAudio;
 #endif
-	} else if(GetSysInfo().SystemClass == mpt::osinfo::osclass::BSD)
+	} else if(GetSysInfo().SystemClass == mpt::osinfo::osclass::BSD_)
 	{
 #if defined(MPT_WITH_PORTAUDIO)
 		typeDefault[MPT_UFORMAT_MESSAGE("PortAudio-{}")(paOSS)].value = Info::DefaultFor::System;
@@ -242,6 +243,9 @@ void Manager::ReEnumerate(bool firstRun)
 #endif
 	} else if(GetSysInfo().SystemClass == mpt::osinfo::osclass::Windows && GetSysInfo().IsWindowsWine() && GetSysInfo().WineHostClass == mpt::osinfo::osclass::Linux)
 	{  // Wine on Linux
+		typeDefault[SoundDevice::TypePORTAUDIO_WASAPI].value = Info::DefaultFor::System;
+	} else if(GetSysInfo().SystemClass == mpt::osinfo::osclass::Windows && GetSysInfo().IsWindowsWine() && GetSysInfo().WineHostClass == mpt::osinfo::osclass::Darwin)
+	{  // Wine on macOS
 		typeDefault[SoundDevice::TypePORTAUDIO_WASAPI].value = Info::DefaultFor::System;
 	} else if(GetSysInfo().SystemClass == mpt::osinfo::osclass::Windows && GetSysInfo().IsWindowsWine())
 	{  // Wine

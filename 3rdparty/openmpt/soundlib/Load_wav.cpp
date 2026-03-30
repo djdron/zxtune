@@ -37,8 +37,8 @@ static bool CopyWavChannel(ModSample &sample, const FileReader &file, size_t cha
 		return false;
 	}
 
-	const std::byte *inBuf = file.GetRawData<std::byte>().data();
-	CopySample<SampleConversion>(reinterpret_cast<typename SampleConversion::output_t*>(sample.samplev()), sample.nLength, 1, inBuf + offset, file.BytesLeft() - offset, numChannels, conv);
+	FileReader::PinnedView inData = file.GetPinnedView(file.BytesLeft());
+	CopySample<SampleConversion>(sample.template sample<typename SampleConversion::output_t>(), sample.nLength, 1, inData.data() + offset, inData.size() - offset, numChannels, conv);
 	return true;
 }
 
@@ -79,17 +79,16 @@ bool CSoundFile::ReadWAV(FileReader &file, ModLoadingFlags loadFlags)
 		return true;
 	}
 
-	InitializeGlobals(MOD_TYPE_MPT);
-	m_ContainerType = MOD_CONTAINERTYPE_WAV;
-	m_nChannels = std::max(wavFile.GetNumChannels(), uint16(2));
+	InitializeGlobals(MOD_TYPE_MPT, std::max(wavFile.GetNumChannels(), uint16(2)));
+	m_ContainerType = ModContainerType::WAV;
 	Patterns.ResizeArray(2);
 	if(!Patterns.Insert(0, 64) || !Patterns.Insert(1, 64))
 	{
 		return false;
 	}
 
-	m_modFormat.formatName = U_("RIFF WAVE");
-	m_modFormat.type = U_("wav");
+	m_modFormat.formatName = UL_("RIFF WAVE");
+	m_modFormat.type = UL_("wav");
 	m_modFormat.charset = mpt::Charset::Windows1252;
 	
 	const SmpLength sampleLength = wavFile.GetSampleLength();
@@ -111,28 +110,27 @@ bool CSoundFile::ReadWAV(FileReader &file, ModLoadingFlags loadFlags)
 
 	m_nSamples = wavFile.GetNumChannels();
 	m_nInstruments = 0;
-	m_nDefaultSpeed = ticksPerRow;
-	m_nDefaultTempo.Set(125);
+	Order().SetDefaultSpeed(ticksPerRow);
+	Order().SetDefaultTempoInt(125);
 	m_SongFlags = SONG_LINEARSLIDES;
 
-	for(CHANNELINDEX channel = 0; channel < m_nChannels; channel++)
+	for(CHANNELINDEX channel = 0; channel < GetNumChannels(); channel++)
 	{
-		ChnSettings[channel].Reset();
 		ChnSettings[channel].nPan = (channel % 2u) ? 256 : 0;
 	}
 
 	// Setting up pattern
-	PatternRow pattern = Patterns[0].GetRow(0);
-	pattern[0].note = pattern[1].note = NOTE_MIDDLEC;
-	pattern[0].instr = pattern[1].instr = 1;
+	auto row = Patterns[0].GetRow(0);
+	row[0].note = row[1].note = NOTE_MIDDLEC;
+	row[0].instr = row[1].instr = 1;
 
 	const FileReader sampleChunk = wavFile.GetSampleData();
 
 	// Read every channel into its own sample lot.
 	for(SAMPLEINDEX channel = 0; channel < GetNumSamples(); channel++)
 	{
-		pattern[channel].note = pattern[0].note;
-		pattern[channel].instr = static_cast<ModCommand::INSTR>(channel + 1);
+		row[channel].note = row[0].note;
+		row[channel].instr = static_cast<ModCommand::INSTR>(channel + 1);
 
 		ModSample &sample = Samples[channel + 1];
 		sample.Initialize();
@@ -155,13 +153,13 @@ bool CSoundFile::ReadWAV(FileReader &file, ModLoadingFlags loadFlags)
 				break;
 			case 2:
 				sample.nPan = (wavFile.GetNumChannels() == 3 ? 128u : 64u);
-				pattern[channel].command = CMD_S3MCMDEX;
-				pattern[channel].param = 0x91;
+				row[channel].command = CMD_S3MCMDEX;
+				row[channel].param = 0x91;
 				break;
 			case 3:
 				sample.nPan = 192;
-				pattern[channel].command = CMD_S3MCMDEX;
-				pattern[channel].param = 0x91;
+				row[channel].command = CMD_S3MCMDEX;
+				row[channel].param = 0x91;
 				break;
 			default:
 				sample.nPan = 128;
@@ -177,9 +175,9 @@ bool CSoundFile::ReadWAV(FileReader &file, ModLoadingFlags loadFlags)
 		if(wavFile.GetSampleFormat() == WAVFormatChunk::fmtFloat)
 		{
 			if(wavFile.GetBitsPerSample() <= 32)
-				CopyWavChannel<SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeFloat32<littleEndian32>>>(sample, sampleChunk, channel, wavFile.GetNumChannels());
+				CopyWavChannel<SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<littleEndian32>>>(sample, sampleChunk, channel, wavFile.GetNumChannels());
 			else
-				CopyWavChannel<SC::ConversionChain<SC::Convert<int16, float64>, SC::DecodeFloat64<littleEndian64>>>(sample, sampleChunk, channel, wavFile.GetNumChannels());
+				CopyWavChannel<SC::ConversionChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<littleEndian64>>>(sample, sampleChunk, channel, wavFile.GetNumChannels());
 		} else
 		{
 			if(wavFile.GetBitsPerSample() <= 8)

@@ -1,7 +1,7 @@
 /**
  * \file   os_locate.c
  * \brief  Locates files along the standard built-in search paths.
- * \author Copyright (c) 2014-2015 Jason Perkins and the Premake project
+ * \author Copyright (c) 2014-2015 Jess Perkins and the Premake project
  */
 
 #include <stdlib.h>
@@ -35,6 +35,16 @@ int os_locate(lua_State* L)
 
 	for (i = 1; i <= nArgs; ++i) {
 		const char* name = lua_tostring(L, i);
+
+		if (name == NULL) {
+			continue;
+		}
+
+		/* Direct path to an embedded file? */
+		if (name[0] == '$' && name[1] == '/' && premake_find_embedded_script(name + 2)) {
+			lua_pushvalue(L, i);
+			return 1;
+		}
 
 		/* Direct path to file? Return as absolute path */
 		if (do_isfile(L, name)) {

@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/vc2010/test_output_props.lua
 -- Validate generation of the output property groups.
--- Copyright (c) 2011-2013 Jason Perkins and the Premake project
+-- Copyright (c) 2011-2013 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -25,6 +25,41 @@
 		vc2010.outputProperties(cfg)
 	end
 
+--
+-- Ensure clangtidy is not enabled for vc2010.
+--
+
+function suite.onClangTidy()
+	clangtidy "On"
+	prepare()
+	test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
+	<TargetName>MyProject</TargetName>
+	<TargetExt>.exe</TargetExt>
+</PropertyGroup>
+	]]
+end
+
+--
+-- Ensure runcodeanalysis is not enabled for vc2010.
+--
+
+function suite.onRunCodeAnalysis()
+	runcodeanalysis "On"
+	prepare()
+	test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
+	<TargetName>MyProject</TargetName>
+	<TargetExt>.exe</TargetExt>
+</PropertyGroup>
+	]]
+end
 
 --
 -- Check the structure with the default project values.
@@ -35,8 +70,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 </PropertyGroup>
@@ -69,7 +104,7 @@
 		prepare()
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-	<OutDir>bin\Debug\</OutDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
 		]]
 	end
 
@@ -96,12 +131,33 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>..\bin\</OutDir>
+	<OutDir>$(ProjectDir)..\bin\</OutDir>
+		]]
+	end
+
+	function suite.outDir_onTargetDirUWP()
+		system "uwp"
+		targetdir "../bin"
+		prepare()
+		test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<OutDir>$(ProjectDir)..\bin\</OutDir>
+		]]
+	end
+
+	function suite.outDir_onTargetDirAbsolute()
+		targetdir "C:/bin"
+		prepare()
+		test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<OutDir>C:\bin\</OutDir>
 		]]
 	end
 
 --
--- The objeccts directory is applied, if specified.
+-- The objects directory is applied, if specified.
 --
 
 	function suite.intDir_onTargetDir()
@@ -110,8 +166,19 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>..\tmp\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)..\tmp\Debug\</IntDir>
+		]]
+	end
+
+	function suite.intDir_onTargetDirAbsolute()
+		objdir "C:/tmp"
+		prepare()
+		test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>C:\tmp\Debug\</IntDir>
 		]]
 	end
 
@@ -125,8 +192,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyTarget</TargetName>
 		]]
 	end
@@ -146,6 +213,28 @@
 		]]
 	end
 
+	function suite.ignoreImportLib_onUseImportLibOff()
+		kind "SharedLib"
+		useimportlib "Off"
+		prepare()
+		test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<IgnoreImportLibrary>true</IgnoreImportLibrary>
+		]]
+	end
+
+	function suite.ignoreImportLib_onUWP()
+		system "uwp"
+		kind "SharedLib"
+		prepare()
+		test.capture [[
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+	<LinkIncremental>true</LinkIncremental>
+	<IgnoreImportLibrary>false</IgnoreImportLibrary>
+		]]
+	end
+
 	function suite.omitIgnoreImportLib_onNonSharedLib()
 		kind "ConsoleApp"
 		flags "NoImportLib"
@@ -153,7 +242,7 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
 		]]
 	end
 
@@ -168,8 +257,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 	<GenerateManifest>false</GenerateManifest>
@@ -187,8 +276,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>
 	</TargetExt>
@@ -208,8 +297,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 	<ExtensionsToDeleteOnClean>*.temp1;*.temp2;$(ExtensionsToDeleteOnClean)</ExtensionsToDeleteOnClean>
@@ -222,14 +311,14 @@
 -- Check the handling of the VC++ Directories.
 --
 
-	function suite.onSystemIncludeDirs()
-		sysincludedirs { "$(DXSDK_DIR)/Include" }
+	function suite.onExternalIncludeDirs()
+		externalincludedirs { "$(DXSDK_DIR)/Include" }
 		prepare()
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 	<IncludePath>$(DXSDK_DIR)\Include;$(IncludePath)</IncludePath>
@@ -243,8 +332,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 	<LibraryPath>$(DXSDK_DIR)\lib\x86;$(LibraryPath)</LibraryPath>
@@ -262,8 +351,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 	<ExecutablePath>$(ProjectDir)..\Include;$(ExecutablePath)</ExecutablePath>
@@ -277,8 +366,8 @@
 		test.capture [[
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
 	<LinkIncremental>true</LinkIncremental>
-	<OutDir>bin\Debug\</OutDir>
-	<IntDir>obj\Debug\</IntDir>
+	<OutDir>$(ProjectDir)bin\Debug\</OutDir>
+	<IntDir>$(ProjectDir)obj\Debug\</IntDir>
 	<TargetName>MyProject</TargetName>
 	<TargetExt>.exe</TargetExt>
 	<ExecutablePath>C:\Include;$(ExecutablePath)</ExecutablePath>

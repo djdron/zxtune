@@ -2,14 +2,9 @@
  project "lhasa"
   uuid "6B11F6A8-B131-4D2B-80EF-5731A9016436"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "lhasa"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-lhasa"
-	filter { "action:vs*" }
-		characterset "Unicode"
-	filter {}
   files {
    "../../include/lhasa/lib/crc16.c",
    "../../include/lhasa/lib/ext_header.c",
@@ -26,6 +21,7 @@
    "../../include/lhasa/lib/lha_input_stream.c",
    "../../include/lhasa/lib/lha_reader.c",
    "../../include/lhasa/lib/lhx_decoder.c",
+   "../../include/lhasa/lib/lk7_decoder.c",
    "../../include/lhasa/lib/lz5_decoder.c",
    "../../include/lhasa/lib/lzs_decoder.c",
    "../../include/lhasa/lib/macbinary.c",
@@ -49,9 +45,23 @@
    "../../include/lhasa/lib/public/lha_reader.h",
    "../../include/lhasa/lib/public/lhasa.h",
   }
-  filter { "action:vs*" }
-    buildoptions { "/wd4244", "/wd4267" }
-  filter {}
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd4244", "/wd4267" }
+	end
+	filter {}
   filter { "kind:SharedLib" }
    files { "../../build/premake/def/ext-lhasa.def" }
   filter {}
+
+function mpt_use_lhasa ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/lhasa/lib/public",
+	}
+	filter {}
+	links {
+		"lhasa",
+	}
+	filter {}
+end

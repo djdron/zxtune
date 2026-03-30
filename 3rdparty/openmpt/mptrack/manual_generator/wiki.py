@@ -17,10 +17,11 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 shutil.rmtree('html', ignore_errors=True)
 shutil.copytree('source', 'html')
 
-style = urlopen(base_url + '/load.php?debug=false&lang=en&modules=mediawiki.legacy.commonPrint%2Cshared%7Cmediawiki.page.gallery.styles%7Cmediawiki.skinning.interface%7Cskins.vector.styles%7Csite.styles&only=styles&skin=vector').read().decode('UTF-8')
+style = urlopen(base_url + '/load.php?debug=false&lang=en&modules=mediawiki.page.gallery.styles%7Cmediawiki.skinning.interface%7Cskins.vector.styles%7Csite.styles&only=styles&skin=vector').read().decode('UTF-8')
 
 # Remove a few unused CSS classes
 style = re.sub(r'\}(\w+)?[\.#]vector([\w >]+)\{.+?\}', '}', style)
+style = re.sub(r'var\([A-Za-z\-]+,([^)]*)\)', '\\1', style)
 style_file = open('html/style.css', 'w')
 style_file.write(style)
 style_file.close()
@@ -85,6 +86,8 @@ external.png
 """)
 
 for p in pages:
+    if(p.startswith("Category")):
+        continue
     content = urlopen(base_url + '/index.php?title=' + p + '&action=render').read().decode('UTF-8')
     # Download and replace image URLs
     content = re.sub(r' srcset=".+?"', '', content);
@@ -158,6 +161,7 @@ def toc_parse_chapter(m):
 toc_text = re.sub(r'<!--(.+?)-->', '', toc_page, flags = re.DOTALL)
 toc_text = re.sub(r'<div(.+?)>', '', toc_text, flags = re.DOTALL)
 toc_text = re.sub(r'</div>', '', toc_text, flags = re.DOTALL)
+toc_text = re.sub(r'<a href="' + base_url_regex + '/Category:.*?>(.+?)</a>', '\\1', toc_text)
 toc_text = re.sub(r'<a href="' + base_url_regex + '/(.+?)".*?>(.+?)</a>', toc_parse, toc_text)
 toc_text = re.sub(r'<li>([^<]+)$', toc_parse_chapter, toc_text, flags = re.MULTILINE)
 toc.write(toc_text)

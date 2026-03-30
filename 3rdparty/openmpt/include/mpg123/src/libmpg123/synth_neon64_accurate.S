@@ -6,24 +6,21 @@
 	initially written by Taihei Monma
 */
 
+#include "aarch64_defs.h"
 #include "mangle.h"
 
-#ifndef __APPLE__
-	.section	.rodata
-#else
-	.data
-#endif
+	RODATA
 	ALIGN16
 maxmin_s16:
 	.word   1191181824
 	.word   -956301312
 	.text
 	ALIGN4
-	.globl ASM_NAME(synth_1to1_neon64_accurate_asm)
+	.globl ASM_NAME(INT123_synth_1to1_neon64_accurate_asm)
 #ifdef __ELF__
-	.type ASM_NAME(synth_1to1_neon64_accurate_asm), %function
+	.type ASM_NAME(INT123_synth_1to1_neon64_accurate_asm), %function
 #endif
-ASM_NAME(synth_1to1_neon64_accurate_asm):
+ASM_NAME(INT123_synth_1to1_neon64_accurate_asm):
 	add		x0, x0, #64
 	sub		x0, x0, x3, lsl #2
 	eor		v31.16b, v31.16b, v31.16b

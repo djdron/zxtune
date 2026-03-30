@@ -1,7 +1,7 @@
 --
 -- globals.lua
 -- Replacements and extensions to Lua's global functions.
--- Copyright (c) 2002-2014 Jason Perkins and the Premake project
+-- Copyright (c) 2002-2014 Jess Perkins and the Premake project
 --
 
 
@@ -42,17 +42,24 @@
 -- @param fname
 --    The name of the directory or file to include. If a directory, will
 --    automatically include the contained premake5.lua or premake4.lua
---    script at that lcoation.
+--    script at that location.
 ---
 
 	io._includedFiles = {}
 
 	function include(fname)
-		local fullPath = premake.findProjectScript(fname)
-		fname = fullPath or fname
-		if not io._includedFiles[fname] then
-			io._includedFiles[fname] = true
-			return dofile(fname)
+		local actualFname, compiled_chunk = premake.findProjectScript(fname)
+		if not io._includedFiles[actualFname] then
+			io._includedFiles[actualFname] = true
+			local success, res = pcall(compiled_chunk)
+			if success then
+				-- res is the return value of the script
+				return res
+			else
+				-- res is the error message
+				local caller = filelineinfo(2)
+				premake.error(caller .. ": Error executing '" .. fname .. ": " .. res)
+			end
 		end
 	end
 
@@ -75,12 +82,7 @@
 	premake.override(_G, "require", function(base, modname, versions)
 		local result, mod = pcall(base,modname)
 		if not result then
-			if (premake.downloadModule(modname, versions)) then
-				result, mod = pcall(base, modname);
-			end
-			if not result then
-				error(mod, 3)
-			end
+			error(mod, 3)
 		end
 		if mod and versions and not premake.checkVersion(mod._VERSION, versions) then
 			error(string.format("module %s %s does not meet version criteria %s",

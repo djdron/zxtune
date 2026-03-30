@@ -9,11 +9,73 @@ set -e
 #    checkout. The invests no effort in verifying this precondition.
 #
 
+echo "Detecting OS ..."
+UNAME_S="$(uname -s)"
+
+case $UNAME_S in
+ Darwin)
+  TAR_FLAVOUR=mac
+  MAKE=make
+  ;;
+ OpenBSD)
+  TAR_FLAVOUR=bsd
+  MAKE=gmake
+  UNAME_R="$(uname -r)"
+  case $UNAME_R in
+   1.*)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   2.*)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   3.*)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   4.*)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   5.*)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   6.*)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   7.1)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   7.2)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   7.3)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   7.4)
+    TAR_FLAVOUR=oldbsd
+    ;;
+   7.5)
+    TAR_FLAVOUR=oldbsd
+    ;;
+  esac
+  ;;
+ *DragonFly*)
+  TAR_FLAVOUR=libarchive
+  MAKE=gmake
+  ;;
+ *BSD*)
+  TAR_FLAVOUR=libarchive
+  MAKE=gmake
+  ;;
+ *)
+  TAR_FLAVOUR=gnu
+  MAKE=make
+  ;;
+esac
+
 echo "Gathering version ..."
 . libopenmpt/libopenmpt_version.mk
 
-echo "Cleaning local buid ..."
-make NO_SDL=1 NO_SDL2=1 clean
+echo "Cleaning local build ..."
+$MAKE clean
 
 echo "Cleaning dist-autotools.tar ..."
 rm -rf bin/dist-autotools.tar || true
@@ -29,128 +91,168 @@ mkdir bin/dist-autotools
 
 if `svn info . > /dev/null 2>&1` ; then
 echo "Exporting svn ..."
-svn export ./LICENSE         bin/dist-autotools/LICENSE
-svn export ./README.md       bin/dist-autotools/README.md
-svn export ./.clang-format   bin/dist-autotools/.clang-format
-svn export ./common          bin/dist-autotools/common
-mkdir bin/dist-autotools/doc
-svn export ./doc/contributing.md          bin/dist-autotools/doc/contributing.md
-svn export ./doc/libopenmpt_styleguide.md bin/dist-autotools/doc/libopenmpt_styleguide.md
-svn export ./doc/module_formats.md        bin/dist-autotools/doc/module_formats.md
-svn export ./doc/openmpt_styleguide.md    bin/dist-autotools/doc/openmpt_styleguide.md
-svn export ./soundlib        bin/dist-autotools/soundlib
-svn export ./sounddsp        bin/dist-autotools/sounddsp
-mkdir -p bin/dist-autotools/src/mpt
-svn export ./src/mpt/.clang-format bin/dist-autotools/src/mpt/.clang-format
-svn export ./src/mpt/LICENSE.BSD-3-Clause.txt bin/dist-autotools/src/mpt/LICENSE.BSD-3-Clause.txt
-svn export ./src/mpt/LICENSE.BSL-1.0.txt bin/dist-autotools/src/mpt/LICENSE.BSL-1.0.txt
-svn export ./src/mpt/audio          bin/dist-autotools/src/mpt/audio
-svn export ./src/mpt/base           bin/dist-autotools/src/mpt/base
-svn export ./src/mpt/binary         bin/dist-autotools/src/mpt/binary
-svn export ./src/mpt/check          bin/dist-autotools/src/mpt/check
-svn export ./src/mpt/crc            bin/dist-autotools/src/mpt/crc
-#svn export ./src/mpt/crypto         bin/dist-autotools/src/mpt/crypto
-svn export ./src/mpt/detect         bin/dist-autotools/src/mpt/detect
-svn export ./src/mpt/endian         bin/dist-autotools/src/mpt/endian
-svn export ./src/mpt/environment    bin/dist-autotools/src/mpt/environment
-svn export ./src/mpt/exception_text bin/dist-autotools/src/mpt/exception_text
-svn export ./src/mpt/format         bin/dist-autotools/src/mpt/format
-svn export ./src/mpt/io             bin/dist-autotools/src/mpt/io
-svn export ./src/mpt/io_read        bin/dist-autotools/src/mpt/io_read
-svn export ./src/mpt/io_write       bin/dist-autotools/src/mpt/io_write
-#svn export ./src/mpt/json           bin/dist-autotools/src/mpt/json
-svn export ./src/mpt/mutex          bin/dist-autotools/src/mpt/mutex
-svn export ./src/mpt/out_of_memory  bin/dist-autotools/src/mpt/out_of_memory
-svn export ./src/mpt/osinfo         bin/dist-autotools/src/mpt/osinfo
-svn export ./src/mpt/parse          bin/dist-autotools/src/mpt/parse
-svn export ./src/mpt/random         bin/dist-autotools/src/mpt/random
-svn export ./src/mpt/string         bin/dist-autotools/src/mpt/string
-svn export ./src/mpt/string_convert bin/dist-autotools/src/mpt/string_convert
-svn export ./src/mpt/system_error   bin/dist-autotools/src/mpt/system_error
-svn export ./src/mpt/test           bin/dist-autotools/src/mpt/test
-svn export ./src/mpt/uuid           bin/dist-autotools/src/mpt/uuid
-#svn export ./src/mpt/uuid_namespace bin/dist-autotools/src/mpt/uuid_namespace
-mkdir -p bin/dist-autotools/src/openmpt
-svn export ./src/openmpt/all        bin/dist-autotools/src/openmpt/all
-svn export ./src/openmpt/base       bin/dist-autotools/src/openmpt/base
-svn export ./src/openmpt/logging    bin/dist-autotools/src/openmpt/logging
-svn export ./src/openmpt/random     bin/dist-autotools/src/openmpt/random
-svn export ./src/openmpt/soundbase  bin/dist-autotools/src/openmpt/soundbase
-svn export ./test            bin/dist-autotools/test
-rm bin/dist-autotools/test/mpt_tests_crypto.cpp
-rm bin/dist-autotools/test/mpt_tests_uuid_namespace.cpp
-svn export ./libopenmpt      bin/dist-autotools/libopenmpt
-svn export ./examples        bin/dist-autotools/examples
-svn export ./openmpt123      bin/dist-autotools/openmpt123
-mkdir bin/dist-autotools/build
-mkdir bin/dist-autotools/build/svn_version
-svn export ./build/svn_version/svn_version.h bin/dist-autotools/build/svn_version/svn_version.h
-mkdir bin/dist-autotools/m4
-touch bin/dist-autotools/m4/emptydir
-svn export ./build/autotools/configure.ac bin/dist-autotools/configure.ac
-svn export ./build/autotools/Makefile.am bin/dist-autotools/Makefile.am
+svn export ./LICENSE                                  bin/dist-autotools/LICENSE
+svn export ./README.md                                bin/dist-autotools/README.md
+svn export ./.clang-format                            bin/dist-autotools/.clang-format
+svn export ./common                                   bin/dist-autotools/common
+mkdir                                                 bin/dist-autotools/doc
+svn export ./doc/contributing.md                      bin/dist-autotools/doc/contributing.md
+svn export ./doc/libopenmpt_styleguide.md             bin/dist-autotools/doc/libopenmpt_styleguide.md
+svn export ./doc/module_formats.md                    bin/dist-autotools/doc/module_formats.md
+svn export ./doc/openmpt_styleguide.md                bin/dist-autotools/doc/openmpt_styleguide.md
+svn export ./doc/libopenmpt                           bin/dist-autotools/doc/libopenmpt
+svn export ./soundlib                                 bin/dist-autotools/soundlib
+svn export ./sounddsp                                 bin/dist-autotools/sounddsp
+mkdir -p                                              bin/dist-autotools/src/mpt
+svn export ./src/mpt/.clang-format                    bin/dist-autotools/src/mpt/.clang-format
+svn export ./src/mpt/LICENSE.BSD-3-Clause.txt         bin/dist-autotools/src/mpt/LICENSE.BSD-3-Clause.txt
+svn export ./src/mpt/LICENSE.BSL-1.0.txt              bin/dist-autotools/src/mpt/LICENSE.BSL-1.0.txt
+svn export ./src/mpt/arch                             bin/dist-autotools/src/mpt/arch
+svn export ./src/mpt/audio                            bin/dist-autotools/src/mpt/audio
+svn export ./src/mpt/base                             bin/dist-autotools/src/mpt/base
+svn export ./src/mpt/binary                           bin/dist-autotools/src/mpt/binary
+svn export ./src/mpt/check                            bin/dist-autotools/src/mpt/check
+svn export ./src/mpt/chrono                           bin/dist-autotools/src/mpt/chrono
+svn export ./src/mpt/crc                              bin/dist-autotools/src/mpt/crc
+#svn export ./src/mpt/crypto                           bin/dist-autotools/src/mpt/crypto
+svn export ./src/mpt/detect                           bin/dist-autotools/src/mpt/detect
+svn export ./src/mpt/endian                           bin/dist-autotools/src/mpt/endian
+svn export ./src/mpt/environment                      bin/dist-autotools/src/mpt/environment
+svn export ./src/mpt/exception                        bin/dist-autotools/src/mpt/exception
+svn export ./src/mpt/filemode                         bin/dist-autotools/src/mpt/filemode
+svn export ./src/mpt/format                           bin/dist-autotools/src/mpt/format
+#svn export ./src/mpt/fs                               bin/dist-autotools/src/mpt/fs
+svn export ./src/mpt/io                               bin/dist-autotools/src/mpt/io
+svn export ./src/mpt/io_file                          bin/dist-autotools/src/mpt/io_file
+svn export ./src/mpt/io_file_adapter                  bin/dist-autotools/src/mpt/io_file_adapter
+#svn export ./src/mpt/io_file_atomic                   bin/dist-autotools/src/mpt/io_file_atomic
+svn export ./src/mpt/io_file_read                     bin/dist-autotools/src/mpt/io_file_read
+svn export ./src/mpt/io_file_unique                   bin/dist-autotools/src/mpt/io_file_unique
+svn export ./src/mpt/io_read                          bin/dist-autotools/src/mpt/io_read
+svn export ./src/mpt/io_write                         bin/dist-autotools/src/mpt/io_write
+#svn export ./src/mpt/json                             bin/dist-autotools/src/mpt/json
+#svn export ./src/mpt/library                          bin/dist-autotools/src/mpt/library
+svn export ./src/mpt/main                             bin/dist-autotools/src/mpt/main
+svn export ./src/mpt/mutex                            bin/dist-autotools/src/mpt/mutex
+svn export ./src/mpt/out_of_memory                    bin/dist-autotools/src/mpt/out_of_memory
+svn export ./src/mpt/osinfo                           bin/dist-autotools/src/mpt/osinfo
+svn export ./src/mpt/parse                            bin/dist-autotools/src/mpt/parse
+svn export ./src/mpt/path                             bin/dist-autotools/src/mpt/path
+#svn export ./src/mpt/profiler                         bin/dist-autotools/src/mpt/profiler
+svn export ./src/mpt/random                           bin/dist-autotools/src/mpt/random
+svn export ./src/mpt/string                           bin/dist-autotools/src/mpt/string
+svn export ./src/mpt/string_transcode                 bin/dist-autotools/src/mpt/string_transcode
+svn export ./src/mpt/system_error                     bin/dist-autotools/src/mpt/system_error
+svn export ./src/mpt/terminal                         bin/dist-autotools/src/mpt/terminal
+svn export ./src/mpt/test                             bin/dist-autotools/src/mpt/test
+#svn export ./src/mpt/textfile                         bin/dist-autotools/src/mpt/textfile
+svn export ./src/mpt/uuid                             bin/dist-autotools/src/mpt/uuid
+#svn export ./src/mpt/uuid_namespace                   bin/dist-autotools/src/mpt/uuid_namespace
+mkdir -p                                              bin/dist-autotools/src/openmpt
+svn export ./src/openmpt/all                          bin/dist-autotools/src/openmpt/all
+svn export ./src/openmpt/base                         bin/dist-autotools/src/openmpt/base
+svn export ./src/openmpt/fileformat_base              bin/dist-autotools/src/openmpt/fileformat_base
+svn export ./src/openmpt/logging                      bin/dist-autotools/src/openmpt/logging
+svn export ./src/openmpt/random                       bin/dist-autotools/src/openmpt/random
+svn export ./src/openmpt/soundbase                    bin/dist-autotools/src/openmpt/soundbase
+svn export ./src/openmpt/soundfile_data               bin/dist-autotools/src/openmpt/soundfile_data
+svn export ./src/openmpt/soundfile_write              bin/dist-autotools/src/openmpt/soundfile_write
+svn export ./test                                     bin/dist-autotools/test
+rm                                                    bin/dist-autotools/test/mpt_tests_crypto.cpp
+rm                                                    bin/dist-autotools/test/mpt_tests_uuid_namespace.cpp
+svn export ./libopenmpt                               bin/dist-autotools/libopenmpt
+svn export ./examples                                 bin/dist-autotools/examples
+svn export ./openmpt123                               bin/dist-autotools/openmpt123
+mkdir                                                 bin/dist-autotools/build
+mkdir                                                 bin/dist-autotools/build/svn_version
+svn export ./build/svn_version/svn_version.h          bin/dist-autotools/build/svn_version/svn_version.h
+mkdir                                                 bin/dist-autotools/m4
+touch                                                 bin/dist-autotools/m4/emptydir
+svn export ./build/autotools/configure.ac             bin/dist-autotools/configure.ac
+svn export ./build/autotools/Makefile.am              bin/dist-autotools/Makefile.am
+svn export ./build/autotools/ax_cxx_compile_stdcxx.m4 bin/dist-autotools/m4/ax_cxx_compile_stdcxx.m4
 else
 echo "Exporting git ..."
-cp -r ./LICENSE         bin/dist-autotools/LICENSE
-cp -r ./README.md       bin/dist-autotools/README.md
-cp -r ./.clang-format   bin/dist-autotools/.clang-format
-cp -r ./common          bin/dist-autotools/common
-mkdir bin/dist-autotools/doc
-cp -r ./doc/contributing.md          bin/dist-autotools/doc/contributing.md
-cp -r ./doc/libopenmpt_styleguide.md bin/dist-autotools/doc/libopenmpt_styleguide.md
-cp -r ./doc/module_formats.md        bin/dist-autotools/doc/module_formats.md
-cp -r ./doc/openmpt_styleguide.md    bin/dist-autotools/doc/openmpt_styleguide.md
-cp -r ./soundlib        bin/dist-autotools/soundlib
-cp -r ./sounddsp        bin/dist-autotools/sounddsp
-mkdir -p bin/dist-autotools/src/mpt
-cp -r ./src/mpt/.clang-format bin/dist-autotools/src/mpt/.clang-format
-cp -r ./src/mpt/LICENSE.BSD-3-Clause.txt bin/dist-autotools/src/mpt/LICENSE.BSD-3-Clause.txt
-cp -r ./src/mpt/LICENSE.BSL-1.0.txt bin/dist-autotools/src/mpt/LICENSE.BSL-1.0.txt
-cp -r ./src/mpt/audio          bin/dist-autotools/src/mpt/audio
-cp -r ./src/mpt/base           bin/dist-autotools/src/mpt/base
-cp -r ./src/mpt/binary         bin/dist-autotools/src/mpt/binary
-cp -r ./src/mpt/check          bin/dist-autotools/src/mpt/check
-cp -r ./src/mpt/crc            bin/dist-autotools/src/mpt/crc
-#cp -r ./src/mpt/crypto         bin/dist-autotools/src/mpt/crypto
-cp -r ./src/mpt/detect         bin/dist-autotools/src/mpt/detect
-cp -r ./src/mpt/endian         bin/dist-autotools/src/mpt/endian
-cp -r ./src/mpt/environment    bin/dist-autotools/src/mpt/environment
-cp -r ./src/mpt/exception_text bin/dist-autotools/src/mpt/exception_text
-cp -r ./src/mpt/format         bin/dist-autotools/src/mpt/format
-cp -r ./src/mpt/io             bin/dist-autotools/src/mpt/io
-cp -r ./src/mpt/io_read        bin/dist-autotools/src/mpt/io_read
-cp -r ./src/mpt/io_write       bin/dist-autotools/src/mpt/io_write
-#cp -r ./src/mpt/json           bin/dist-autotools/src/mpt/json
-cp -r ./src/mpt/mutex          bin/dist-autotools/src/mpt/mutex
-cp -r ./src/mpt/out_of_memory  bin/dist-autotools/src/mpt/out_of_memory
-cp -r ./src/mpt/osinfo         bin/dist-autotools/src/mpt/osinfo
-cp -r ./src/mpt/parse          bin/dist-autotools/src/mpt/parse
-cp -r ./src/mpt/random         bin/dist-autotools/src/mpt/random
-cp -r ./src/mpt/string         bin/dist-autotools/src/mpt/string
-cp -r ./src/mpt/string_convert bin/dist-autotools/src/mpt/string_convert
-cp -r ./src/mpt/system_error   bin/dist-autotools/src/mpt/system_error
-cp -r ./src/mpt/test           bin/dist-autotools/src/mpt/test
-cp -r ./src/mpt/uuid           bin/dist-autotools/src/mpt/uuid
-#cp -r ./src/mpt/uuid_namespace bin/dist-autotools/src/mpt/uuid_namespace
-mkdir -p bin/dist-autotools/src/openmpt
-cp -r ./src/openmpt/all        bin/dist-autotools/src/openmpt/all
-cp -r ./src/openmpt/base       bin/dist-autotools/src/openmpt/base
-cp -r ./src/openmpt/logging    bin/dist-autotools/src/openmpt/logging
-cp -r ./src/openmpt/random     bin/dist-autotools/src/openmpt/random
-cp -r ./src/openmpt/soundbase  bin/dist-autotools/src/openmpt/soundbase
-cp -r ./test            bin/dist-autotools/test
-rm bin/dist-autotools/test/mpt_tests_crypto.cpp
-rm bin/dist-autotools/test/mpt_tests_uuid_namespace.cpp
-cp -r ./libopenmpt      bin/dist-autotools/libopenmpt
-cp -r ./examples        bin/dist-autotools/examples
-cp -r ./openmpt123      bin/dist-autotools/openmpt123
-mkdir bin/dist-autotools/build
-mkdir bin/dist-autotools/build/svn_version
-cp -r ./build/svn_version/svn_version.h bin/dist-autotools/build/svn_version/svn_version.h
-mkdir bin/dist-autotools/m4
-touch bin/dist-autotools/m4/emptydir
-cp -r ./build/autotools/configure.ac bin/dist-autotools/configure.ac
-cp -r ./build/autotools/Makefile.am bin/dist-autotools/Makefile.am
+cp -r ./LICENSE                                       bin/dist-autotools/LICENSE
+cp -r ./README.md                                     bin/dist-autotools/README.md
+cp -r ./.clang-format                                 bin/dist-autotools/.clang-format
+cp -r ./common                                        bin/dist-autotools/common
+mkdir                                                 bin/dist-autotools/doc
+cp -r ./doc/contributing.md                           bin/dist-autotools/doc/contributing.md
+cp -r ./doc/libopenmpt_styleguide.md                  bin/dist-autotools/doc/libopenmpt_styleguide.md
+cp -r ./doc/module_formats.md                         bin/dist-autotools/doc/module_formats.md
+cp -r ./doc/openmpt_styleguide.md                     bin/dist-autotools/doc/openmpt_styleguide.md
+cp -r ./doc/libopenmpt                                bin/dist-autotools/doc/libopenmpt
+cp -r ./soundlib                                      bin/dist-autotools/soundlib
+cp -r ./sounddsp                                      bin/dist-autotools/sounddsp
+mkdir -p                                              bin/dist-autotools/src/mpt
+cp -r ./src/mpt/.clang-format                         bin/dist-autotools/src/mpt/.clang-format
+cp -r ./src/mpt/LICENSE.BSD-3-Clause.txt              bin/dist-autotools/src/mpt/LICENSE.BSD-3-Clause.txt
+cp -r ./src/mpt/LICENSE.BSL-1.0.txt                   bin/dist-autotools/src/mpt/LICENSE.BSL-1.0.txt
+cp -r ./src/mpt/arch                                  bin/dist-autotools/src/mpt/arch
+cp -r ./src/mpt/audio                                 bin/dist-autotools/src/mpt/audio
+cp -r ./src/mpt/base                                  bin/dist-autotools/src/mpt/base
+cp -r ./src/mpt/binary                                bin/dist-autotools/src/mpt/binary
+cp -r ./src/mpt/check                                 bin/dist-autotools/src/mpt/check
+cp -r ./src/mpt/chrono                                bin/dist-autotools/src/mpt/chrono
+cp -r ./src/mpt/crc                                   bin/dist-autotools/src/mpt/crc
+#cp -r ./src/mpt/crypto                                bin/dist-autotools/src/mpt/crypto
+cp -r ./src/mpt/detect                                bin/dist-autotools/src/mpt/detect
+cp -r ./src/mpt/endian                                bin/dist-autotools/src/mpt/endian
+cp -r ./src/mpt/environment                           bin/dist-autotools/src/mpt/environment
+cp -r ./src/mpt/exception                             bin/dist-autotools/src/mpt/exception
+cp -r ./src/mpt/filemode                              bin/dist-autotools/src/mpt/filemode
+cp -r ./src/mpt/format                                bin/dist-autotools/src/mpt/format
+#cp -r ./src/mpt/fs                                    bin/dist-autotools/src/mpt/fs
+cp -r ./src/mpt/io                                    bin/dist-autotools/src/mpt/io
+cp -r ./src/mpt/io_file                               bin/dist-autotools/src/mpt/io_file
+cp -r ./src/mpt/io_file_adapter                       bin/dist-autotools/src/mpt/io_file_adapter
+#cp -r ./src/mpt/io_file_atomic                        bin/dist-autotools/src/mpt/io_file_atomic
+cp -r ./src/mpt/io_file_read                          bin/dist-autotools/src/mpt/io_file_read
+cp -r ./src/mpt/io_file_unique                        bin/dist-autotools/src/mpt/io_file_unique
+cp -r ./src/mpt/io_read                               bin/dist-autotools/src/mpt/io_read
+cp -r ./src/mpt/io_write                              bin/dist-autotools/src/mpt/io_write
+#cp -r ./src/mpt/json                                  bin/dist-autotools/src/mpt/json
+#cp -r ./src/mpt/library                               bin/dist-autotools/src/mpt/library
+cp -r ./src/mpt/main                                  bin/dist-autotools/src/mpt/main
+cp -r ./src/mpt/mutex                                 bin/dist-autotools/src/mpt/mutex
+cp -r ./src/mpt/out_of_memory                         bin/dist-autotools/src/mpt/out_of_memory
+cp -r ./src/mpt/osinfo                                bin/dist-autotools/src/mpt/osinfo
+cp -r ./src/mpt/parse                                 bin/dist-autotools/src/mpt/parse
+cp -r ./src/mpt/path                                  bin/dist-autotools/src/mpt/path
+#cp -r ./src/mpt/profiler                              bin/dist-autotools/src/mpt/profiler
+cp -r ./src/mpt/random                                bin/dist-autotools/src/mpt/random
+cp -r ./src/mpt/string                                bin/dist-autotools/src/mpt/string
+cp -r ./src/mpt/string_transcode                      bin/dist-autotools/src/mpt/string_transcode
+cp -r ./src/mpt/system_error                          bin/dist-autotools/src/mpt/system_error
+cp -r ./src/mpt/terminal                              bin/dist-autotools/src/mpt/terminal
+cp -r ./src/mpt/test                                  bin/dist-autotools/src/mpt/test
+#cp -r ./src/mpt/textfile                              bin/dist-autotools/src/mpt/textfile
+cp -r ./src/mpt/uuid                                  bin/dist-autotools/src/mpt/uuid
+#cp -r ./src/mpt/uuid_namespace                        bin/dist-autotools/src/mpt/uuid_namespace
+mkdir -p                                              bin/dist-autotools/src/openmpt
+cp -r ./src/openmpt/all                               bin/dist-autotools/src/openmpt/all
+cp -r ./src/openmpt/base                              bin/dist-autotools/src/openmpt/base
+cp -r ./src/openmpt/fileformat_base                   bin/dist-autotools/src/openmpt/fileformat_base
+cp -r ./src/openmpt/logging                           bin/dist-autotools/src/openmpt/logging
+cp -r ./src/openmpt/random                            bin/dist-autotools/src/openmpt/random
+cp -r ./src/openmpt/soundbase                         bin/dist-autotools/src/openmpt/soundbase
+cp -r ./src/openmpt/soundfile_data                    bin/dist-autotools/src/openmpt/soundfile_data
+cp -r ./src/openmpt/soundfile_write                   bin/dist-autotools/src/openmpt/soundfile_write
+cp -r ./test                                          bin/dist-autotools/test
+rm                                                    bin/dist-autotools/test/mpt_tests_crypto.cpp
+rm                                                    bin/dist-autotools/test/mpt_tests_uuid_namespace.cpp
+cp -r ./libopenmpt                                    bin/dist-autotools/libopenmpt
+cp -r ./examples                                      bin/dist-autotools/examples
+cp -r ./openmpt123                                    bin/dist-autotools/openmpt123
+mkdir                                                 bin/dist-autotools/build
+mkdir                                                 bin/dist-autotools/build/svn_version
+cp -r ./build/svn_version/svn_version.h               bin/dist-autotools/build/svn_version/svn_version.h
+mkdir                                                 bin/dist-autotools/m4
+touch                                                 bin/dist-autotools/m4/emptydir
+cp -r ./build/autotools/configure.ac                  bin/dist-autotools/configure.ac
+cp -r ./build/autotools/Makefile.am                   bin/dist-autotools/Makefile.am
+cp -r ./build/autotools/ax_cxx_compile_stdcxx.m4      bin/dist-autotools/m4/ax_cxx_compile_stdcxx.m4
 fi
 
 echo "Querying svn version ..."
@@ -168,14 +270,14 @@ echo " BUILD_SVNVERSION=${BUILD_SVNVERSION}"
 echo " BUILD_SVNDATE=${BUILD_SVNDATE}"
 
 echo "Building man pages ..."
-make NO_SDL=1 NO_SDL2=1 bin/openmpt123.1
+$MAKE bin/openmpt123.1
 
 echo "Copying man pages ..."
 mkdir bin/dist-autotools/man
 cp bin/openmpt123.1 bin/dist-autotools/man/openmpt123.1
 
 echo "Cleaning local buid ..."
-make NO_SDL=1 NO_SDL2=1 clean
+$MAKE clean
 
 echo "Changing to autotools package directory ..."
 OLDDIR="$(pwd)"
@@ -219,28 +321,48 @@ echo "Running './configure' ..."
 ./configure
 
 echo "Running 'make dist' ..."
-make dist
+$MAKE dist
 
 echo "Running 'make distcheck' ..."
-#make distcheck
 (
- make distcheck 3>&1 1>&2 2>&3 | ( grep -v 'libtool: install: warning:' || true ) | ( grep -v 'libtool: warning: remember to run' || true ) | ( grep -v "libtool: warning: '.*la' has not been installed" || true )
+ $MAKE distcheck 3>&1 1>&2 2>&3 | ( grep -v 'libtool: install: warning:' || true ) | ( grep -v 'libtool: warning: remember to run' || true ) | ( grep -v "libtool: warning: '.*la' has not been installed" || true )
  exit ${PIPESTATUS[0]}
 ) 3>&1 1>&2 2>&3
 
 echo "Running 'make' ..."
-make
+$MAKE
 
 echo "Running 'make check' ..."
-make check
+$MAKE check
 
 echo "Building dist-autotools.tar ..."
 cd "$OLDDIR"
-MPT_LIBOPENMPT_VERSION=$(make NO_SDL=1 NO_SDL2=1 distversion-tarball)
+$MAKE QUIET=1 distversion-tarball
+MPT_LIBOPENMPT_VERSION=$(cat bin/distversion-tarball)
 cd bin/dist-autotools
 rm -rf libopenmpt
 mkdir -p libopenmpt/src.autotools/$MPT_LIBOPENMPT_VERSION/
 cp *.tar.gz libopenmpt/src.autotools/$MPT_LIBOPENMPT_VERSION/
-tar -cvf ../dist-autotools.tar libopenmpt
-cd ../..
 
+case $TAR_FLAVOUR in
+ mac)
+  tar -cv --format pax -f ../dist-autotools.tar libopenmpt
+  ;;
+ oldbsd)
+  tar -cv -N -f ../dist-autotools.tar libopenmpt
+  ;;
+ bsd)
+  tar -cv -F pax -N -f ../dist-autotools.tar libopenmpt
+  ;;
+ libarchive)
+  tar -cv --format pax --numeric-owner --uname "" --gname "" --uid 0 --gid 0 -f ../dist-autotools.tar libopenmpt
+  ;;
+ gnu)
+  tar -cv --format=pax --numeric-owner --owner=0 --group=0 -f ../dist-autotools.tar libopenmpt
+  ;;
+ *)
+  tar -cv -f ../dist-autotools.tar libopenmpt
+  ;;
+esac
+
+cd ../..

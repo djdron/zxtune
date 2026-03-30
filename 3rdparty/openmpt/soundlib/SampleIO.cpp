@@ -11,13 +11,13 @@
 
 
 #include "stdafx.h"
-#include "Loaders.h"
 #include "SampleIO.h"
-#include "openmpt/soundbase/SampleDecode.hpp"
+#include "BitReader.h"
+#include "ITCompression.h"
+#include "Loaders.h"
+#include "ModSampleCopy.h"
 #include "SampleCopy.h"
 #include "SampleNormalize.h"
-#include "ModSampleCopy.h"
-#include "ITCompression.h"
 #ifndef MODPLUG_NO_FILESAVE
 #include "../common/mptFileIO.h"
 #include "mpt/io/base.hpp"
@@ -25,7 +25,7 @@
 #include "mpt/io/io_stdstream.hpp"
 #include "mpt/io_write/buffer.hpp"
 #endif
-#include "BitReader.h"
+#include "openmpt/soundbase/SampleDecode.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -41,12 +41,12 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 
 	LimitMax(sample.nLength, MAX_SAMPLE_LENGTH);
 
-	FileReader::off_t bytesRead = 0;	// Amount of memory that has been read from file
+	FileReader::pos_type bytesRead = 0;	// Amount of memory that has been read from file
 
-	FileReader::off_t filePosition = file.GetPosition();
+	FileReader::pos_type filePosition = file.GetPosition();
 	const std::byte * sourceBuf = nullptr;
 	FileReader::PinnedView restrictedSampleDataView;
-	FileReader::off_t fileSize = 0;
+	FileReader::pos_type fileSize = 0;
 	if(UsesFileReaderForDecoding())
 	{
 		sourceBuf = nullptr;
@@ -56,6 +56,8 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		restrictedSampleDataView = file.GetPinnedView(CalculateEncodedSize(sample.nLength));
 		sourceBuf = restrictedSampleDataView.data();
 		fileSize = restrictedSampleDataView.size();
+		if(fileSize < 1)
+			return 0;
 	} else
 	{
 		MPT_ASSERT_NOTREACHED();
@@ -67,7 +69,7 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		// However, for ProTracker MODs we need to support samples exceeding the end of file
 		// (see the comment about MOD.shorttune2 in Load_mod.cpp), so as a semi-arbitrary threshold,
 		// we do not apply this limit to samples shorter than 256K.
-		size_t maxLength = fileSize - std::min(GetEncodedHeaderSize(), fileSize);
+		std::size_t maxLength = static_cast<std::size_t>(fileSize) - std::min(GetEncodedHeaderSize(), static_cast<std::size_t>(fileSize));
 		uint8 bps = GetEncodedBitsPerSample();
 		if(bps % 8u != 0)
 		{
@@ -144,7 +146,7 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		if(file.ReadArray(compressionTable))
 		{
 			size_t readLength = (sample.nLength + 1) / 2;
-			LimitMax(readLength, file.BytesLeft());
+			LimitMax(readLength, mpt::saturate_cast<std::size_t>(file.BytesLeft()));
 
 			const uint8 *inBuf = mpt::byte_cast<const uint8*>(sourceBuf) + sizeof(compressionTable);
 			int8 *outBuf = sample.sample8();
@@ -177,7 +179,7 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		LimitMax(sourceSize, mpt::saturate_cast<uint32>(packedDataView.size()));
 		bytesRead += sourceSize;
 
-		AMSUnpack(reinterpret_cast<const int8 *>(packedDataView.data()), packedDataView.size(), sample.samplev(), sample.GetSampleSizeInBytes(), packCharacter);
+		AMSUnpack(packedDataView.span(), mpt::as_span(sample.sampleb(), sample.GetSampleSizeInBytes()), packCharacter);
 		if(sample.uFlags[CHN_16BIT] && !mpt::endian_is_little())
 		{
 			auto p = sample.sample16();
@@ -294,9 +296,6 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		case deltaPCM:		// 8-Bit / Mono / Delta / PCM
 		case MT2:
 			bytesRead = CopyMonoSample<SC::DecodeInt8Delta>(sample, sourceBuf, fileSize);
-			break;
-		case PCM7to8:		// 7 Bit stored as 8-Bit with highest bit unused / Mono / Signed / PCM
-			bytesRead = CopyMonoSample<SC::DecodeInt7>(sample, sourceBuf, fileSize);
 			break;
 		default:
 			MPT_ASSERT_NOTREACHED();
@@ -573,10 +572,10 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 	{
 		if(GetEndianness() == littleEndian)
 		{
-			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeFloat32<littleEndian32> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<littleEndian32> > >(sample, sourceBuf, fileSize);
 		} else
 		{
-			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeFloat32<bigEndian32> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<bigEndian32> > >(sample, sourceBuf, fileSize);
 		}
 	}
 
@@ -586,10 +585,10 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 	{
 		if(GetEndianness() == littleEndian)
 		{
-			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeFloat32<littleEndian32> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<littleEndian32> > >(sample, sourceBuf, fileSize);
 		} else
 		{
-			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeFloat32<bigEndian32> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<bigEndian32> > >(sample, sourceBuf, fileSize);
 		}
 	}
 
@@ -599,10 +598,10 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 	{
 		if(GetEndianness() == littleEndian)
 		{
-			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, float64>, SC::DecodeFloat64<littleEndian64> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<littleEndian64> > >(sample, sourceBuf, fileSize);
 		} else
 		{
-			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, float64>, SC::DecodeFloat64<bigEndian64> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyMonoSample<SC::ConversionChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<bigEndian64> > >(sample, sourceBuf, fileSize);
 		}
 	}
 
@@ -612,10 +611,10 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 	{
 		if(GetEndianness() == littleEndian)
 		{
-			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, float64>, SC::DecodeFloat64<littleEndian64> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<littleEndian64> > >(sample, sourceBuf, fileSize);
 		} else
 		{
-			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, float64>, SC::DecodeFloat64<bigEndian64> > >(sample, sourceBuf, fileSize);
+			bytesRead = CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<bigEndian64> > >(sample, sourceBuf, fileSize);
 		}
 	}
 
@@ -666,13 +665,13 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 	else if(GetBitDepth() == 32 && (GetChannelFormat() == mono || GetChannelFormat() == stereoInterleaved) && GetEncoding() == floatPCMnormalize)
 	{
 		// Normalize to 16-Bit
-		float32 srcPeak = 1.0f;
+		somefloat32 srcPeak = 1.0f;
 		if(GetEndianness() == littleEndian)
 		{
-			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, float32>, SC::DecodeFloat32<littleEndian32> > >(sample, sourceBuf, fileSize, &srcPeak);
+			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<littleEndian32> > >(sample, sourceBuf, fileSize, &srcPeak);
 		} else
 		{
-			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, float32>, SC::DecodeFloat32<bigEndian32> > >(sample, sourceBuf, fileSize, &srcPeak);
+			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, somefloat32>, SC::DecodeFloat32<bigEndian32> > >(sample, sourceBuf, fileSize, &srcPeak);
 		}
 		if(bytesRead && srcPeak != 1.0f)
 		{
@@ -687,13 +686,13 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 	else if(GetBitDepth() == 64 && (GetChannelFormat() == mono || GetChannelFormat() == stereoInterleaved) && GetEncoding() == floatPCMnormalize)
 	{
 		// Normalize to 16-Bit
-		float64 srcPeak = 1.0;
+		somefloat64 srcPeak = 1.0;
 		if(GetEndianness() == littleEndian)
 		{
-			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, float64>, SC::DecodeFloat64<littleEndian64> > >(sample, sourceBuf, fileSize, &srcPeak);
+			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<littleEndian64> > >(sample, sourceBuf, fileSize, &srcPeak);
 		} else
 		{
-			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, float64>, SC::DecodeFloat64<bigEndian64> > >(sample, sourceBuf, fileSize, &srcPeak);
+			bytesRead = CopyAndNormalizeSample<SC::NormalizationChain<SC::Convert<int16, somefloat64>, SC::DecodeFloat64<bigEndian64> > >(sample, sourceBuf, fileSize, &srcPeak);
 		}
 		if(bytesRead && srcPeak != 1.0)
 		{
@@ -711,15 +710,15 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		{
 			bytesRead = CopyMonoSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<littleEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<15)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<littleEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<15)))
 				);
 		} else
 		{
 			bytesRead = CopyMonoSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<bigEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<15)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<bigEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<15)))
 				);
 		}
 	}
@@ -732,15 +731,15 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		{
 			bytesRead = CopyStereoInterleavedSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<littleEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<15)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<littleEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<15)))
 				);
 		} else
 		{
 			bytesRead = CopyStereoInterleavedSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<bigEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<15)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<bigEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<15)))
 				);
 		}
 	}
@@ -753,15 +752,15 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		{
 			bytesRead = CopyMonoSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<littleEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<23)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<littleEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<23)))
 				);
 		} else
 		{
 			bytesRead = CopyMonoSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<bigEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<23)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<bigEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<23)))
 				);
 		}
 	}
@@ -774,15 +773,15 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		{
 			bytesRead = CopyStereoInterleavedSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<littleEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<23)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<littleEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<littleEndian32>(1.0f / static_cast<float>(1<<23)))
 				);
 		} else
 		{
 			bytesRead = CopyStereoInterleavedSample
 				(sample, sourceBuf, fileSize,
-				SC::ConversionChain<SC::Convert<int16, float32>, SC::DecodeScaledFloat32<bigEndian32> >
-				(SC::Convert<int16, float32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<23)))
+				SC::ConversionChain<SC::Convert<int16, somefloat32>, SC::DecodeScaledFloat32<bigEndian32> >
+				(SC::Convert<int16, somefloat32>(), SC::DecodeScaledFloat32<bigEndian32>(1.0f / static_cast<float>(1<<23)))
 				);
 		}
 	}
@@ -917,12 +916,12 @@ size_t SampleIO::WriteSample(std::ostream &f, const ModSample &sample, SmpLength
 		// Stereo signed interleaved
 		MPT_ASSERT(len == numSamples * 2);
 		const int8 *const pSample8 = sample.sample8();
-		mpt::IO::WriteRaw(f, reinterpret_cast<const std::byte*>(pSample8), len);
+		mpt::IO::Write(f, mpt::as_span(pSample8, len));
 	}
 
 	else if(GetBitDepth() == 16 && GetChannelFormat() == stereoInterleaved && GetEncoding() == signedPCM && GetEndianness() == littleEndian)
 	{
-		// Stereo signed interleaved
+		// Stereo signed interleaved, little-endian
 		MPT_ASSERT(len == numSamples * 4);
 		const int16 *const pSample16 = sample.sample16();
 		const int16 *p = pSample16;
@@ -936,7 +935,7 @@ size_t SampleIO::WriteSample(std::ostream &f, const ModSample &sample, SmpLength
 
 	else if(GetBitDepth() == 16 && GetChannelFormat() == stereoInterleaved && GetEncoding() == signedPCM && GetEndianness() == bigEndian)
 	{
-		// Stereo signed interleaved
+		// Stereo signed interleaved, big-endian
 		MPT_ASSERT(len == numSamples * 4);
 		const int16 *const pSample16 = sample.sample16();
 		const int16 *p = pSample16;
@@ -945,6 +944,24 @@ size_t SampleIO::WriteSample(std::ostream &f, const ModSample &sample, SmpLength
 			mpt::IO::Write(fb, mpt::as_be(p[0]));
 			mpt::IO::Write(fb, mpt::as_be(p[1]));
 			p += 2;
+		}
+	}
+
+	else if(GetBitDepth() == 16 && (GetChannelFormat() == stereoSplit || GetChannelFormat() == mono)
+		&& (GetEncoding() == signedPCM || GetEncoding() == unsignedPCM) && GetEndianness() == bigEndian)
+	{
+		// Stereo split / mono signed 16-bit, big-endian
+		const uint8 numChannels = GetNumChannels();
+		const uint16 offset = (GetEncoding() == unsignedPCM) ? 0x8000 : 0;
+		MPT_ASSERT(len == numSamples * numChannels * 2);
+		for(uint8 chn = 0; chn < numChannels; chn++)
+		{
+			const int16 *p = sample.sample16() + chn;
+			for(SmpLength j = 0; j < numSamples; j++)
+			{
+				mpt::IO::Write(fb, mpt::as_be(static_cast<int16>(static_cast<uint16>(*p) + offset)));
+				p += numChannels;
+			}
 		}
 	}
 

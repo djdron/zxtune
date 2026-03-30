@@ -10,6 +10,7 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "Mptrack.h"
 
 class Clipboard
 {
@@ -39,7 +40,7 @@ public:
 
 	bool IsValid() const
 	{
-		return m_opened && m_hCpy && m_data.data();
+		return m_opened && m_data.data();
 	}
 
 	template<typename T>
@@ -56,7 +57,15 @@ public:
 	std::string_view GetString() const
 	{
 		if(m_data.data())
-			return { mpt::byte_cast<const char *>(m_data.data()), m_data.size() };
+			return {mpt::byte_cast<const char *>(m_data.data()), m_data.size()};
+		else
+			return {};
+	}
+
+	std::wstring_view GetWideString() const
+	{
+		if(m_data.data() && m_clipFormat == CF_UNICODETEXT)
+			return {static_cast<const wchar_t *>(static_cast<const void *>(m_data.data())), m_data.size() / sizeof(wchar_t)};
 		else
 			return {};
 	}

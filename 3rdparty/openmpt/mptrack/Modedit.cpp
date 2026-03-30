@@ -9,27 +9,35 @@
 
 
 #include "stdafx.h"
-#include "Mptrack.h"
-#include "Mainfrm.h"
-#include "Moddoc.h"
 #include "Clipboard.h"
 #include "dlg_misc.h"
 #include "Dlsbank.h"
-#include "../soundlib/modsmp_ctrl.h"
-#include "../soundlib/mod_specifications.h"
-#include "../soundlib/tuning.h"
-#include "../soundlib/OPL.h"
+#include "HighDPISupport.h"
+#include "Mainfrm.h"
+#include "Moddoc.h"
+#include "Mptrack.h"
+#include "Reporting.h"
+#include "resource.h"
+#include "TrackerSettings.h"
 #include "../common/misc_util.h"
-#include "../common/mptStringBuffer.h"
 #include "../common/mptFileIO.h"
-#include <sstream>
+#include "../common/mptStringBuffer.h"
+#include "../soundlib/mod_specifications.h"
+#include "../soundlib/modsmp_ctrl.h"
+#include "../soundlib/OPL.h"
+#include "../soundlib/tuning.h"
+#include "mpt/io_file/inputfile.hpp"
+#include "mpt/io_file_read/inputfile_filecursor.hpp"
+#include "mpt/io_file/outputfile.hpp"
 // Plugin cloning
-#include "../soundlib/plugins/PluginManager.h"
-#include "../soundlib/plugins/PlugInterface.h"
 #include "VstPresets.h"
 #include "../common/FileReader.h"
+#include "../soundlib/plugins/PluginManager.h"
+#include "../soundlib/plugins/PlugInterface.h"
 #include "mpt/io/io.hpp"
 #include "mpt/io/io_stdstream.hpp"
+
+#include <sstream>
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -80,10 +88,7 @@ bool CModDoc::ChangeNumChannels(CHANNELINDEX nNewChannels, const bool showCancel
 		// Increasing number of channels
 		BeginWaitCursor();
 		std::vector<CHANNELINDEX> channels(nNewChannels, CHANNELINDEX_INVALID);
-		for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
-		{
-			channels[chn] = chn;
-		}
+		std::iota(channels.begin(), channels.begin() + GetNumChannels(), CHANNELINDEX(0));
 
 		bool success = (ReArrangeChannels(channels) == nNewChannels);
 		if(success)
@@ -101,11 +106,12 @@ bool CModDoc::ChangeNumChannels(CHANNELINDEX nNewChannels, const bool showCancel
 // Return true on success.
 bool CModDoc::RemoveChannels(const std::vector<bool> &keepMask, bool verbose)
 {
+	MPT_ASSERT(keepMask.size() == GetNumChannels());
 	CHANNELINDEX nRemainingChannels = 0;
 	//First calculating how many channels are to be left
-	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
+	for(bool keep : keepMask)
 	{
-		if(keepMask[chn])
+		if(keep)
 			nRemainingChannels++;
 	}
 	if(nRemainingChannels == GetNumChannels() || nRemainingChannels < m_SndFile.GetModSpecifications().channelsMin)
@@ -129,9 +135,7 @@ bool CModDoc::RemoveChannels(const std::vector<bool> &keepMask, bool verbose)
 	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 	{
 		if(keepMask[chn])
-		{
 			channels[i++] = chn;
-		}
 	}
 	const bool success = (ReArrangeChannels(channels) == nRemainingChannels);
 	if(success)
@@ -170,6 +174,7 @@ CHANNELINDEX CModDoc::ReArrangeChannels(const std::vector<CHANNELINDEX> &newOrde
 	}
 
 	CriticalSection cs;
+	const std::vector<ModChannelSettings> settings = m_SndFile.ChnSettings;
 	if(oldNumChannels == newNumChannels)
 	{
 		// Optimization with no pattern re-allocation
@@ -185,7 +190,7 @@ CHANNELINDEX CModDoc::ReArrangeChannels(const std::vector<CHANNELINDEX> &newOrde
 					if(newOrder[chn] < oldNumChannels)  // Case: getting old channel to the new channel order.
 						*m = oldRow[newOrder[chn]];
 					else
-						*m = ModCommand::Empty();
+						*m = ModCommand{};
 				}
 			}
 		}
@@ -195,6 +200,7 @@ CHANNELINDEX CModDoc::ReArrangeChannels(const std::vector<CHANNELINDEX> &newOrde
 		std::vector<std::vector<ModCommand>> newPatterns;
 		try
 		{
+			m_SndFile.ChnSettings.reserve(newNumChannels);
 			newPatterns.resize(m_SndFile.Patterns.Size());
 			for(PATTERNINDEX i = 0; i < m_SndFile.Patterns.Size(); i++)
 			{
@@ -207,7 +213,7 @@ CHANNELINDEX CModDoc::ReArrangeChannels(const std::vector<CHANNELINDEX> &newOrde
 			return oldNumChannels;
 		}
 
-		m_SndFile.m_nChannels = newNumChannels;
+		m_SndFile.ChnSettings.resize(newNumChannels);
 		for(PATTERNINDEX i = 0; i < m_SndFile.Patterns.Size(); i++)
 		{
 			CPattern &pat = m_SndFile.Patterns[i];
@@ -249,15 +255,10 @@ CHANNELINDEX CModDoc::ReArrangeChannels(const std::vector<CHANNELINDEX> &newOrde
 			channel.Reset(ModChannel::resetTotal, m_SndFile, chn, muteFlag);
 	}
 
-	std::vector<ModChannel> chns(std::begin(m_SndFile.m_PlayState.Chn), std::begin(m_SndFile.m_PlayState.Chn) + oldNumChannels);
-	std::vector<ModChannelSettings> settings(std::begin(m_SndFile.ChnSettings), std::begin(m_SndFile.ChnSettings) + oldNumChannels);
-	std::vector<RecordGroup> recordStates(oldNumChannels);
-	auto chnMutePendings = m_SndFile.m_bChannelMuteTogglePending;
-	for(CHANNELINDEX chn = 0; chn < oldNumChannels; chn++)
-	{
-		recordStates[chn] = GetChannelRecordGroup(chn);
-	}
-	ReinitRecordState();
+	std::vector<ModChannel> chns(m_SndFile.m_PlayState.Chn.begin(), m_SndFile.m_PlayState.Chn.begin() + oldNumChannels);
+	const auto chnMutePendings = m_SndFile.m_bChannelMuteTogglePending;
+	const auto recordStates = m_multiRecordGroup;
+	m_multiRecordGroup.clear();
 
 	for(CHANNELINDEX chn = 0; chn < newNumChannels; chn++)
 	{
@@ -266,13 +267,16 @@ CHANNELINDEX CModDoc::ReArrangeChannels(const std::vector<CHANNELINDEX> &newOrde
 		{
 			m_SndFile.ChnSettings[chn] = settings[srcChn];
 			m_SndFile.m_PlayState.Chn[chn] = chns[srcChn];
-			SetChannelRecordGroup(chn, recordStates[srcChn]);
+			if(srcChn < recordStates.size())
+				SetChannelRecordGroup(chn, recordStates[srcChn]);
 			m_SndFile.m_bChannelMuteTogglePending[chn] = chnMutePendings[srcChn];
 			if(m_SndFile.m_opl)
 				m_SndFile.m_opl->MoveChannel(srcChn, chn);
 		} else
 		{
-			m_SndFile.InitChannel(chn);
+			mpt::reconstruct(m_SndFile.ChnSettings[chn]);
+			InitChannel(chn);
+			SetDefaultChannelColors(chn);
 		}
 	}
 	// Reset MOD panning (won't affect other module formats)
@@ -370,7 +374,7 @@ SAMPLEINDEX CModDoc::ReArrangeSamples(const std::vector<SAMPLEINDEX> &newOrder)
 	GetSampleUndo().RearrangeSamples(newIndex);
 
 	const auto muteFlag = CSoundFile::GetChannelMuteFlag();
-	for(CHANNELINDEX c = 0; c < std::size(m_SndFile.m_PlayState.Chn); c++)
+	for(CHANNELINDEX c = 0; c < m_SndFile.m_PlayState.Chn.size(); c++)
 	{
 		ModChannel &chn = m_SndFile.m_PlayState.Chn[c];
 		for(SAMPLEINDEX i = 1; i <= oldNumSamples; i++)
@@ -485,7 +489,7 @@ INSTRUMENTINDEX CModDoc::ReArrangeInstruments(const std::vector<INSTRUMENTINDEX>
 		m_SndFile.DestroyInstrument(i, doNoDeleteAssociatedSamples);
 	}
 
-	PrepareUndoForAllPatterns(false, "Rearrange Instrumens");
+	PrepareUndoForAllPatterns(false, "Rearrange Instruments");
 	GetInstrumentUndo().RearrangeInstruments(newIndex);
 	m_SndFile.Patterns.ForEachModCommand([&newIndex] (ModCommand &m)
 	{
@@ -522,7 +526,7 @@ bool CModDoc::ConvertInstrumentsToSamples()
 			else
 				note = NOTE_MIDDLEC - NOTE_MIN;
 
-			if((instr < MAX_INSTRUMENTS) && (m_SndFile.Instruments[instr]))
+			MPT_MAYBE_CONSTANT_IF((instr < MAX_INSTRUMENTS) && (m_SndFile.Instruments[instr]))
 			{
 				const ModInstrument *pIns = m_SndFile.Instruments[instr];
 				newinstr = static_cast<ModCommand::INSTR>(pIns->Keyboard[note]);
@@ -603,10 +607,33 @@ PLUGINDEX CModDoc::RemovePlugs(const std::vector<bool> &keepMask)
 		}
 
 		plug.Destroy();
-		plug = SNDMIXPLUGIN();
+		mpt::reconstruct(plug);
+
+		for(PLUGINDEX srcPlugSlot = 0; srcPlugSlot < nPlug; srcPlugSlot++)
+		{
+			SNDMIXPLUGIN &srcPlug = GetSoundFile().m_MixPlugins[srcPlugSlot];
+			if(srcPlug.GetOutputPlugin() == nPlug)
+			{
+				srcPlug.SetOutputToMaster();
+			}
+		}
 	}
+	UpdateAllViews(nullptr, PluginHint().Info().Names());
+
+	if(nRemoved && m_SndFile.GetModSpecifications().supportsPlugins)
+		SetModified();
 
 	return nRemoved;
+}
+
+
+bool CModDoc::RemovePlugin(PLUGINDEX plugin)
+{
+	if(plugin >= MAX_MIXPLUGINS)
+		return false;
+	std::vector<bool> keepMask(MAX_MIXPLUGINS, true);
+	keepMask[plugin] = false;
+	return RemovePlugs(keepMask) == 1;
 }
 
 
@@ -621,11 +648,10 @@ void CModDoc::ClonePlugin(SNDMIXPLUGIN &target, const SNDMIXPLUGIN &source)
 	if(target.editorX != int32_min)
 	{
 		// Move target editor a bit to visually distinguish it from the original editor
-		int addPixels = Util::ScalePixels(16, CMainFrame::GetMainFrame()->m_hWnd);
+		int addPixels = HighDPISupport::ScalePixels(16, CMainFrame::GetMainFrame()->m_hWnd);
 		target.editorX += addPixels;
 		target.editorY += addPixels;
 	}
-#ifndef NO_PLUGINS
 	if(theApp.GetPluginManager()->CreateMixPlugin(target, GetSoundFile()))
 	{
 		IMixPlugin *newVstPlug = target.pMixPlugin;
@@ -636,10 +662,16 @@ void CModDoc::ClonePlugin(SNDMIXPLUGIN &target, const SNDMIXPLUGIN &source)
 		{
 			const std::string data = f.str();
 			FileReader file(mpt::as_span(data));
+#if MPT_COMPILER_MSVC
+#pragma warning(push)
+#pragma warning(disable:6011) // Dereferencing NULL pointer 'newVstPlug'
+#endif // MPT_COMPILER_MSVC
 			VSTPresets::LoadFile(file, *newVstPlug);
+#if MPT_COMPILER_MSVC
+#pragma warning(pop)
+#endif // MPT_COMPILER_MSVC
 		}
 	}
-#endif // !NO_PLUGINS
 }
 
 
@@ -784,7 +816,6 @@ void CModDoc::InitializeInstrument(ModInstrument *pIns)
 // Try to set up a new instrument that is linked to a given plugin
 INSTRUMENTINDEX CModDoc::InsertInstrumentForPlugin(PLUGINDEX plug)
 {
-#ifndef NO_PLUGINS
 	const bool first = (GetNumInstruments() == 0);
 	INSTRUMENTINDEX instr = InsertInstrument(0, INSTRUMENTINDEX_INVALID, true);
 	if(instr == INSTRUMENTINDEX_INVALID)
@@ -806,9 +837,6 @@ INSTRUMENTINDEX CModDoc::InsertInstrumentForPlugin(PLUGINDEX plug)
 	}
 
 	return instr;
-#else
-	return INSTRUMENTINDEX_INVALID;
-#endif
 }
 
 
@@ -919,8 +947,9 @@ bool CModDoc::MoveOrder(ORDERINDEX sourceOrd, ORDERINDEX destOrd, bool update, b
 	if(destOrd == maxOrders && (sourceSeq != destSeq || copy))
 		return false;
 
+	CriticalSection cs;
 	auto &sourceSequence = m_SndFile.Order(sourceSeq);
-	const PATTERNINDEX sourcePat = sourceOrd < sourceSequence.size() ? sourceSequence[sourceOrd] : sourceSequence.GetInvalidPatIndex();
+	const PATTERNINDEX sourcePat = sourceOrd < sourceSequence.size() ? sourceSequence[sourceOrd] : PATTERNINDEX_INVALID;
 
 	// Delete source
 	if(!copy)
@@ -934,6 +963,7 @@ bool CModDoc::MoveOrder(ORDERINDEX sourceOrd, ORDERINDEX destOrd, bool update, b
 
 	if(update)
 	{
+		cs.Leave();
 		UpdateAllViews(nullptr, SequenceHint().Data());
 	}
 	return true;
@@ -1001,8 +1031,8 @@ BOOL CModDoc::ShrinkPattern(PATTERNINDEX nPattern)
 /////////////////////////////////////////////////////////////////////////////////////////
 // Copy/Paste envelope
 
-static constexpr const CHAR *pszEnvHdr = "ModPlug Tracker Envelope\r\n";
-static constexpr const CHAR *pszEnvFmt = "%d,%d,%d,%d,%d,%d,%d,%d\r\n";
+static constexpr const char pszEnvHdr[] = "ModPlug Tracker Envelope\r\n";
+static constexpr const char pszEnvFmt[] = "%d,%d,%d,%d,%d,%d,%d,%d\r\n";
 
 static bool EnvelopeToString(CStringA &s, const InstrumentEnvelope &env)
 {
@@ -1029,12 +1059,12 @@ static bool EnvelopeToString(CStringA &s, const InstrumentEnvelope &env)
 static bool StringToEnvelope(const std::string_view &s, InstrumentEnvelope &env, const CModSpecifications &specs)
 {
 	uint32 susBegin = 0, susEnd = 0, loopBegin = 0, loopEnd = 0, bSus = 0, bLoop = 0, bCarry = 0, nPoints = 0, releaseNode = ENV_RELEASE_NODE_UNSET;
-	size_t length = s.size(), pos = strlen(pszEnvHdr);
+	size_t length = s.size(), pos = std::size(pszEnvHdr) - 1;
 	if(length <= pos || mpt::CompareNoCaseAscii(s.data(), pszEnvHdr, pos - 2))
 	{
 		return false;
 	}
-	sscanf(&s[pos], pszEnvFmt, &nPoints, &susBegin, &susEnd, &loopBegin, &loopEnd, &bSus, &bLoop, &bCarry);
+	MPT_DISCARD(sscanf(&s[pos], pszEnvFmt, &nPoints, &susBegin, &susEnd, &loopBegin, &loopEnd, &bSus, &bLoop, &bCarry));
 	while(pos < length && s[pos] != '\r' && s[pos] != '\n')
 		pos++;
 
@@ -1147,8 +1177,8 @@ bool CModDoc::SaveEnvelope(INSTRUMENTINDEX ins, EnvelopeType env, const mpt::Pat
 	bool ok = false;
 	try
 	{
-		mpt::SafeOutputFile sf(fileName, std::ios::binary, mpt::FlushModeFromBool(TrackerSettings::Instance().MiscFlushFileBuffersOnSave));
-		mpt::ofstream &f = sf;
+		mpt::IO::SafeOutputFile sf(fileName, std::ios::binary, mpt::IO::FlushModeFromBool(TrackerSettings::Instance().MiscFlushFileBuffersOnSave));
+		mpt::IO::ofstream &f = sf;
 		f.exceptions(f.exceptions() | std::ios::badbit | std::ios::failbit);
 		if(f)
 			ok = mpt::IO::WriteRaw(f, s.GetString(), s.GetLength());
@@ -1184,7 +1214,7 @@ bool CModDoc::PasteEnvelope(INSTRUMENTINDEX ins, EnvelopeType env)
 
 bool CModDoc::LoadEnvelope(INSTRUMENTINDEX nIns, EnvelopeType nEnv, const mpt::PathString &fileName)
 {
-	InputFile f(fileName, TrackerSettings::Instance().MiscCacheCompleteFileBeforeLoading);
+	mpt::IO::InputFile f(fileName, TrackerSettings::Instance().MiscCacheCompleteFileBeforeLoading);
 	if(nIns < 1 || nIns > m_SndFile.m_nInstruments || !m_SndFile.Instruments[nIns] || !f.IsValid())
 		return false;
 	BeginWaitCursor();
@@ -1339,6 +1369,34 @@ int CModDoc::GetInstrumentGroupSize(INSTRUMENTINDEX instr) const
 		return ins->pTuning->GetGroupSize();
 	}
 	return 12;
+}
+
+
+int CModDoc::GetBaseNote(INSTRUMENTINDEX instr) const
+{
+	// This may look a bit strange (using -12 and -4 instead of just -5 in the second part) but this is to keep custom tunings centered around middle-C on the keyboard.
+	return NOTE_MIDDLEC - 12 + (CMainFrame::GetMainFrame()->GetBaseOctave() - 4) * GetInstrumentGroupSize(instr);
+}
+
+
+ModCommand::NOTE CModDoc::GetNoteWithBaseOctave(int noteOffset, INSTRUMENTINDEX instr) const
+{
+	return static_cast<ModCommand::NOTE>(Clamp(GetBaseNote(instr) + noteOffset, NOTE_MIN, NOTE_MAX));
+}
+
+
+INSTRUMENTINDEX CModDoc::GetParentInstrumentWithSameName(SAMPLEINDEX smp) const
+{
+	auto ins = FindSampleParent(smp);
+	if(ins == INSTRUMENTINDEX_INVALID)
+		return INSTRUMENTINDEX_INVALID;
+	auto instr = m_SndFile.Instruments[ins];
+	if(instr == nullptr)
+		return INSTRUMENTINDEX_INVALID;
+	if((!instr->name.empty() && instr->name != m_SndFile.m_szNames[smp]) || instr->GetSamples().size() != 1)
+		return INSTRUMENTINDEX_INVALID;
+
+	return ins;
 }
 
 

@@ -33,11 +33,7 @@
 	return value: number of clipped samples
 */
 
-#ifndef __APPLE__
-	.section	.rodata
-#else
-	.data
-#endif
+	RODATA
 	ALIGN32
 maxmin_avx:
 	.long   1191182335
@@ -58,8 +54,8 @@ maxmin_avx:
 	.long   -956301312
 	.text
 	ALIGN16
-	.globl ASM_NAME(synth_1to1_s_avx_accurate_asm)
-ASM_NAME(synth_1to1_s_avx_accurate_asm):
+	.globl ASM_NAME(INT123_synth_1to1_s_avx_accurate_asm)
+ASM_NAME(INT123_synth_1to1_s_avx_accurate_asm):
 #ifdef IS_MSABI /* should save xmm6-15 */
 	push		%rbp
 	mov			%rsp, %rbp

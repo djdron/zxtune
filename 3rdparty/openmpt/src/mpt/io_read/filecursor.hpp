@@ -6,9 +6,12 @@
 
 
 #include "mpt/base/alloc.hpp"
+#include "mpt/base/macros.hpp"
 #include "mpt/base/memory.hpp"
 #include "mpt/base/namespace.hpp"
 #include "mpt/base/span.hpp"
+#include "mpt/base/utility.hpp"
+#include "mpt/out_of_memory/out_of_memory.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -130,7 +133,7 @@ public:
 			streamPos = position;
 			return true;
 		}
-		if (position <= DataContainer().GetLength()) {
+		if (DataContainer().CanRead(0, position)) {
 			streamPos = position;
 			return true;
 		} else {
@@ -212,11 +215,10 @@ public:
 protected:
 	FileCursor CreateChunk(pos_type position, pos_type length) const {
 		pos_type readableLength = DataContainer().GetReadableLength(position, length);
-		if (readableLength == 0)
-		{
+		if (readableLength == 0) {
 			return FileCursor();
 		}
-		return FileCursor(CreateChunkImpl(SharedDataContainer(), position, std::min(length, DataContainer().GetLength() - position)));
+		return FileCursor(CreateChunkImpl(SharedDataContainer(), position, readableLength));
 	}
 
 public:
@@ -250,7 +252,7 @@ public:
 			size_ = 0;
 			pinnedData = nullptr;
 			if (!file.CanRead(size)) {
-				size = file.BytesLeft();
+				size = static_cast<std::size_t>(file.BytesLeft());
 			}
 			size_ = size;
 			if (file.DataContainer().HasPinnedView()) {
@@ -269,15 +271,20 @@ public:
 			, pinnedData(nullptr) {
 		}
 		PinnedView(const FileCursor & file) {
-			Init(file, file.BytesLeft());
+			MPT_MAYBE_CONSTANT_IF (!mpt::in_range<std::size_t>(file.BytesLeft())) {
+				mpt::throw_out_of_memory();
+			}
+			Init(file, static_cast<std::size_t>(file.BytesLeft()));
 		}
 		PinnedView(const FileCursor & file, std::size_t size) {
 			Init(file, size);
 		}
 		PinnedView(FileCursor & file, bool advance) {
-			Init(file, file.BytesLeft());
-			if (advance)
-			{
+			MPT_MAYBE_CONSTANT_IF (!mpt::in_range<std::size_t>(file.BytesLeft())) {
+				mpt::throw_out_of_memory();
+			}
+			Init(file, static_cast<std::size_t>(file.BytesLeft()));
+			if (advance) {
 				file.Skip(size_);
 			}
 		}
@@ -346,40 +353,16 @@ public:
 		return PinnedView(*this, size, true);
 	}
 
-	// Returns raw stream data at cursor position.
-	// Should only be used if absolutely necessary, for example for sample reading, or when used with a small chunk of the file retrieved by ReadChunk().
-	// Use GetPinnedView(size) whenever possible.
-	MPT_FILECURSOR_DEPRECATED mpt::const_byte_span GetRawData() const {
-		// deprecated because in case of an unseekable std::istream, this triggers caching of the whole file
-		return mpt::span(DataContainer().GetRawData() + streamPos, DataContainer().GetLength() - streamPos);
-	}
-	template <typename T>
-	MPT_FILECURSOR_DEPRECATED mpt::span<const T> GetRawData() const {
-		// deprecated because in case of an unseekable std::istream, this triggers caching of the whole file
-		return mpt::span(mpt::byte_cast<const T *>(DataContainer().GetRawData() + streamPos), DataContainer().GetLength() - streamPos);
-	}
-
-	mpt::byte_span GetRawWithOffset(std::size_t offset, mpt::byte_span dst) const {
-		return DataContainer().Read(streamPos + offset, dst);
-	}
 	template <typename Tspan>
 	Tspan GetRawWithOffset(std::size_t offset, Tspan dst) const {
 		return mpt::byte_cast<Tspan>(DataContainer().Read(streamPos + offset, mpt::byte_cast<mpt::byte_span>(dst)));
 	}
 
-	mpt::byte_span GetRaw(mpt::byte_span dst) const {
-		return DataContainer().Read(streamPos, dst);
-	}
 	template <typename Tspan>
 	Tspan GetRaw(Tspan dst) const {
 		return mpt::byte_cast<Tspan>(DataContainer().Read(streamPos, mpt::byte_cast<mpt::byte_span>(dst)));
 	}
 
-	mpt::byte_span ReadRaw(mpt::byte_span dst) {
-		mpt::byte_span result = DataContainer().Read(streamPos, dst);
-		streamPos += result.size();
-		return result;
-	}
 	template <typename Tspan>
 	Tspan ReadRaw(Tspan dst) {
 		Tspan result = mpt::byte_cast<Tspan>(DataContainer().Read(streamPos, mpt::byte_cast<mpt::byte_span>(dst)));

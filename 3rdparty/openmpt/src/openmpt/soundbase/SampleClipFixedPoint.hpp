@@ -19,9 +19,9 @@ namespace SC
 template <typename Tfixed, int fractionalBits, bool clipOutput>
 struct ClipFixed
 {
-	typedef Tfixed input_t;
-	typedef Tfixed output_t;
-	MPT_FORCEINLINE Tfixed operator()(Tfixed val)
+	using input_t = Tfixed;
+	using output_t = Tfixed;
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE Tfixed operator()(Tfixed val)
 	{
 		static_assert(fractionalBits >= 0 && fractionalBits <= sizeof(output_t) * 8 - 1);
 		if constexpr(clipOutput)

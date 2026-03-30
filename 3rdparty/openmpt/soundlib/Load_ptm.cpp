@@ -157,7 +157,7 @@ bool CSoundFile::ReadPTM(FileReader &file, ModLoadingFlags loadFlags)
 	{
 		return false;
 	}
-	if(!file.CanRead(mpt::saturate_cast<FileReader::off_t>(GetHeaderMinimumAdditionalSize(fileHeader))))
+	if(!file.CanRead(mpt::saturate_cast<FileReader::pos_type>(GetHeaderMinimumAdditionalSize(fileHeader))))
 	{
 		return false;
 	}
@@ -166,24 +166,23 @@ bool CSoundFile::ReadPTM(FileReader &file, ModLoadingFlags loadFlags)
 		return true;
 	}
 
-	InitializeGlobals(MOD_TYPE_PTM);
+	InitializeGlobals(MOD_TYPE_PTM, fileHeader.numChannels);
 
 	m_songName = mpt::String::ReadBuf(mpt::String::maybeNullTerminated, fileHeader.songname);
 
-	m_modFormat.formatName = U_("PolyTracker");
-	m_modFormat.type = U_("ptm");
+	m_modFormat.formatName = UL_("PolyTracker");
+	m_modFormat.type = UL_("ptm");
 	m_modFormat.madeWithTracker = MPT_UFORMAT("PolyTracker {}.{}")(fileHeader.versionHi.get(), mpt::ufmt::hex0<2>(fileHeader.versionLo.get()));
 	m_modFormat.charset = mpt::Charset::CP437;
 
+	SetMixLevels(MixLevels::CompatibleFT2);
 	m_SongFlags = SONG_ITCOMPATGXX | SONG_ITOLDEFFECTS;
-	m_nChannels = fileHeader.numChannels;
 	m_nSamples = std::min(static_cast<SAMPLEINDEX>(fileHeader.numSamples), static_cast<SAMPLEINDEX>(MAX_SAMPLES - 1));
 	ReadOrderFromArray(Order(), fileHeader.orders, fileHeader.numOrders, 0xFF, 0xFE);
 
 	// Reading channel panning
-	for(CHANNELINDEX chn = 0; chn < m_nChannels; chn++)
+	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 	{
-		ChnSettings[chn].Reset();
 		ChnSettings[chn].nPan = ((fileHeader.chnPan[chn] & 0x0F) << 4) + 4;
 	}
 
@@ -229,7 +228,7 @@ bool CSoundFile::ReadPTM(FileReader &file, ModLoadingFlags loadFlags)
 			if(b == 0)
 			{
 				row++;
-				rowBase += m_nChannels;
+				rowBase += GetNumChannels();
 				continue;
 			}
 			CHANNELINDEX chn = (b & 0x1F);
@@ -249,17 +248,16 @@ bool CSoundFile::ReadPTM(FileReader &file, ModLoadingFlags loadFlags)
 			if(b & 0x40)
 			{
 				const auto [command, param] = file.ReadArray<uint8, 2>();
-				m.command = command;
 				m.param = param;
 
 				static constexpr EffectCommand effTrans[] = { CMD_GLOBALVOLUME, CMD_RETRIG, CMD_FINEVIBRATO, CMD_NOTESLIDEUP, CMD_NOTESLIDEDOWN, CMD_NOTESLIDEUPRETRIG, CMD_NOTESLIDEDOWNRETRIG, CMD_REVERSEOFFSET };
-				if(m.command < 0x10)
+				if(command < 0x10)
 				{
 					// Beware: Effect letters are as in MOD, but portamento and volume slides behave like in S3M (i.e. fine slides share the same effect letters)
-					ConvertModCommand(m);
-				} else if(m.command < 0x10 + std::size(effTrans))
+					ConvertModCommand(m, command, param);
+				} else if(command < 0x10 + std::size(effTrans))
 				{
-					m.command = effTrans[m.command - 0x10];
+					m.command = effTrans[command - 0x10];
 				} else
 				{
 					m.command = CMD_NONE;
@@ -267,23 +265,26 @@ bool CSoundFile::ReadPTM(FileReader &file, ModLoadingFlags loadFlags)
 				switch(m.command)
 				{
 				case CMD_PANNING8:
-					// My observations of this weird command...
-					// 800...887 pan from hard left to hard right (whereas the low nibble seems to be ignored)
-					// 888...8FF do the same (so 888...88F is hard left, and 890 is identical to 810)
-					if(m.param >= 0x88) m.param &= 0x7F;
-					else if(m.param > 0x80) m.param = 0x80;
-					m.param &= 0x7F;
-					m.param = (m.param * 0xFF) / 0x7F;
+					// Don't be surprised about the strange formula, this is directly translated from original disassembly...
+					m.SetEffectCommand(CMD_S3MCMDEX, static_cast<ModCommand::PARAM>(0x80 | ((std::max<uint8>(m.param >> 3, 1u) - 1u) & 0x0F)));
 					break;
 				case CMD_GLOBALVOLUME:
 					m.param = std::min(m.param, uint8(0x40)) * 2u;
+					break;
+#ifdef MODPLUG_TRACKER
+				case CMD_OFFSET:
+				case CMD_REVERSEOFFSET:
+					if(m.instr && m.instr <= GetNumSamples() && Samples[m.instr].uFlags[CHN_16BIT])
+						m.param /= 2;
+					break;
+#endif  // MODPLUG_TRACKER
+				default:
 					break;
 				}
 			}
 			if(b & 0x80)
 			{
-				m.volcmd = VOLCMD_VOLUME;
-				m.vol = file.ReadUint8();
+				m.SetVolumeCommand(VOLCMD_VOLUME, file.ReadUint8());
 			}
 		}
 	}

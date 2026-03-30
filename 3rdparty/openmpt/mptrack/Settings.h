@@ -16,9 +16,11 @@
 
 #include "../common/misc_util.h"
 #include "mpt/mutex/mutex.hpp"
+#include "mpt/parse/parse.hpp"
 
 #include <map>
 #include <set>
+#include <utility>
 #include <variant>
 
 
@@ -246,10 +248,10 @@ template<> inline SettingValue ToSettingValue(const float &val) { return Setting
 template<> inline float FromSettingValue(const SettingValue &val) { return float(val.as<double>()); }
 
 template<> inline SettingValue ToSettingValue(const int64 &val) { return SettingValue(mpt::ufmt::dec(val), "int64"); }
-template<> inline int64 FromSettingValue(const SettingValue &val) { return ConvertStrTo<int64>(val.as<mpt::ustring>()); }
+template<> inline int64 FromSettingValue(const SettingValue &val) { return mpt::parse<int64>(val.as<mpt::ustring>()); }
 
 template<> inline SettingValue ToSettingValue(const uint64 &val) { return SettingValue(mpt::ufmt::dec(val), "uint64"); }
-template<> inline uint64 FromSettingValue(const SettingValue &val) { return ConvertStrTo<uint64>(val.as<mpt::ustring>()); }
+template<> inline uint64 FromSettingValue(const SettingValue &val) { return mpt::parse<uint64>(val.as<mpt::ustring>()); }
 
 template<> inline SettingValue ToSettingValue(const uint32 &val) { return SettingValue(int32(val)); }
 template<> inline uint32 FromSettingValue(const SettingValue &val) { return uint32(val.as<int32>()); }
@@ -400,15 +402,66 @@ inline bool operator == (const SettingPath &left, const SettingPath &right) { re
 inline bool operator != (const SettingPath &left, const SettingPath &right) { return left.compare(right) != 0; }
 
 
-class ISettingsBackend
+enum class CaseSensitivity
 {
-public:
-	virtual SettingValue ReadSetting(const SettingPath &path, const SettingValue &def) const = 0;
-	virtual void WriteSetting(const SettingPath &path, const SettingValue &val) = 0;
-	virtual void RemoveSetting(const SettingPath &path) = 0;
-	virtual void RemoveSection(const mpt::ustring &section) = 0;
+	Sensitive,
+	Insensitive,
+};
+
+enum class SettingsBatching
+{
+	Single,
+	Section,
+	All,
+};
+
+enum class Caching
+{
+	WriteBack,
+	WriteThrough,
+};
+
+template <SettingsBatching batching>
+class ISettingsBackend;
+
+template <>
+class ISettingsBackend<SettingsBatching::Single>
+{
 protected:
 	virtual ~ISettingsBackend() = default;
+public:
+	virtual CaseSensitivity GetCaseSensitivity() const = 0;
+	virtual SettingValue ReadSetting(const SettingPath &path, const SettingValue &def) const = 0;
+	virtual void RemoveSection(const mpt::ustring &section) = 0;
+	virtual void RemoveSetting(const SettingPath &path) = 0;
+	virtual void WriteSetting(const SettingPath &path, const SettingValue &val) = 0;
+	virtual void Sync(std::optional<Caching> sync_hint) = 0;
+};
+
+template <>
+class ISettingsBackend<SettingsBatching::Section>
+{
+protected:
+	virtual ~ISettingsBackend() = default;
+public:
+	virtual CaseSensitivity GetCaseSensitivity() const = 0;
+	virtual void InvalidateCache() = 0;
+	virtual SettingValue ReadSetting(const SettingPath &path, const SettingValue &def) const = 0;
+	virtual void WriteRemovedSections(const std::set<mpt::ustring> &removeSections) = 0;
+	virtual void WriteMultipleSettings(const std::map<SettingPath, std::optional<SettingValue>> &settings) = 0;
+	virtual void Sync(std::optional<Caching> sync_hint) = 0;
+};
+
+template <>
+class ISettingsBackend<SettingsBatching::All>
+{
+protected:
+	virtual ~ISettingsBackend() = default;
+public:
+	virtual CaseSensitivity GetCaseSensitivity() const = 0;
+	virtual void InvalidateCache() = 0;
+	virtual SettingValue ReadSetting(const SettingPath &path, const SettingValue &def) const = 0;
+	virtual void WriteAllSettings(const std::set<mpt::ustring> &removeSections, const std::map<SettingPath, std::optional<SettingValue>> &settings, std::optional<Caching> sync_hint) = 0;
 };
 
 
@@ -420,46 +473,53 @@ protected:
 	virtual ~ISettingChanged() = default;
 };
 
-enum SettingFlushMode
-{
-	SettingWriteBack    = 0,
-	SettingWriteThrough = 1,
-};
-
 // SettingContainer basically represents a frontend to 1 or 2 backends (e.g. ini files or registry subtrees) for a collection of configuration settings.
 // SettingContainer provides basic read/write access to individual setting. The values are cached and only flushed on destruction or explicit flushs.
 class SettingsContainer
 {
 
 public:
-	using SettingsMap = std::map<SettingPath,SettingState>;
+	using SettingsMap = std::map<SettingPath, std::optional<SettingState>>;
+	using SectionsSet = std::set<mpt::ustring>;
 	using SettingsListenerMap = std::map<SettingPath,std::set<ISettingChanged*>>;
-	void WriteSettings();
+	using BackendVariant = std::variant<std::monostate, ISettingsBackend<SettingsBatching::Single>*, ISettingsBackend<SettingsBatching::Section>*, ISettingsBackend<SettingsBatching::All>*>;
 private:
 	mutable SettingsMap map;
 	mutable SettingsListenerMap mapListeners;
-
+	mutable SectionsSet removedSections;
 private:
-	ISettingsBackend *backend;
+	BackendVariant backend;
+	std::optional<Caching> sync_fallback;
 private:
-	bool immediateFlush = false;
+	SettingsBatching BackendsSettingsBatching() const;
+	void BackendsInvalidateCache();
 	SettingValue BackendsReadSetting(const SettingPath &path, const SettingValue &def) const;
 	void BackendsWriteSetting(const SettingPath &path, const SettingValue &val);
 	void BackendsRemoveSetting(const SettingPath &path);
 	void BackendsRemoveSection(const mpt::ustring &section);
+	void BackendsWriteRemovedSections(const std::set<mpt::ustring> &removeSections);
+	void BackendsWriteMultipleSettings(const std::map<SettingPath, std::optional<SettingValue>> &settings);
+	void BackendsWriteAllSettings(const std::set<mpt::ustring> &removeSections, const std::map<SettingPath, std::optional<SettingValue>> &settings, std::optional<Caching> sync_hint);
+	void BackendsSync(std::optional<Caching> sync_hint);
 	void NotifyListeners(const SettingPath &path);
 	SettingValue ReadSetting(const SettingPath &path, const SettingValue &def) const;
 	bool IsDefaultSetting(const SettingPath &path) const;
-	void WriteSetting(const SettingPath &path, const SettingValue &val, SettingFlushMode flushMode);
+	void WriteSetting(const SettingPath &path, const SettingValue &val);
 	void ForgetSetting(const SettingPath &path);
 	void RemoveSetting(const SettingPath &path);
 	void RemoveSection(const mpt::ustring &section);
+	void WriteSettings(std::optional<Caching> sync_hint);
 private:
 	SettingsContainer(const SettingsContainer &other); // disable
 	SettingsContainer& operator = (const SettingsContainer &other); // disable
 public:
-	SettingsContainer(ISettingsBackend *backend);
-	void SetImmediateFlush(bool newImmediateFlush);
+	SettingsContainer(SettingsContainer &&other) = default; 
+public:
+	SettingsContainer(ISettingsBackend<SettingsBatching::Single> *backend, std::optional<Caching> sync_hint = std::nullopt);
+	SettingsContainer(ISettingsBackend<SettingsBatching::Section> *backend, std::optional<Caching> sync_hint = std::nullopt);
+	SettingsContainer(ISettingsBackend<SettingsBatching::All> *backend, std::optional<Caching> sync_hint = std::nullopt);
+public:
+	void InvalidateCache();
 	template <typename T>
 	T Read(const SettingPath &path, const T &def = T()) const
 	{
@@ -479,14 +539,14 @@ public:
 		return IsDefaultSetting(SettingPath(std::move(section), std::move(key)));
 	}
 	template <typename T>
-	void Write(const SettingPath &path, const T &val, SettingFlushMode flushMode = SettingWriteBack)
+	void Write(const SettingPath &path, const T &val)
 	{
-		WriteSetting(path, ToSettingValue<T>(val), flushMode);
+		WriteSetting(path, ToSettingValue<T>(val));
 	}
 	template <typename T>
-	void Write(mpt::ustring section, mpt::ustring key, const T &val, SettingFlushMode flushMode = SettingWriteBack)
+	void Write(mpt::ustring section, mpt::ustring key, const T &val)
 	{
-		WriteSetting(SettingPath(std::move(section), std::move(key)), ToSettingValue<T>(val), flushMode);
+		WriteSetting(SettingPath(std::move(section), std::move(key)), ToSettingValue<T>(val));
 	}
 	void Forget(const SettingPath &path)
 	{
@@ -496,7 +556,6 @@ public:
 	{
 		ForgetSetting(SettingPath(std::move(section), std::move(key)));
 	}
-	void ForgetAll();
 	void Remove(const SettingPath &path)
 	{
 		RemoveSetting(path);
@@ -509,7 +568,8 @@ public:
 	{
 		RemoveSection(section);
 	}
-	void Flush();
+	void SetSync(std::optional<Caching> sync_hint);
+	void Flush(std::optional<Caching> sync_hint = std::nullopt);
 	~SettingsContainer();
 
 public:
@@ -657,7 +717,7 @@ public:
 	}
 	bool IsDefault() const
 	{
-		conf.IsDefault(path);
+		return conf.IsDefault(path);
 	}
 	CachedSetting & Update()
 	{
@@ -680,51 +740,6 @@ public:
 	template<typename Trhs> CachedSetting & operator |= (const Trhs &rhs) { T tmp = *this; tmp |= rhs; *this = tmp; return *this; }
 	template<typename Trhs> CachedSetting & operator &= (const Trhs &rhs) { T tmp = *this; tmp &= rhs; *this = tmp; return *this; }
 	template<typename Trhs> CachedSetting & operator ^= (const Trhs &rhs) { T tmp = *this; tmp ^= rhs; *this = tmp; return *this; }
-};
-
-
-class IniFileSettingsBackend : public ISettingsBackend
-{
-private:
-	const mpt::PathString filename;
-private:
-	std::vector<std::byte> ReadSettingRaw(const SettingPath &path, const std::vector<std::byte> &def) const;
-	mpt::ustring ReadSettingRaw(const SettingPath &path, const mpt::ustring &def) const;
-	double ReadSettingRaw(const SettingPath &path, double def) const;
-	int32 ReadSettingRaw(const SettingPath &path, int32 def) const;
-	bool ReadSettingRaw(const SettingPath &path, bool def) const;
-	void WriteSettingRaw(const SettingPath &path, const std::vector<std::byte> &val);
-	void WriteSettingRaw(const SettingPath &path, const mpt::ustring &val);
-	void WriteSettingRaw(const SettingPath &path, double val);
-	void WriteSettingRaw(const SettingPath &path, int32 val);
-	void WriteSettingRaw(const SettingPath &path, bool val);
-	void RemoveSettingRaw(const SettingPath &path);
-	void RemoveSectionRaw(const mpt::ustring &section);
-	static mpt::winstring GetSection(const SettingPath &path);
-	static mpt::winstring GetKey(const SettingPath &path);
-public:
-	IniFileSettingsBackend(const mpt::PathString &filename);
-	~IniFileSettingsBackend() override;
-	void ConvertToUnicode(const mpt::ustring &backupTag = mpt::ustring());
-	virtual SettingValue ReadSetting(const SettingPath &path, const SettingValue &def) const override;
-	virtual void WriteSetting(const SettingPath &path, const SettingValue &val) override;
-	virtual void RemoveSetting(const SettingPath &path) override;
-	virtual void RemoveSection(const mpt::ustring &section) override;
-	const mpt::PathString& GetFilename() const { return filename; }
-};
-
-class IniFileSettingsContainer : private IniFileSettingsBackend, public SettingsContainer
-{
-public:
-	IniFileSettingsContainer(const mpt::PathString &filename);
-	~IniFileSettingsContainer() override;
-};
-
-class DefaultSettingsContainer : public IniFileSettingsContainer
-{
-public:
-	DefaultSettingsContainer();
-	~DefaultSettingsContainer() override;
 };
 
 
@@ -761,6 +776,26 @@ public:
 			conf.UnRegister(m_Handler, m_Path);
 			m_Registered = false;
 		}
+	}
+};
+
+
+template <typename Backend>
+class FileSettingsContainer
+	: private Backend
+	, public SettingsContainer
+{
+public:
+	template <typename ... Args>
+	FileSettingsContainer(mpt::PathString filename_, Args && ... args)
+		: Backend(std::move(filename_), std::forward<Args>(args) ...)
+		, SettingsContainer(this)
+	{
+		return;
+	}
+	~FileSettingsContainer()
+	{
+		return;
 	}
 };
 

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -57,6 +57,7 @@
     <RootNamespace>lame</RootNamespace>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
     <LatestTargetPlatformVersion>$([Microsoft.Build.Utilities.ToolLocationHelper]::GetLatestSDKTargetPlatformVersion('Windows', '10.0'))</LatestTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -189,85 +190,85 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>..\..\..\bin\debug\vs2017-win7-static\x86\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86\Debug\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\debug\vs2017-win7-static\x86\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86\Debug\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>..\..\..\bin\debug\vs2017-win7-static\amd64\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86_64\Debug\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\debug\vs2017-win7-static\amd64\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86_64\Debug\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\release\vs2017-win7-static\x86\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86\Release\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\release\vs2017-win7-static\x86\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86\Release\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\release\vs2017-win7-static\amd64\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86_64\Release\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\release\vs2017-win7-static\amd64\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86_64\Release\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Checked|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\checked\vs2017-win7-static\x86\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86\Checked\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\checked\vs2017-win7-static\x86\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86\Checked\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Checked|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\checked\vs2017-win7-static\amd64\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86_64\Checked\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\checked\vs2017-win7-static\amd64\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86_64\Checked\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugShared|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>..\..\..\bin\debug\vs2017-win7-shared\x86\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86\DebugShared\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\debug\vs2017-win7-shared\x86\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86\DebugShared\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugShared|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>..\..\..\bin\debug\vs2017-win7-shared\amd64\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86_64\DebugShared\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\debug\vs2017-win7-shared\amd64\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86_64\DebugShared\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseShared|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\release\vs2017-win7-shared\x86\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86\ReleaseShared\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\release\vs2017-win7-shared\x86\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86\ReleaseShared\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseShared|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\release\vs2017-win7-shared\amd64\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86_64\ReleaseShared\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\release\vs2017-win7-shared\amd64\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86_64\ReleaseShared\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CheckedShared|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\checked\vs2017-win7-shared\x86\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86\CheckedShared\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\checked\vs2017-win7-shared\x86\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86\CheckedShared\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CheckedShared|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\..\..\bin\checked\vs2017-win7-shared\amd64\</OutDir>
-    <IntDir>..\..\obj\vs2017win7\lame\x86_64\CheckedShared\</IntDir>
+    <OutDir>$(ProjectDir)..\..\..\bin\checked\vs2017-win7-shared\amd64\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\vs2017win7\lame\x86_64\CheckedShared\</IntDir>
     <TargetName>openmpt-lame</TargetName>
     <TargetExt>.dll</TargetExt>
   </PropertyGroup>
@@ -275,12 +276,13 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC_STATIC;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <MinimalRebuild>false</MinimalRebuild>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/wd4267 /wd4334 /wd6031 /wd6262 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -290,13 +292,16 @@
       <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
       <ImportLibrary>..\..\..\bin\debug\vs2017-win7-static\x86\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC_STATIC;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
@@ -311,13 +316,16 @@
       <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
       <ImportLibrary>..\..\..\bin\debug\vs2017-win7-static\amd64\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>NDEBUG;MPT_BUILD_MSVC_STATIC;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;NDEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>MaxSpeed</Optimization>
@@ -326,7 +334,6 @@
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/wd4267 /wd4334 /wd6031 /wd6262 %(AdditionalOptions)</AdditionalOptions>
@@ -336,15 +343,19 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <ImportLibrary>..\..\..\bin\release\vs2017-win7-static\x86\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>NDEBUG;MPT_BUILD_MSVC_STATIC;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;NDEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>MaxSpeed</Optimization>
@@ -353,7 +364,6 @@
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <FloatingPointModel>Fast</FloatingPointModel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/wd4267 /wd4334 /wd6031 /wd6262 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -362,15 +372,19 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <ImportLibrary>..\..\..\bin\release\vs2017-win7-static\amd64\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Checked|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_MSVC_STATIC;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Full</Optimization>
@@ -391,13 +405,16 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ImportLibrary>..\..\..\bin\checked\vs2017-win7-static\x86\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Checked|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_MSVC_STATIC;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Full</Optimization>
@@ -417,18 +434,22 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ImportLibrary>..\..\..\bin\checked\vs2017-win7-static\amd64\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugShared|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC_SHARED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <MinimalRebuild>false</MinimalRebuild>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/wd4267 /wd4334 /wd6031 /wd6262 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -437,13 +458,16 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ImportLibrary>..\..\..\bin\debug\vs2017-win7-shared\x86\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugShared|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC_SHARED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_DEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
@@ -457,13 +481,16 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ImportLibrary>..\..\..\bin\debug\vs2017-win7-shared\amd64\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseShared|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>NDEBUG;MPT_BUILD_MSVC_SHARED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;NDEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>MaxSpeed</Optimization>
@@ -472,7 +499,6 @@
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/wd4267 /wd4334 /wd6031 /wd6262 %(AdditionalOptions)</AdditionalOptions>
@@ -482,15 +508,19 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <ImportLibrary>..\..\..\bin\release\vs2017-win7-shared\x86\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseShared|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>NDEBUG;MPT_BUILD_MSVC_SHARED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;NDEBUG;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>MaxSpeed</Optimization>
@@ -499,7 +529,6 @@
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <FloatingPointModel>Fast</FloatingPointModel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/wd4267 /wd4334 /wd6031 /wd6262 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -508,15 +537,19 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <ImportLibrary>..\..\..\bin\release\vs2017-win7-shared\amd64\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='CheckedShared|Win32'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_MSVC_SHARED;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Full</Optimization>
@@ -537,13 +570,16 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ImportLibrary>..\..\..\bin\checked\vs2017-win7-shared\x86\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='CheckedShared|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>DEBUG;MPT_BUILD_MSVC_SHARED;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MPT_CHECK_CXX_IGNORE_PREPROCESSOR;DEBUG;MPT_BUILD_CHECKED;MPT_BUILD_MSVC;WIN32;NOMINMAX;_CRT_NONSTDC_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_WIN32_WINNT=0x0601;NTDDI_VERSION=0x06010000;HAVE_CONFIG_H;HAVE_MPGLIB;USE_LAYER_2;HAVE_XMMINTRIN_H;MIN_ARCH_SSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\..\include\lame\include;..\..\..\include\lame\mpglib;..\..\..\include\lame\libmp3lame;..\..\premake\inc\lame;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Full</Optimization>
@@ -563,7 +599,10 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ImportLibrary>..\..\..\bin\checked\vs2017-win7-shared\amd64\openmpt-lame.lib</ImportLibrary>
       <ModuleDefinitionFile>../../../include/lame/include/lame.def</ModuleDefinitionFile>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <ProjectReference>
+    </ProjectReference>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\include\lame\include\lame.h" />

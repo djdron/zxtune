@@ -11,22 +11,24 @@
 #include "mpt/base/math.hpp"
 #include "mpt/base/integer.hpp"
 #include "mpt/base/namespace.hpp"
-#include "mpt/crc/crc.hpp"
-#include "mpt/endian/integer.hpp"
+#include "mpt/chrono/system_clock.hpp"
 #include "mpt/mutex/mutex.hpp"
 #include "mpt/out_of_memory/out_of_memory.hpp"
 #include "mpt/random/engine.hpp"
 #include "mpt/random/engine_lcg.hpp"
 #include "mpt/random/random.hpp"
 
+#if !defined(MPT_LIBCXX_QUIRK_NO_CHRONO)
 #include <chrono>
+#endif // !MPT_LIBCXX_QUIRK_NO_CHRONO
 #include <limits>
 #include <memory>
 #include <random>
 #include <string>
+#include <vector>
 
 #include <cmath>
-#include <cstring>
+#include <cstddef>
 
 
 
@@ -38,62 +40,25 @@ inline constexpr uint32 DETERMINISTIC_RNG_SEED = 3141592653u; // pi
 
 
 
-template <typename T>
-struct default_radom_seed_hash {
-};
-
-template <>
-struct default_radom_seed_hash<uint8> {
-	using type = mpt::crc16;
-};
-
-template <>
-struct default_radom_seed_hash<uint16> {
-	using type = mpt::crc16;
-};
-
-template <>
-struct default_radom_seed_hash<uint32> {
-	using type = mpt::crc32c;
-};
-
-template <>
-struct default_radom_seed_hash<uint64> {
-	using type = mpt::crc64_jones;
-};
-
-
 class prng_random_device_time_seeder {
 
 public:
-	template <typename T>
-	inline T generate_seed() {
-		// Note: CRC is actually not that good a choice here, but it is simple and we
-		// already have an implementaion available. Better choices for mixing entropy
-		// would be a hash function with proper avalanche characteristics or a block
-		// or stream cipher with any pre-choosen random key and IV. The only aspect we
-		// really need here is whitening of the bits.
-		typename mpt::default_radom_seed_hash<T>::type hash;
-
+	inline std::vector<unsigned int> generate_seeds() {
+		std::vector<unsigned int> seeds;
 		{
-			uint64be time;
-			time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock().now().time_since_epoch()).count();
-			std::byte bytes[sizeof(time)];
-			std::memcpy(bytes, &time, sizeof(time));
-			hash(std::begin(bytes), std::end(bytes));
+			const uint64 time = mpt::chrono::default_system_clock::to_unix_nanoseconds(mpt::chrono::default_system_clock::now());
+			seeds.push_back(static_cast<uint32>(time >> 32));
+			seeds.push_back(static_cast<uint32>(time >> 0));
 		}
-#if !defined(MPT_COMPILER_QUIRK_CHRONO_NO_HIGH_RESOLUTION_CLOCK)
+#if !defined(MPT_LIBCXX_QUIRK_NO_CHRONO) && !defined(MPT_COMPILER_QUIRK_CHRONO_NO_HIGH_RESOLUTION_CLOCK)
 		// Avoid std::chrono::high_resolution_clock on Emscripten because availability is problematic in AudioWorklet context.
 		{
-			uint64be time;
-			time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock().now().time_since_epoch()).count();
-			std::byte bytes[sizeof(time)];
-			std::memcpy(bytes, &time, sizeof(time));
-			hash(std::begin(bytes), std::end(bytes));
+			const uint64 time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock().now().time_since_epoch()).count();
+			seeds.push_back(static_cast<uint32>(time >> 32));
+			seeds.push_back(static_cast<uint32>(time >> 0));
 		}
 #endif // !MPT_COMPILER_QUIRK_CHRONO_NO_HIGH_RESOLUTION_CLOCK
-
-		return static_cast<T>(hash.result());
+		return seeds;
 	}
 
 public:
@@ -113,7 +78,6 @@ private:
 	std::string token;
 #if !defined(MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE)
 	std::unique_ptr<std::random_device> prd;
-	bool rd_reliable{false};
 #endif // !MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE
 	std::unique_ptr<std::mt19937> rd_fallback;
 
@@ -123,24 +87,14 @@ public:
 private:
 	void init_fallback() {
 		if (!rd_fallback) {
+			std::vector<unsigned int> seeds = mpt::prng_random_device_time_seeder().generate_seeds();
 			if (token.length() > 0) {
-				uint64 seed_val = mpt::prng_random_device_time_seeder().generate_seed<uint64>();
-				std::vector<unsigned int> seeds;
-				seeds.push_back(static_cast<uint32>(seed_val >> 32));
-				seeds.push_back(static_cast<uint32>(seed_val >> 0));
-				for (std::size_t i = 0; i < token.length(); ++i) {
-					seeds.push_back(static_cast<unsigned int>(static_cast<unsigned char>(token[i])));
+				for (const char c : token) {
+					seeds.push_back(static_cast<unsigned int>(static_cast<unsigned char>(c)));
 				}
-				std::seed_seq seed(seeds.begin(), seeds.end());
-				rd_fallback = std::make_unique<std::mt19937>(seed);
-			} else {
-				uint64 seed_val = mpt::prng_random_device_time_seeder().generate_seed<uint64>();
-				unsigned int seeds[2];
-				seeds[0] = static_cast<uint32>(seed_val >> 32);
-				seeds[1] = static_cast<uint32>(seed_val >> 0);
-				std::seed_seq seed(seeds + 0, seeds + 2);
-				rd_fallback = std::make_unique<std::mt19937>(seed);
 			}
+			std::seed_seq seed(seeds.begin(), seeds.end());
+			rd_fallback = std::make_unique<std::mt19937>(seed);
 		}
 	}
 
@@ -149,13 +103,12 @@ public:
 #if !defined(MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE)
 		try {
 			prd = std::make_unique<std::random_device>();
-			rd_reliable = ((*prd).entropy() > 0.0);
+			if (!((*prd).entropy() > 0.0)) {
+				init_fallback();
+			}
 		} catch (mpt::out_of_memory e) {
 			mpt::rethrow_out_of_memory(e);
 		} catch (const std::exception &) {
-			rd_reliable = false;
-		}
-		if (!rd_reliable) {
 			init_fallback();
 		}
 #else  // MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE
@@ -167,26 +120,25 @@ public:
 #if !defined(MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE)
 		try {
 			prd = std::make_unique<std::random_device>(token);
-			rd_reliable = ((*prd).entropy() > 0.0);
+			if (!((*prd).entropy() > 0.0)) {
+				init_fallback();
+			}
 		} catch (mpt::out_of_memory e) {
 			mpt::rethrow_out_of_memory(e);
 		} catch (const std::exception &) {
-			rd_reliable = false;
-		}
-		if (!rd_reliable) {
 			init_fallback();
 		}
 #else  // MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE
 		init_fallback();
 #endif // !MPT_COMPILER_QUIRK_RANDOM_NO_RANDOM_DEVICE
 	}
-	static MPT_CONSTEXPRINLINE result_type min() {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static result_type min() {
 		return std::numeric_limits<result_type>::min();
 	}
-	static MPT_CONSTEXPRINLINE result_type max() {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static result_type max() {
 		return std::numeric_limits<result_type>::max();
 	}
-	static MPT_CONSTEXPRINLINE int result_bits() {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static int result_bits() {
 		return sizeof(result_type) * 8;
 	}
 	result_type operator()() {
@@ -224,13 +176,10 @@ public:
 					}
 				}
 			} catch (const std::exception &) {
-				rd_reliable = false;
 				init_fallback();
 			}
-		} else {
-			rd_reliable = false;
 		}
-		if (!rd_reliable) {
+		if (rd_fallback) {
 			// std::random_device is unreliable
 			//  XOR the generated random number with more entropy from the time-seeded
 			// PRNG.
@@ -277,13 +226,13 @@ public:
 		: rng(seeder::template generate_seed<typename Trng::state_type>()) {
 		return;
 	}
-	static MPT_CONSTEXPRINLINE result_type min() {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static result_type min() {
 		return std::numeric_limits<unsigned int>::min();
 	}
-	static MPT_CONSTEXPRINLINE result_type max() {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static result_type max() {
 		return std::numeric_limits<unsigned int>::max();
 	}
-	static MPT_CONSTEXPRINLINE int result_bits() {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static int result_bits() {
 		return sizeof(unsigned int) * 8;
 	}
 	result_type operator()() {
@@ -293,7 +242,7 @@ public:
 };
 
 
-using deterministc_random_device = mpt::prng_random_device<mpt::lcg_musl, prng_random_device_deterministic_seeder>;
+using deterministic_random_device = mpt::prng_random_device<mpt::lcg_musl, mpt::prng_random_device_deterministic_seeder>;
 
 
 } // namespace MPT_INLINE_NS

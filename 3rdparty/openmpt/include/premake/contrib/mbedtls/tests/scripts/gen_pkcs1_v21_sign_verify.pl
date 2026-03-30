@@ -1,5 +1,7 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 #
+# Copyright The Mbed TLS Contributors
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
 
 use strict;
 
@@ -18,10 +20,10 @@ sub get_val($$)
         next if($line !~ /^# $str/);
         last;
     }
-        
+
     while(my $line = <TEST_DATA>)
     {
-        last if($line eq "\r\n"); 
+        last if($line eq "\r\n");
         $val .= $line;
     }
 
@@ -66,7 +68,7 @@ while (my $line = <TEST_DATA>)
         print(":\"$val_salt\"");
         print(":\"$val_sig\":0");
         print("\n\n");
-    } 
+    }
     $cnt++;
 }
 close(TEST_DATA);

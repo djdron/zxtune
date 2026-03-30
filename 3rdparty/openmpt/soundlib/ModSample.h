@@ -11,6 +11,7 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -47,7 +48,7 @@ struct ModSample
 
 	union
 	{
-		SmpLength cues[9];
+		std::array<SmpLength, 9> cues;
 		OPLPatch adlib;
 	};
 
@@ -63,42 +64,46 @@ struct ModSample
 		return pData.pSample != nullptr && nLength != 0;
 	}
 
-	MPT_FORCEINLINE const void *samplev() const noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const void *samplev() const noexcept
 	{
 		return pData.pSample;
 	}
-	MPT_FORCEINLINE void *samplev() noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void *samplev() noexcept
 	{
 		return pData.pSample;
 	}
-	MPT_FORCEINLINE const std::byte *sampleb() const noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const std::byte *sampleb() const noexcept
 	{
 		return mpt::void_cast<const std::byte*>(pData.pSample);
 	}
-	MPT_FORCEINLINE std::byte *sampleb() noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE std::byte *sampleb() noexcept
 	{
 		return mpt::void_cast<std::byte*>(pData.pSample);
 	}
-	MPT_FORCEINLINE const int8 *sample8() const noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const int8 *sample8() const noexcept
 	{
 		MPT_ASSERT(GetElementarySampleSize() == sizeof(int8));
 		return pData.pSample8;
 	}
-	MPT_FORCEINLINE int8 *sample8() noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE int8 *sample8() noexcept
 	{
 		MPT_ASSERT(GetElementarySampleSize() == sizeof(int8));
 		return pData.pSample8;
 	}
-	MPT_FORCEINLINE const int16 *sample16() const noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const int16 *sample16() const noexcept
 	{
 		MPT_ASSERT(GetElementarySampleSize() == sizeof(int16));
 		return pData.pSample16;
 	}
-	MPT_FORCEINLINE int16 *sample16() noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE int16 *sample16() noexcept
 	{
 		MPT_ASSERT(GetElementarySampleSize() == sizeof(int16));
 		return pData.pSample16;
 	}
+	template <typename Tsample>
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const Tsample *sample() const noexcept = delete;
+	template <typename Tsample>
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE Tsample *sample() noexcept = delete;
 
 	// Return the size of one (elementary) sample in bytes.
 	uint8 GetElementarySampleSize() const noexcept { return (uFlags & CHN_16BIT) ? 2 : 1; }
@@ -123,7 +128,10 @@ struct ModSample
 	void Initialize(MODTYPE type = MOD_TYPE_NONE);
 
 	// Copies sample data from another sample slot and ensures that the 16-bit/stereo flags are set accordingly.
-	bool CopyWaveform(const ModSample &smpFrom);
+	bool CopyWaveform(const ModSample &smpFrom, SmpLength start = 0, SmpLength end = MAX_SAMPLE_LENGTH);
+
+	// Replace waveform with given data, keeping the currently chosen format of the sample slot.
+	void ReplaceWaveform(void *newWaveform, const SmpLength newLength, CSoundFile &sndFile);
 
 	// Allocate sample based on a ModSample's properties.
 	// Returns number of bytes allocated, 0 on failure.
@@ -140,8 +148,15 @@ struct ModSample
 	void SetLoop(SmpLength start, SmpLength end, bool enable, bool pingpong, CSoundFile &sndFile);
 	// Set sustain loop points and update loop wrap-around buffer
 	void SetSustainLoop(SmpLength start, SmpLength end, bool enable, bool pingpong, CSoundFile &sndFile);
+	// Retrieve the normal loop points
+	std::pair<SmpLength, SmpLength> GetLoop() const noexcept { return std::make_pair(nLoopStart, nLoopEnd); }
+	// Retrieve the sustain loop points
+	std::pair<SmpLength, SmpLength> GetSustainLoop() const noexcept { return std::make_pair(nSustainStart, nSustainEnd); }
 	// Update loop wrap-around buffer
 	void PrecomputeLoops(CSoundFile &sndFile, bool updateChannels = true);
+
+	// Propagate loop point changes to player
+	bool UpdateLoopPointsInActiveChannels(CSoundFile &sndFile);
 
 	constexpr bool HasLoop() const noexcept { return uFlags[CHN_LOOP] && nLoopEnd > nLoopStart; }
 	constexpr bool HasSustainLoop() const noexcept { return uFlags[CHN_SUSTAINLOOP] && nSustainEnd > nSustainStart; }
@@ -160,11 +175,41 @@ struct ModSample
 	// Transpose the sample by amount specified in octaves (i.e. amount=1 transposes one octave up)
 	void Transpose(double amount);
 
+	// Check if the sample has any valid cue points
+	bool HasAnyCuePoints() const;
 	// Check if the sample's cue points are the default cue point set.
 	bool HasCustomCuePoints() const;
 	void SetDefaultCuePoints();
+	// Set cue points so that they are suitable for regular offset command extension
+	void Set16BitCuePoints();
+	void RemoveAllCuePoints();
 
 	void SetAdlib(bool enable, OPLPatch patch = OPLPatch{{}});
 };
+
+template <>
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const int8 *ModSample::sample<int8>() const noexcept
+{
+	MPT_ASSERT(GetElementarySampleSize() == sizeof(int8));
+	return pData.pSample8;
+}
+template <>
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE int8 *ModSample::sample<int8>() noexcept
+{
+	MPT_ASSERT(GetElementarySampleSize() == sizeof(int8));
+	return pData.pSample8;
+}
+template <>
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE const int16 *ModSample::sample<int16>() const noexcept
+{
+	MPT_ASSERT(GetElementarySampleSize() == sizeof(int16));
+	return pData.pSample16;
+}
+template <>
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE int16 *ModSample::sample<int16>() noexcept
+{
+	MPT_ASSERT(GetElementarySampleSize() == sizeof(int16));
+	return pData.pSample16;
+}
 
 OPENMPT_NAMESPACE_END

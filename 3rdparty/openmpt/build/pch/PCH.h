@@ -17,9 +17,9 @@
 #include <afxcmn.h>
 #include <afxcview.h>
 #include <afxdlgs.h>
-#ifdef MPT_MFC_FULL
+#ifndef _AFX_NO_MFC_CONTROLS_IN_DIALOGS
 #include <afxlistctrl.h>
-#endif // MPT_MFC_FULL
+#endif // !_AFX_NO_MFC_CONTROLS_IN_DIALOGS
 #include <afxole.h>
 #endif // MPT_WITH_MFC
 #endif // MODPLUG_TRACKER
@@ -45,9 +45,8 @@
 #include "mpt/base/span.hpp"
 #include "mpt/base/utility.hpp"
 #include "mpt/crc/crc.hpp"
-#include "mpt/crypto/hash.hpp"
-#include "mpt/crypto/jwk.hpp"
-#include "mpt/exception_text/exception_text.hpp"
+#include "mpt/exception/exception.hpp"
+#include "mpt/exception/exception_text.hpp"
 #include "mpt/io/base.hpp"
 #include "mpt/io/io.hpp"
 #include "mpt/io/io_span.hpp"
@@ -59,6 +58,8 @@
 #include "mpt/io_read/filedata.hpp"
 #include "mpt/io_read/filereader.hpp"
 #include "mpt/out_of_memory/out_of_memory.hpp"
+#include "mpt/string/types.hpp"
+#include "mpt/string/utility.hpp"
 #include "mpt/system_error/system_error.hpp"
 #if defined(MODPLUG_TRACKER)
 #include "mpt/uuid/guid.hpp"
@@ -76,14 +77,15 @@
 #include "../common/mptBaseUtils.h"
 #include "../common/mptString.h"
 #include "../common/mptStringFormat.h"
-#include "../common/mptStringParse.h"
 #include "../common/mptPathString.h"
 #include "../common/Logging.h"
 #include "../common/misc_util.h"
 
 #include "../common/ComponentManager.h"
 #include "../common/FileReader.h"
+#include "../common/mptCPU.h"
 #include "../common/mptFileIO.h"
+#include "../common/mptFileType.h"
 #include "../common/mptRandom.h"
 #include "../common/mptStringBuffer.h"
 #include "../common/mptTime.h"
@@ -91,7 +93,6 @@
 #include "../common/serialization_utils.h"
 #include "../common/version.h"
 
-#include "../misc/mptCPU.h"
 #include "../misc/mptLibrary.h"
 #include "../misc/mptMutex.h"
 #include "../misc/mptOS.h"
@@ -151,7 +152,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 
 #endif // MPT_BUILD_ENABLE_PCH

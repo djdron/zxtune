@@ -4,6 +4,7 @@
 
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "openmpt/all/PlatformFixes.hpp"
 
 #include "SoundDeviceWaveout.hpp"
 
@@ -11,6 +12,7 @@
 #include "SoundDeviceUtilities.hpp"
 
 #include "mpt/base/detect.hpp"
+#include "mpt/base/macros.hpp"
 #include "mpt/base/numeric.hpp"
 #include "mpt/base/saturate_round.hpp"
 #include "mpt/format/message_macros.hpp"
@@ -18,7 +20,7 @@
 #include "mpt/parse/parse.hpp"
 #include "mpt/string/buffer.hpp"
 #include "mpt/string/types.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 #include "openmpt/base/Types.hpp"
 #include "openmpt/logging/Logger.hpp"
 #include "openmpt/soundbase/SampleFormat.hpp"
@@ -87,7 +89,7 @@ CWaveDevice::~CWaveDevice()
 
 int CWaveDevice::GetDeviceIndex() const
 {
-	return mpt::ConvertStringTo<int>(GetDeviceInternalID());
+	return mpt::parse<int>(GetDeviceInternalID());
 }
 
 
@@ -108,7 +110,7 @@ SoundDevice::Caps CWaveDevice::InternalGetDeviceCaps()
 	caps.CanDriverPanel = false;
 	caps.HasInternalDither = false;
 	caps.ExclusiveModeDescription = MPT_USTRING("Use direct mode");
-	if(GetSysInfo().IsWine)
+	if(GetSysInfo().IsWindowsWine())
 	{
 		caps.DefaultSettings.sampleFormat = SampleFormat::Int16;
 	} else if(GetSysInfo().WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version::WinVista))
@@ -381,7 +383,7 @@ bool CWaveDevice::CheckResult(MMRESULT result)
 		m_Failed = true;
 		TCHAR errortext[MAXERRORLENGTH + 1] = {};
 		waveOutGetErrorText(result, errortext, MAXERRORLENGTH);
-		SendDeviceMessage(LogError, MPT_UFORMAT_MESSAGE("WaveOut error: 0x{}: {}")(mpt::format<mpt::ustring>::hex0<8>(result), mpt::convert<mpt::ustring>(static_cast<mpt::winstring>(mpt::ReadWinBuf(errortext)))));
+		SendDeviceMessage(LogError, MPT_UFORMAT_MESSAGE("WaveOut error: 0x{}: {}")(mpt::format<mpt::ustring>::hex0<8>(result), mpt::transcode<mpt::ustring>(static_cast<mpt::winstring>(mpt::ReadWinBuf(errortext)))));
 	}
 	RequestClose();
 	return false;
@@ -399,7 +401,7 @@ bool CWaveDevice::CheckResult(MMRESULT result, DWORD param)
 		m_Failed = true;
 		TCHAR errortext[MAXERRORLENGTH + 1] = {};
 		waveOutGetErrorText(result, errortext, MAXERRORLENGTH);
-		SendDeviceMessage(LogError, MPT_UFORMAT_MESSAGE("WaveOut error: 0x{} (param 0x{}): {}")(mpt::format<mpt::ustring>::hex0<8>(result), mpt::format<mpt::ustring>::hex0<8>(param), mpt::convert<mpt::ustring>(static_cast<mpt::winstring>(mpt::ReadWinBuf(errortext)))));
+		SendDeviceMessage(LogError, MPT_UFORMAT_MESSAGE("WaveOut error: 0x{} (param 0x{}): {}")(mpt::format<mpt::ustring>::hex0<8>(result), mpt::format<mpt::ustring>::hex0<8>(param), mpt::transcode<mpt::ustring>(static_cast<mpt::winstring>(mpt::ReadWinBuf(errortext)))));
 	}
 	RequestClose();
 	return false;
@@ -419,10 +421,10 @@ void CWaveDevice::InternalFillAudioBuffer()
 	ULONG oldBuffersPending = InterlockedExchangeAdd(&m_nBuffersPending, 0);  // read
 	ULONG nLatency = oldBuffersPending * m_nWaveBufferSize;
 
-	ULONG nBytesWritten = 0;
+	[[maybe_unused]] ULONG nBytesWritten = 0;
 	while((oldBuffersPending < m_nPreparedHeaders) && !m_Failed)
 	{
-#if(_WIN32_WINNT >= 0x0600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		DWORD oldFlags = InterlockedOr(interlocked_access(&m_WaveBuffers[m_nWriteBuffer].dwFlags), 0);
 #else
 		DWORD oldFlags = _InterlockedOr(interlocked_access(&m_WaveBuffers[m_nWriteBuffer].dwFlags), 0);
@@ -461,7 +463,7 @@ void CWaveDevice::InternalFillAudioBuffer()
 		CallbackLockedAudioReadPrepare(m_nWaveBufferSize / bytesPerFrame, nLatency / bytesPerFrame);
 		CallbackLockedAudioProcessVoid(m_WaveBuffers[m_nWriteBuffer].lpData, nullptr, m_nWaveBufferSize / bytesPerFrame);
 		nBytesWritten += m_nWaveBufferSize;
-#if(_WIN32_WINNT >= 0x0600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		InterlockedAnd(interlocked_access(&m_WaveBuffers[m_nWriteBuffer].dwFlags), ~static_cast<DWORD>(WHDR_INQUEUE | WHDR_DONE));
 #else
 		_InterlockedAnd(interlocked_access(&m_WaveBuffers[m_nWriteBuffer].dwFlags), ~static_cast<DWORD>(WHDR_INQUEUE | WHDR_DONE));
@@ -579,7 +581,7 @@ int64 CWaveDevice::InternalGetStreamPositionFrames() const
 void CWaveDevice::HandleWaveoutDone(WAVEHDR *hdr)
 {
 	MPT_SOUNDDEV_TRACE_SCOPE();
-#if(_WIN32_WINNT >= 0x0600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 	DWORD flags = InterlockedOr(interlocked_access(&hdr->dwFlags), 0);
 #else
 	DWORD flags = _InterlockedOr(interlocked_access(&hdr->dwFlags), 0);
@@ -650,10 +652,14 @@ SoundDevice::Statistics CWaveDevice::GetStatistics() const
 
 std::vector<SoundDevice::Info> CWaveDevice::EnumerateDevices(ILogger &logger, SoundDevice::SysInfo sysInfo)
 {
+#if 0
 	auto GetLogger = [&]() -> ILogger &
 	{
 		return logger;
 	};
+#else
+	MPT_UNUSED(logger);
+#endif
 	MPT_SOUNDDEV_TRACE_SCOPE();
 	std::vector<SoundDevice::Info> devices;
 	UINT numDevs = waveOutGetNumDevs();
@@ -667,7 +673,7 @@ std::vector<SoundDevice::Info> CWaveDevice::EnumerateDevices(ILogger &logger, So
 		WAVEOUTCAPS woc = {};
 		if(waveOutGetDevCaps((index == 0) ? WAVE_MAPPER : (index - 1), &woc, sizeof(woc)) == MMSYSERR_NOERROR)
 		{
-			info.name = mpt::convert<mpt::ustring>(static_cast<mpt::winstring>(mpt::ReadWinBuf(woc.szPname)));
+			info.name = mpt::transcode<mpt::ustring>(static_cast<mpt::winstring>(mpt::ReadWinBuf(woc.szPname)));
 			info.extraData[MPT_USTRING("DriverID")] = MPT_UFORMAT_MESSAGE("{}:{}")(mpt::format<mpt::ustring>::hex0<4>(woc.wMid), mpt::format<mpt::ustring>::hex0<4>(woc.wPid));
 			info.extraData[MPT_USTRING("DriverVersion")] = MPT_UFORMAT_MESSAGE("{}.{}")(mpt::format<mpt::ustring>::dec((static_cast<uint32>(woc.vDriverVersion) >> 24) & 0xff), mpt::format<mpt::ustring>::dec((static_cast<uint32>(woc.vDriverVersion) >> 0) & 0xff));
 		}

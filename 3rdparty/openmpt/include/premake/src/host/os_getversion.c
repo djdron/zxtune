@@ -1,7 +1,7 @@
 /**
  * \file   os_getversioninfo.c
  * \brief  Retrieve operating system version information.
- * \author Copyright (c) 2011-2012 Jason Perkins and the Premake project
+ * \author Copyright (c) 2011-2012 Jess Perkins and the Premake project
  */
 
 #include "premake.h"
@@ -55,7 +55,9 @@ int os_getversion(lua_State* L)
 
 #if defined(PLATFORM_WINDOWS)
 
+#ifdef _MSC_VER
 #pragma comment(lib, "version.lib")
+#endif
 
 int getKernelVersion(struct OsVersionInfo* info)
 {
@@ -108,6 +110,7 @@ int getversion(struct OsVersionInfo* info)
 
 #elif defined(PLATFORM_MACOSX)
 
+#include <CoreFoundation/CoreFoundation.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #include <string.h>
@@ -115,76 +118,152 @@ int getversion(struct OsVersionInfo* info)
 
 int getversion(struct OsVersionInfo* info)
 {
+	const char * propertyListFilePath = "/System/Library/CoreServices/SystemVersion.plist";
+	Boolean fallback = TRUE;
+
 	info->description = "Mac OS";
+	info->majorversion = 10;
 
-	int mib[] = { CTL_KERN, KERN_OSRELEASE };
-	size_t len;
-	sysctl(mib, sizeof(mib) / sizeof(mib[0]), NULL, &len, NULL, 0);
-
-	char kernel_version[len];
-	sysctl(mib, sizeof(mib) / sizeof(mib[0]), kernel_version, &len, NULL, 0);
-
-	int kern_major;
-	int kern_minor;
-	sscanf(kernel_version, "%d.%d.%*d", &kern_major, &kern_minor);
-	switch (kern_major)
+	if (access (propertyListFilePath, R_OK) == 0)
 	{
-		case 8:
-			info->description = "Mac OS X Tiger";
-			info->majorversion = 10;
-			info->minorversion = 4;
-			info->revision = kern_minor;
+		CFPropertyListFormat format;
+		CFErrorRef errorDescriptor = NULL;
+		CFStringRef stringRef = NULL;
+		CFURLRef urlRef = NULL;
+		CFReadStreamRef streamRef = NULL;
+		CFPropertyListRef propertyListRef = NULL;
+		CFTypeID typeId = 0;
+		Boolean result = FALSE;
+
+		stringRef = CFStringCreateWithCStringNoCopy(
+						kCFAllocatorDefault,
+						propertyListFilePath,
+						kCFStringEncodingASCII,
+						kCFAllocatorNull);
+		if (stringRef == NULL)
+		{
+			goto getversion_macosx_cleanup;
+		};
+
+		urlRef = CFURLCreateWithFileSystemPath(
+						kCFAllocatorDefault,
+						stringRef,
+						kCFURLPOSIXPathStyle,
+						false);
+		if (urlRef == NULL)
+		{
+			goto getversion_macosx_cleanup;
+		}
+
+		streamRef = CFReadStreamCreateWithFile(
+						kCFAllocatorDefault,
+						urlRef);
+		if (streamRef == NULL)
+		{
+			goto getversion_macosx_cleanup;
+		}
+
+		result = CFReadStreamOpen (streamRef);
+
+		if (result == FALSE)
+		{
+			goto getversion_macosx_cleanup;
+		}
+
+		propertyListRef = CFPropertyListCreateWithStream(
+						kCFAllocatorDefault,
+						streamRef,
+						0,
+						kCFPropertyListImmutable,
+						&format,
+						&errorDescriptor);
+
+		CFReadStreamClose (streamRef);
+
+		if (!(propertyListRef && CFPropertyListIsValid(propertyListRef, format)) || errorDescriptor)
+		{
+			goto getversion_macosx_cleanup;
+		}
+
+		typeId = CFGetTypeID(propertyListRef);
+		if (typeId == CFDictionaryGetTypeID())
+		{
+			const CFDictionaryRef dictionaryRef = (const CFDictionaryRef)propertyListRef;
+			char versionString[128];
+			CFStringRef stringValueRef = NULL;
+			if (CFDictionaryGetValueIfPresent(dictionaryRef, CFSTR("ProductVersion"), (const void **)(&stringValueRef)))
+			{
+				CFStringGetCString(stringValueRef, &versionString[0], (CFIndex)sizeof (versionString), kCFStringEncodingASCII);
+				sscanf (versionString, "%d.%d.%d", &info->majorversion, &info->minorversion, &info->revision);
+
+				fallback = FALSE;
+			}
+		}
+
+getversion_macosx_cleanup:
+
+		if (propertyListRef) CFRelease (propertyListRef);
+		if (streamRef) CFRelease (streamRef);
+		if (urlRef) CFRelease (urlRef);
+		if (stringRef) CFRelease (stringRef);
+	}
+
+	if (fallback == TRUE)
+	{
+		int mib[] = { CTL_KERN, KERN_OSRELEASE };
+		size_t len;
+		sysctl(mib, sizeof(mib) / sizeof(mib[0]), NULL, &len, NULL, 0);
+
+		char kernel_version[len];
+		sysctl(mib, sizeof(mib) / sizeof(mib[0]), kernel_version, &len, NULL, 0);
+
+		int kern_major;
+		int kern_minor;
+		sscanf(kernel_version, "%d.%d.%*d", &kern_major, &kern_minor);
+
+		info->minorversion = kern_major - 4;
+		info->revision = kern_minor;
+	}
+
+	if (info->majorversion == 10)
+	{
+		switch (info->minorversion)
+		{
+			case 4:
+				info->description = "Mac OS X Tiger";
 			break;
-		case 9:
-			info->description = "Mac OS X Leopard";
-			info->majorversion = 10;
-			info->minorversion = 5;
-			info->revision = kern_minor;
+			case 5:
+				info->description = "Mac OS X Leopard";
 			break;
-		case 10:
-			info->description = "Mac OS X Snow Leopard";
-			info->majorversion = 10;
-			info->minorversion = 6;
-			info->revision = kern_minor;
+			case 6:
+				info->description = "Mac OS X Snow Leopard";
 			break;
-		case 11:
-			info->description = "OS X Lion";
-			info->majorversion = 10;
-			info->minorversion = 7;
-			info->revision = kern_minor;
+			case 7:
+				info->description = "OS X Lion";
 			break;
-		case 12:
-			info->description = "OS X Mountain Lion";
-			info->majorversion = 10;
-			info->minorversion = 8;
-			info->revision = kern_minor;
+			case 8:
+				info->description = "OS X Mountain Lion";
 			break;
-		case 13:
-			info->description = "OS X Mavericks";
-			info->majorversion = 10;
-			info->minorversion = 9;
-			info->revision = kern_minor;
+			case 9:
+				info->description = "OS X Mavericks";
+			case 10:
+				info->description = "OS X Yosemite";
+			case 11:
+				info->description = "OS X El Capitan";
 			break;
-		case 14:
-			info->description = "OS X Yosemite";
-			info->majorversion = 10;
-			info->minorversion = 10;
-			info->revision = kern_minor;
+			case 12:
+				info->description = "macOS Sierra";
 			break;
-		case 15:
-			info->description = "OS X El Capitan";
-			info->majorversion = 10;
-			info->minorversion = 11;
-			info->revision = kern_minor;
+			case 13:
+				info->description = "macOS High Sierra";
 			break;
-		case 16:
-			info->description = "macOS Sierra";
-			info->majorversion = 10;
-			info->minorversion = 12;
-			info->revision = kern_minor;
+			case 14:
+				info->description = "macOS Mojave";
 			break;
-		default:
+			case 15:
+				info->description = "macOS Catalina";
 			break;
+		}
 	}
 
 	return 1;
@@ -193,7 +272,7 @@ int getversion(struct OsVersionInfo* info)
 
 /*************************************************************/
 
-#elif defined(PLATFORM_BSD) || defined(PLATFORM_LINUX) || defined(PLATFORM_SOLARIS) || defined(PLATFORM_HURD) || defined(PLATFORM_HAIKU)
+#elif defined(PLATFORM_BSD) || defined(PLATFORM_LINUX) || defined(PLATFORM_SOLARIS) || defined(PLATFORM_HURD) || defined(PLATFORM_HAIKU) || defined(PLATFORM_COSMO)
 
 #include <string.h>
 #include <sys/utsname.h>
@@ -207,23 +286,17 @@ int getversion(struct OsVersionInfo* info)
 	info->minorversion = 0;
 	info->revision = 0;
 
-	if (uname(&u))
+	// uname returns -1 on error, and returns 0 on success for most platforms
+	// except Solaris, which returns non-negative.
+	if (uname(&u) < 0)
 	{
 		// error
-		info->description = PLATFORM_STRING;
+		info->description = PLATFORM_OS;
 		return 0;
 	}
 
-#if __GLIBC__
-	// When using glibc, info->description gets set to u.sysname,
-	// but it isn't passed out of this function, so we need to copy
-	// the string.
-	info->description = malloc(strlen(u.sysname) + 1);
-	strcpy((char*)info->description, u.sysname);
+	info->description = strdup(u.sysname);
 	info->isalloc = 1;
-#else
-	info->description = u.sysname;
-#endif
 
 	if ((ver = strtok(u.release, ".-")) != NULL)
 	{

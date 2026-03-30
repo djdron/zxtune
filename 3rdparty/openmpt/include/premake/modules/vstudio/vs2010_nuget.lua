@@ -1,7 +1,7 @@
 --
 -- vs2010_nuget.lua
 -- Generate a NuGet packages.config file.
--- Copyright (c) Jason Perkins and the Premake project
+-- Copyright (c) Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -94,31 +94,30 @@
 					return
 				end
 
-				if p.project.isdotnet(prj) then
-					-- Using the local file listing for "packageEntries" might
-					-- not exactly match what we would get from the API but this
-					-- doesn't matter. At the moment of writing, we're only
-					-- interested in knowing what DLL files the package
-					-- contains.
+				-- Using the local file listing for "packageEntries" might
+				-- not exactly match what we would get from the API but this
+				-- doesn't matter. At the moment of writing, we're only
+				-- interested in knowing what DLL files the package
+				-- contains.
 
-					packageAPIInfo.packageEntries = {}
+				packageAPIInfo.packageEntries = {}
 
-					for _, file in ipairs(os.matchfiles(path.translate(path.join(versionPath, "**")))) do
-						local extension = path.getextension(file)
+				for _, file in ipairs(os.matchfiles(path.translate(path.join(versionPath, "**")))) do
+					local extension = path.getextension(file)
 
-						if extension ~= ".nupkg" and extension ~= ".sha512" then
-							table.insert(packageAPIInfo.packageEntries, path.translate(path.getrelative(versionPath, file)))
-						end
-					end
-
-					if #packageAPIInfo.packageEntries == 0 then
-						return
-					end
-
-					if nuspec:match("<frameworkAssemblies>(.+)</frameworkAssemblies>") then
-						p.warn("NuGet package '%s' may depend on .NET Framework assemblies - package dependencies are currently unimplemented", id)
+					if extension ~= ".nupkg" and extension ~= ".sha512" then
+						table.insert(packageAPIInfo.packageEntries, path.translate(path.getrelative(versionPath, file)))
 					end
 				end
+
+				if #packageAPIInfo.packageEntries == 0 then
+					return
+				end
+
+				if nuspec:match("<frameworkAssemblies>(.+)</frameworkAssemblies>") then
+					p.warn("NuGet package '%s' may depend on .NET Framework assemblies - package dependencies are currently unimplemented", id)
+				end
+
 
 				if nuspec:match("<dependencies>(.+)</dependencies>") then
 					p.warn("NuGet package '%s' may depend on other packages - package dependencies are currently unimplemented", id)
@@ -225,11 +224,30 @@
 
 			for _, page in ipairs(response.items) do
 				if not page.items or #page.items == 0 then
-					p.error("Failed to understand NuGet API response (got a page with no items for package '%s')", id)
-				end
+					local itemResponse, err, code = http.get(page["@id"])
+					if err ~= "OK" then
+						if code == 404 then
+							p.error("NuGet package '%s' for project '%s' couldn't be found in the repository", id, prj.name)
+						else
+							p.error("NuGet API error (%d)\n%s", code, err)
+						end
+					end
 
-				for _, item in ipairs(page.items) do
-					table.insert(items, item)
+					itemResponse, err = json.decode(itemResponse)
+					if not itemResponse then
+						p.error("Failed to decode NuGet API response (%s)", err)
+					end
+					if not itemResponse.items or #itemResponse.items == 0 then
+						p.error("Failed to understand NuGet API response (got a page with no items for package '%s')", id)
+					end
+
+					for _, item in ipairs(itemResponse.items) do
+						table.insert(items, item)
+					end
+				else
+					for _, item in ipairs(page.items) do
+						table.insert(items, item)
+					end
 				end
 			end
 
@@ -283,33 +301,30 @@
 					packageAPIInfo.verbatimVersion = response.verbatimVersion
 					packageAPIInfo.version = response.version
 
-					-- C++ packages don't have this, but C# packages have a
 					-- packageEntries field that lists all the files in the
 					-- package. We need to look at this to figure out what
 					-- DLLs to reference in the project file.
 
-					if prj.language == "C#" and not response.packageEntries then
+					if not response.packageEntries then
 						p.error("NuGet package '%s' version '%s' has no file listing. This package might be too old to be using this API or it might be a C++ package instead of a .NET Framework package.", id, response.version)
 					end
 
-					if prj.language == "C#" then
-						packageAPIInfo.packageEntries = {}
+					packageAPIInfo.packageEntries = {}
 
-						for _, item in ipairs(response.packageEntries) do
-							if not item.fullName then
-								p.error("Failed to understand NuGet API response (package '%s' version '%s' packageEntry has no fullName)", id, version)
-							end
-
-							table.insert(packageAPIInfo.packageEntries, path.translate(item.fullName))
+					for _, item in ipairs(response.packageEntries) do
+						if not item.fullName then
+							p.error("Failed to understand NuGet API response (package '%s' version '%s' packageEntry has no fullName)", id, version)
 						end
 
-						if #packageAPIInfo.packageEntries == 0 then
-							p.error("NuGet package '%s' file listing is empty", id)
-						end
+						table.insert(packageAPIInfo.packageEntries, path.translate(item.fullName))
+					end
 
-						if response.frameworkAssemblyGroup then
-							p.warn("NuGet package '%s' may depend on .NET Framework assemblies - package dependencies are currently unimplemented", id)
-						end
+					if #packageAPIInfo.packageEntries == 0 then
+						p.error("NuGet package '%s' file listing is empty", id)
+					end
+
+					if response.frameworkAssemblyGroup then
+						p.warn("NuGet package '%s' may depend on .NET Framework assemblies - package dependencies are currently unimplemented", id)
 					end
 
 					if response.dependencyGroups then
@@ -414,7 +429,7 @@
 
 	function nuget2010.NuGetHasHTTP(prj)
 		if not http and #prj.nuget > 0 and not nuget2010.supportsPackageReferences(prj) then
-			p.error("Premake was compiled with --no-curl, but Curl is required for NuGet support (project '%s' is referencing NuGet packages)", prj.name)
+			p.error("Premake was compiled with --curl-src=none, but Curl is required for NuGet support (project '%s' is referencing NuGet packages)", prj.name)
 		end
 	end
 

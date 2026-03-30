@@ -10,7 +10,6 @@
 #include "stdafx.h"
 
 #include "LFOPluginEditor.h"
-#include "../Mptrack.h"
 #include "../UpdateHints.h"
 #include "../../soundlib/Sndfile.h"
 #include "../../soundlib/MIDIEvents.h"
@@ -40,7 +39,7 @@ END_MESSAGE_MAP()
 
 void LFOPluginEditor::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	CAbstractVstEditor::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(LFOPluginEditor)
 	DDX_Control(pDX, IDC_COMBO1, m_plugParam);
 	DDX_Control(pDX, IDC_COMBO2, m_outPlug);
@@ -76,7 +75,7 @@ bool LFOPluginEditor::OpenEditor(CWnd *parent)
 		s += mpt::ToCString(mpt::Charset::UTF8, MIDIEvents::MidiCCNames[i]);
 		m_midiCC.AddString(s);
 	}
-	if(m_lfoPlugin.m_outputToCC && m_lfoPlugin.m_outputParam != int32_max)
+	if(m_lfoPlugin.m_outputToCC && m_lfoPlugin.m_outputParam != LFOPlugin::INVALID_OUTPUT_PARAM)
 	{
 		m_midiCC.SetCurSel(m_lfoPlugin.m_outputParam & 0x7F);
 		SetDlgItemInt(IDC_EDIT1, 1 + ((m_lfoPlugin.m_outputParam & 0xF00) >> 8));
@@ -124,6 +123,13 @@ void LFOPluginEditor::UpdateParamDisplays()
 		m_plugParam.ResetContent();
 		SetWindowLongPtr(m_plugParam, GWLP_USERDATA, 0);
 	}
+	const BOOL enableWindow = outPlug ? TRUE : FALSE;
+	m_midiCC.EnableWindow(enableWindow);
+	m_midiChnEdit.EnableWindow(enableWindow);
+	m_midiChnSpin.EnableWindow(enableWindow);
+	GetDlgItem(IDC_RADIO7)->EnableWindow(enableWindow);
+	GetDlgItem(IDC_RADIO8)->EnableWindow(enableWindow);
+
 	m_plugParam.SetRedraw(TRUE);
 	m_locked = false;
 }
@@ -171,45 +177,10 @@ void LFOPluginEditor::UpdateParam(int32 p)
 void LFOPluginEditor::UpdateView(UpdateHint hint)
 {
 	CAbstractVstEditor::UpdateView(hint);
-	if(hint.GetType()[HINT_PLUGINNAMES | HINT_MIXPLUGINS])
-	{
-		PLUGINDEX hintPlug = hint.ToType<PluginHint>().GetPlugin();
-		if(hintPlug > 0 && hintPlug <= m_lfoPlugin.GetSlot())
-		{
-			return;
-		}
-
-		CString s;
-		IMixPlugin *outPlugin = m_lfoPlugin.GetOutputPlugin();
-		m_outPlug.SetRedraw(FALSE);
-		m_outPlug.ResetContent();
-		for(PLUGINDEX out = m_lfoPlugin.GetSlot() + 1; out < MAX_MIXPLUGINS; out++)
-		{
-			const SNDMIXPLUGIN &outPlug = m_lfoPlugin.GetSoundFile().m_MixPlugins[out];
-			if(outPlug.IsValidPlugin())
-			{
-				mpt::ustring libName = outPlug.GetLibraryName();
-				s.Format(_T("FX%d: "), out + 1);
-				s += mpt::ToCString(libName);
-				if(outPlug.GetName() != U_("") && libName != outPlug.GetName())
-				{
-					s += _T(" (");
-					s += mpt::ToCString(outPlug.GetName());
-					s += _T(")");
-				}
-
-				int n = m_outPlug.AddString(s);
-				m_outPlug.SetItemData(n, out);
-				if(outPlugin == outPlug.pMixPlugin)
-				{
-					m_outPlug.SetCurSel(n);
-				}
-			}
-		}
-		m_outPlug.SetRedraw(TRUE);
-		m_outPlug.Invalidate(FALSE);
-		m_plugParam.Invalidate(FALSE);
-	}
+	m_outPlug.Update(PluginComboBox::Config{PluginComboBox::ShowLibraryNames | PluginComboBox::ShowNoPlugin}
+		.Hint(hint)
+		.CurrentSelection(m_lfoPlugin.m_pMixStruct->GetOutputPlugin())
+		.FirstPlugin(m_lfoPlugin.GetSlot() + 1), m_lfoPlugin.GetSoundFile());
 }
 
 
@@ -365,16 +336,15 @@ void LFOPluginEditor::OnParameterChanged()
 
 void LFOPluginEditor::OnOutputPlugChanged()
 {
-	if(!m_locked)
-	{
-		PLUGINDEX plug = static_cast<PLUGINDEX>(m_outPlug.GetItemData(m_outPlug.GetCurSel()));
-		if(plug > m_lfoPlugin.GetSlot())
-		{
-			m_lfoPlugin.GetSoundFile().m_MixPlugins[m_lfoPlugin.GetSlot()].SetOutputPlugin(plug);
-			m_lfoPlugin.SetModified();
-			UpdateParamDisplays();
-		}
-	}
+	if(m_locked)
+		return;
+
+	PLUGINDEX plug = m_outPlug.GetSelection().value_or(PLUGINDEX_INVALID);
+	m_lfoPlugin.GetSoundFile().m_MixPlugins[m_lfoPlugin.GetSlot()].SetOutputPlugin(plug);
+	m_lfoPlugin.SetModified();
+	UpdateParamDisplays();
+	if(CModDoc *modDoc = m_lfoPlugin.GetSoundFile().GetpModDoc(); modDoc != nullptr)
+		modDoc->UpdateAllViews(nullptr, PluginHint(m_lfoPlugin.GetSlot() + 1).Info(), this);
 }
 
 

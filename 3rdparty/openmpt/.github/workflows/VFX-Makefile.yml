@@ -1,0 +1,85 @@
+name: VFX Reference Makefile
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          #- { version: '2019', deps: sys   }
+          #- { version: '2019', deps: local }
+          #- { version: '2019', deps: small }
+          #- { version: '2020', deps: sys   }
+          #- { version: '2020', deps: local }
+          #- { version: '2020', deps: small }
+          #- { version: '2021', deps: sys   }
+          #- { version: '2021', deps: local }
+          #- { version: '2021', deps: small }
+          #- { version: '2022', deps: sys   }
+          #- { version: '2022', deps: local }
+          #- { version: '2022', deps: small }
+          - { version: '2023', deps: sys   }
+          - { version: '2023', deps: local }
+          - { version: '2023', deps: small }
+          #- { version: '2024', deps: sys   }
+          #- { version: '2024', deps: local }
+          #- { version: '2024', deps: small }
+          #- { version: '2025', deps: sys   }
+          #- { version: '2025', deps: local }
+          #- { version: '2025', deps: small }
+          #- { version: '2026', deps: sys   }
+          #- { version: '2026', deps: local }
+          #- { version: '2026', deps: small }
+
+    concurrency:
+      group: ${{github.ref}}-${{github.workflow}}-${{matrix.version}}-${{matrix.deps}}
+      cancel-in-progress: true
+
+    runs-on: ubuntu-latest
+    container:
+      image: aswf/ci-vfxall:${{matrix.version}}
+
+    steps:
+    - name: Aggressive cleanup
+      # https://dev.to/mathio/squeezing-disk-space-from-github-actions-runners-an-engineers-guide-3pjg#6-how-to-automate-cleanup-in-your-ci
+      run: |
+        # Remove Java (JDKs)
+        sudo rm -rf /usr/lib/jvm
+        # Remove .NET SDKs
+        sudo rm -rf /usr/share/dotnet
+        # Remove Swift toolchain
+        sudo rm -rf /usr/share/swift
+        # Remove Haskell (GHC)
+        sudo rm -rf /usr/local/.ghcup
+        # Remove Julia
+        sudo rm -rf /usr/local/julia*
+        # Remove Android SDKs
+        sudo rm -rf /usr/local/lib/android
+        # Remove Chromium (optional if not using for browser tests)
+        sudo rm -rf /usr/local/share/chromium
+        # Remove Microsoft/Edge builds
+        sudo rm -rf /opt/microsoft
+        # Remove Google Chrome builds
+        sudo rm -rf /opt/google
+        # Remove Azure CLI
+        sudo rm -rf /opt/az
+        # Remove PowerShell
+        sudo rm -rf /usr/local/share/powershell
+        # Remove CodeQL and other toolcaches
+        sudo rm -rf /opt/hostedtoolcache
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: fix git
+      # https://github.com/actions/runner/issues/2033
+      run: chown -R $(id -u):$(id -g) $(pwd)
+    - name: Build
+      run: make -j$(nproc) VERBOSE=1 ${{ (matrix.deps == 'sys') && 'AUTO_DEPS=1' || (matrix.deps == 'local') && 'LOCAL_ZLIB=1 LOCAL_MPG123=1 LOCAL_OGG=1 LOCAL_VORBIS=1 NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1 NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1' || 'NO_ZLIB=1 NO_MPG123=1 NO_OGG=1 NO_VORBIS=1 NO_VORBISFILE=1 NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1 NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1' }}
+    - name: Test
+      run: make -j$(nproc) VERBOSE=1 ${{ (matrix.deps == 'sys') && 'AUTO_DEPS=1' || (matrix.deps == 'local') && 'LOCAL_ZLIB=1 LOCAL_MPG123=1 LOCAL_OGG=1 LOCAL_VORBIS=1 NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1 NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1' || 'NO_ZLIB=1 NO_MPG123=1 NO_OGG=1 NO_VORBIS=1 NO_VORBISFILE=1 NO_PORTAUDIO=1 NO_PORTAUDIOCPP=1 NO_PULSEAUDIO=1 NO_SDL2=1 NO_FLAC=1 NO_SNDFILE=1' }} check

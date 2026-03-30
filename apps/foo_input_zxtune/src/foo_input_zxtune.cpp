@@ -42,7 +42,7 @@ extern std::vector<PlayerPlugin::Ptr> player_plugins;
 // As for 1.1, the version numbers are used by the component update finder to find updates; for that to work, you must have ONLY ONE declaration per DLL. If there are multiple declarations, the component is assumed to be outdated and a version number of "0" is assumed, to overwrite the component with whatever is currently on the site assuming that it comes with proper version numbers.
 DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.10",
 "ZXTune (C) 2008 - 2026 by Vitamin/CAIG.\n"
-"based on r5100 mar 10 2026\n"
+"based on r5100 + develop mar 10 2026\n"
 "foobar2000 plugin by djdron (C) 2013 - 2026.\n"
 "https://github.com/djdron/zxtune/tree/cmake\n\n"
 
@@ -52,7 +52,6 @@ DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.10",
 "xPlugins sources by elf/2\n"
 "zlib library by Jean-loup Gailly and Mark Adler\n"
 "z80ex library by Boo-boo\n"
-"boost C++ library\n"
 "{fmt} by Victor Zverovich\n"
 "Pusher sources by Himik/ZxZ\n"
 "lhasa library by Simon Howard\n"
@@ -165,7 +164,7 @@ void input_zxtune::open(service_ptr_t<file> p_filehint, const char * p_path,t_in
 		throw exception_io_unsupported_format();
 	if(p_reason == input_open_info_read || m_file->is_remote())
 		ParseModules(p_abort);
-}
+}	
 class FoobarFilesSource : public Module::AdditionalFilesSource
 {
 public:
@@ -299,7 +298,7 @@ void input_zxtune::get_info(t_uint32 p_subsong, file_info & p_info,abort_callbac
 		props = m->GetModuleProperties();
 	}
 
-	double len = mi->Duration().CastTo<Time::Second>().Get();
+	double len = mi->Duration().CastTo<Time::Microsecond>().Get()/1e6;
 	p_info.set_length(len);
 	Parameters::IntType size;
 	if(Parameters::FindValue(*props, Module::ATTR_SIZE, size))

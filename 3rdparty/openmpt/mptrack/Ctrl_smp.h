@@ -13,6 +13,11 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#include "AccessibleControls.h"
+#include "CDecimalSupport.h"
+#include "Globals.h"
+#include "Undo.h"
+#include "UpdateHints.h"
 #include "../soundlib/SampleIO.h"
 #include "../tracklib/FadeLaws.h"
 
@@ -38,46 +43,30 @@ protected:
 	};
 
 	CModControlBar m_ToolBar1, m_ToolBar2;
-	CEdit m_EditSample, m_EditName, m_EditFileName, m_EditFineTune;
+	CEdit m_EditSample, m_EditName, m_EditFileName;
 	CEdit m_EditLoopStart, m_EditLoopEnd, m_EditSustainStart, m_EditSustainEnd;
 	CEdit m_EditVibSweep, m_EditVibDepth, m_EditVibRate;
 	CEdit m_EditVolume, m_EditGlobalVol, m_EditPanning;
+	CNumberEdit m_EditFineTune, m_EditTimeStretchRatio, m_EditPitch;
 	CSpinButtonCtrl m_SpinVolume, m_SpinGlobalVol, m_SpinPanning, m_SpinVibSweep, m_SpinVibDepth, m_SpinVibRate;
 	CSpinButtonCtrl m_SpinLoopStart, m_SpinLoopEnd, m_SpinSustainStart, m_SpinSustainEnd;
-	CSpinButtonCtrl m_SpinFineTune, m_SpinSample;
-	CSpinButtonCtrl m_SpinSequenceMs, m_SpinSeekWindowMs, m_SpinOverlap, m_SpinStretchAmount;
-	CComboBox m_ComboAutoVib, m_ComboLoopType, m_ComboSustainType, m_ComboZoom, m_CbnBaseNote;
+	CSpinButtonCtrl m_SpinFineTune, m_SpinSample, m_SpinTimeStretchRatio;
+	CComboBox m_ComboAutoVib, m_ComboLoopType, m_ComboSustainType, m_ComboZoom, m_CbnBaseNote, m_ComboGrainSize;
 	CButton m_CheckPanning;
-	double m_dTimeStretchRatio = 100;
-	uint32 m_nSequenceMs = 0;
-	uint32 m_nSeekWindowMs = 0;
-	uint32 m_nOverlapMs = 0;
 	SAMPLEINDEX m_nSample = 1;
 	INSTRUMENTINDEX m_editInstrumentName = INSTRUMENTINDEX_INVALID;
 	bool m_rememberRawFormat = false;
 	bool m_startedEdit = false;
 
-	CComboBox m_ComboPitch, m_ComboQuality, m_ComboFFT;
-
-	void UpdateTimeStretchParameters();
-	void ReadTimeStretchParameters();
-
-	void ApplyAmplify(const double amp, const double fadeInStart, const double fadeOutEnd, const bool fadeIn, const bool fadeOut, const Fade::Law fadeLaw);
-	void ApplyResample(SAMPLEINDEX smp, uint32 newRate, ResamplingMode mode, bool ignoreSelection = false);
-
-	SampleSelectionPoints GetSelectionPoints();
-	void SetSelectionPoints(SmpLength nStart, SmpLength nEnd);
-
-	void PropagateAutoVibratoChanges();
-
-	bool IsOPLInstrument() const;
-
-	INSTRUMENTINDEX GetParentInstrumentWithSameName() const;
+	CComboBox m_ComboPitch;
 
 public:
 	CCtrlSamples(CModControlView &parent, CModDoc &document);
 	~CCtrlSamples();
 
+protected:
+	bool IsOPLInstrument() const;
+	
 	bool SetCurrentSample(SAMPLEINDEX nSmp, LONG lZoom = -1, bool bUpdNum = true);
 	bool InsertSample(bool duplicate, int8 *confirm = nullptr);
 	bool OpenSample(const mpt::PathString &fileName, FlagSet<OpenSampleTypes> types = OpenSampleKnown | OpenSampleRaw);
@@ -88,10 +77,18 @@ public:
 	void Normalize(bool allSamples);
 	void RemoveDCOffset(bool allSamples);
 
-	Setting<LONG> &GetSplitPosRef() override {return TrackerSettings::Instance().glSampleWindowHeight;}
+	void ApplyAmplify(const double amp, const double fadeInStart, const double fadeOutEnd, const bool fadeIn, const bool fadeOut, const Fade::Law fadeLaw);
+	void ApplyResample(SAMPLEINDEX smp, uint32 newRate, ResamplingMode mode, bool ignoreSelection = false, bool updatePatternCommands = false, bool updatePatternNotes = false);
+
+	SampleSelectionPoints GetSelectionPoints();
+	void SetSelectionPoints(SmpLength nStart, SmpLength nEnd);
+
+	void PropagateAutoVibratoChanges();
+	void SetFinetune(int step);
 
 public:
 	//{{AFX_VIRTUAL(CCtrlSamples)
+	Setting<LONG> &GetSplitPosRef() override;
 	BOOL OnInitDialog() override;
 	void DoDataExchange(CDataExchange* pDX) override;	// DDX/DDV support
 	CRuntimeClass *GetAssociatedViewClass() override;
@@ -100,8 +97,10 @@ public:
 	void OnDeactivatePage() override;
 	void UpdateView(UpdateHint hint, CObject *pObj = nullptr) override;
 	LRESULT OnModCtrlMsg(WPARAM wParam, LPARAM lParam) override;
-	BOOL GetToolTipText(UINT uId, LPTSTR pszText) override;
+	CString GetToolTipText(UINT uId, HWND hwnd) const override;
 	BOOL PreTranslateMessage(MSG* pMsg) override;
+	void OnDPIChanged() override;
+	bool OnDragonDrop(bool doDrop, const DRAGONDROP &dropInfo) override;
 	//}}AFX_VIRTUAL
 protected:
 	//{{AFX_MSG(CCtrlSamples)
@@ -155,12 +154,13 @@ protected:
 	afx_msg void OnXButtonUp(UINT nFlags, UINT nButton, CPoint point);
 
 	afx_msg void OnPitchShiftTimeStretch();
-	afx_msg void OnEnableStretchToSize();
+	afx_msg void OnToggleTimestretchQuality();
 	afx_msg void OnEstimateSampleSize();
 
 	afx_msg void OnInitOPLInstrument();
 
-	MPT_NOINLINE void SetModified(SampleHint hint, bool updateAll, bool waveformModified);
+	MPT_ATTR_NOINLINE MPT_DECL_NOINLINE void SetModified(SAMPLEINDEX smp, SampleHint hint, bool updateAll, bool waveformModified);
+	void SetModified(SampleHint hint, bool updateAll, bool waveformModified) { SetModified(m_nSample, hint, updateAll, waveformModified); }
 	void PrepareUndo(const char *description, sampleUndoTypes type = sundo_none, SmpLength start = 0, SmpLength end = 0);
 
 	//}}AFX_MSG

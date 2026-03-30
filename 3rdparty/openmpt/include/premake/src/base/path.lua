@@ -1,7 +1,7 @@
 --
 -- path.lua
 -- Path manipulation functions.
--- Copyright (c) 2002-2014 Jason Perkins and the Premake project
+-- Copyright (c) 2002-2014 Jess Perkins and the Premake project
 --
 
 
@@ -171,7 +171,7 @@
 	end
 
 	function path.iscppfile(fname)
-		return path.hasextension(fname, { ".cc", ".cpp", ".cxx", ".c++" })
+		return path.hasextension(fname, { ".cc", ".cpp", ".cxx", ".c++", ".cppm", ".ixx" })
 			or path.isobjcppfile(fname)	-- is this really right?
 			or path.iscfile(fname)
 	end
@@ -292,7 +292,7 @@
 	end
 
 --
--- Get the default seperator for path.translate
+-- Get the default separator for path.translate
 --
 
 	function path.getDefaultSeparator()

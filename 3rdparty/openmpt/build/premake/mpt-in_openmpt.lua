@@ -1,41 +1,38 @@
 
+include_dependency "sys-mfc.lua"
+include_dependency "ext-winamp.lua"
+include_dependency "mpt-libopenmpt.lua"
+
  project "in_openmpt"
   uuid "D75AEB78-5537-49BD-9085-F92DEEFA84E8"
   language "C++"
-  location ( "../../build/" .. mpt_projectpathname )
   vpaths { ["*"] = "../../libopenmpt/" }
-  mpt_projectname = "in_openmpt"
-  dofile "../../build/premake/premake-defaults-DLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  mpt_kind "shared"
   warnings "Extra"
-  local extincludedirs = {
-   "../..",
-   "../../include",
-  }
-	filter { "action:vs*" }
-		includedirs ( extincludedirs )
-	filter { "not action:vs*" }
-		sysincludedirs ( extincludedirs )
-	filter {}
+	
+	mpt_use_libopenmpt()
+	mpt_use_winamp()
+	
   includedirs {
    "../..",
    "$(IntDir)/svn_version",
-   "../../build/svn_version",
   }
   files {
-   "../../libopenmpt/in_openmpt.cpp",
-   "../../libopenmpt/libopenmpt_plugin_settings.hpp",
-   "../../libopenmpt/libopenmpt_plugin_gui.hpp",
-   "../../libopenmpt/libopenmpt_plugin_gui.cpp",
-   "../../libopenmpt/libopenmpt_plugin_gui.rc",
-   "../../libopenmpt/resource.h",
+   "../../libopenmpt/in_openmpt/in_openmpt.cpp",
+   "../../libopenmpt/plugin-common/libopenmpt_plugin_settings.hpp",
+   "../../libopenmpt/plugin-common/libopenmpt_plugin_gui.hpp",
+   "../../libopenmpt/plugin-common/libopenmpt_plugin_gui.cpp",
+   "../../libopenmpt/plugin-common/libopenmpt_plugin_gui.rc",
+   "../../libopenmpt/plugin-common/resource.h",
   }
-	
+
+	filter {}
 	filter { "action:vs*", "kind:SharedLib or ConsoleApp or WindowedApp" }
 		resdefines {
-			"MPT_BUILD_VER_FILENAME=\"" .. mpt_projectname .. ".dll\"",
-			"MPT_BUILD_VER_FILEDESC=\"" .. mpt_projectname .. "\"",
+			"MPT_BUILD_VER_FILENAME=\"" .. "in_openmpt" .. ".dll\"",
+			"MPT_BUILD_VER_FILEDESC=\"" .. "in_openmpt" .. "\"",
 		}
+	filter {}
 	filter { "action:vs*", "kind:SharedLib or ConsoleApp or WindowedApp" }
 		resincludedirs {
 			"$(IntDir)/svn_version",
@@ -45,14 +42,17 @@
 		files {
 			"../../libopenmpt/libopenmpt_version.rc",
 		}
+	filter {}
 	filter { "action:vs*", "kind:SharedLib" }
 		resdefines { "MPT_BUILD_VER_DLL" }
+	filter {}
 	filter { "action:vs*", "kind:ConsoleApp or WindowedApp" }
 		resdefines { "MPT_BUILD_VER_EXE" }
 	filter {}
 
-  characterset "Unicode"
-  flags { "MFC" }
-  links { "libopenmpt", "zlib", "vorbis", "ogg", "mpg123" }
+	defines { "MPT_BUILD_IN_OPENMPT_WINAMP5" }
+	mpt_use_mfc(_OPTIONS["windows-charset"])
+	defines { "MPT_WITH_MFC" }
+
   filter {}
   prebuildcommands { "..\\..\\build\\svn_version\\update_svn_version_vs_premake.cmd $(IntDir)" }

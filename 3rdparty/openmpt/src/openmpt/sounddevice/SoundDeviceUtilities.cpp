@@ -4,6 +4,7 @@
 
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "openmpt/all/PlatformFixes.hpp"
 
 #include "SoundDeviceUtilities.hpp"
 
@@ -14,7 +15,7 @@
 #include "mpt/format/message_macros.hpp"
 #include "mpt/out_of_memory/out_of_memory.hpp"
 #include "mpt/string/types.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 #include "openmpt/base/Types.hpp"
 #include "openmpt/logging/Logger.hpp"
 
@@ -24,7 +25,7 @@
 #include <cassert>
 
 #if MPT_OS_WINDOWS
-#if(_WIN32_WINNT >= 0x600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 #include <avrt.h>
 #endif
 #include <mmsystem.h>
@@ -60,10 +61,6 @@ namespace SoundDevice
 bool FillWaveFormatExtensible(WAVEFORMATEXTENSIBLE &WaveFormat, const SoundDevice::Settings &m_Settings)
 {
 	WaveFormat = {};
-	if(!m_Settings.sampleFormat.IsValid())
-	{
-		return false;
-	}
 	WaveFormat.Format.wFormatTag = m_Settings.sampleFormat.IsFloat() ? WAVE_FORMAT_IEEE_FLOAT : WAVE_FORMAT_PCM;
 	WaveFormat.Format.nChannels = (WORD)m_Settings.Channels;
 	WaveFormat.Format.nSamplesPerSec = m_Settings.Samplerate;
@@ -87,8 +84,12 @@ bool FillWaveFormatExtensible(WAVEFORMATEXTENSIBLE &WaveFormat, const SoundDevic
 				return false;
 				break;
 		}
-		const GUID guid_MEDIASUBTYPE_PCM = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x0, 0xAA, 0x0, 0x38, 0x9B, 0x71}};
-		const GUID guid_MEDIASUBTYPE_IEEE_FLOAT = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
+		const GUID guid_MEDIASUBTYPE_PCM = {
+			0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x0, 0xAA, 0x0, 0x38, 0x9B, 0x71}
+        };
+		const GUID guid_MEDIASUBTYPE_IEEE_FLOAT = {
+			0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}
+        };
 		WaveFormat.SubFormat = m_Settings.sampleFormat.IsFloat() ? guid_MEDIASUBTYPE_IEEE_FLOAT : guid_MEDIASUBTYPE_PCM;
 	}
 	return true;
@@ -103,7 +104,7 @@ CAudioThread::CAudioThread(CSoundDeviceWithThread &SoundDevice)
 	: m_SoundDevice(SoundDevice)
 {
 	MPT_SOUNDDEV_TRACE_SCOPE();
-	m_MMCSSClass = mpt::convert<mpt::winstring>(m_SoundDevice.m_AppInfo.BoostedThreadMMCSSClassVista);
+	m_MMCSSClass = mpt::transcode<mpt::winstring>(m_SoundDevice.m_AppInfo.BoostedThreadMMCSSClassVista);
 	m_WakeupInterval = 0.0;
 	m_hPlayThread = NULL;
 	m_dwPlayThreadId = 0;
@@ -150,10 +151,13 @@ CAudioThread::~CAudioThread()
 CPriorityBooster::CPriorityBooster(SoundDevice::SysInfo sysInfo, bool boostPriority, const mpt::winstring &priorityClass, int priority)
 	: m_SysInfo(sysInfo)
 	, m_BoostPriority(boostPriority)
-	, m_Priority(priority)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 	, task_idx(0)
 	, hTask(NULL)
+#else  // < Vista
+	, m_Priority(priority)
 	, oldPriority(0)
+#endif
 {
 	MPT_SOUNDDEV_TRACE_SCOPE();
 #ifdef MPT_BUILD_DEBUG
@@ -161,7 +165,7 @@ CPriorityBooster::CPriorityBooster(SoundDevice::SysInfo sysInfo, bool boostPrior
 #endif
 	if(m_BoostPriority)
 	{
-#if(_WIN32_WINNT >= 0x600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		if(!priorityClass.empty())
 		{
 			hTask = AvSetMmThreadCharacteristics(priorityClass.c_str(), &task_idx);
@@ -181,7 +185,7 @@ CPriorityBooster::~CPriorityBooster()
 	MPT_SOUNDDEV_TRACE_SCOPE();
 	if(m_BoostPriority)
 	{
-#if(_WIN32_WINNT >= 0x600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		if(hTask)
 		{
 			AvRevertMmThreadCharacteristics(hTask);
@@ -401,7 +405,8 @@ void CAudioThread::Deactivate()
 
 
 CSoundDeviceWithThread::CSoundDeviceWithThread(ILogger &logger, SoundDevice::Info info, SoundDevice::SysInfo sysInfo)
-	: SoundDevice::Base(logger, info, sysInfo), m_AudioThread(*this)
+	: SoundDevice::Base(logger, info, sysInfo)
+	, m_AudioThread(*this)
 {
 	return;
 }
@@ -453,6 +458,11 @@ void CSoundDeviceWithThread::InternalStop()
 
 #if MPT_OS_LINUX || MPT_OS_MACOSX_OR_IOS || MPT_OS_FREEBSD
 
+
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
+#endif  // MPT_COMPILER_CLANG
 
 class ThreadPriorityGuardImpl
 {
@@ -541,7 +551,7 @@ public:
 				bus = dbus_bus_get(DBUS_BUS_SYSTEM, &error);
 				if(!bus)
 				{
-					MPT_LOG(GetLogger(), LogError, "sounddev", MPT_UFORMAT_MESSAGE("DBus: dbus_bus_get: {}")(mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, error.message)));
+					MPT_LOG(GetLogger(), LogError, "sounddev", MPT_UFORMAT_MESSAGE("DBus: dbus_bus_get: {}")(mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, error.message)));
 				}
 				dbus_error_free(&error);
 				if(bus)
@@ -589,6 +599,11 @@ public:
 	}
 };
 
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic pop
+#endif  // MPT_COMPILER_CLANG
+
+
 
 ThreadPriorityGuard::ThreadPriorityGuard(ILogger &logger, bool active, bool realtime, int niceness, int rt_priority)
 	: impl(std::make_unique<ThreadPriorityGuardImpl>(logger, active, realtime, niceness, rt_priority))
@@ -613,7 +628,7 @@ ThreadBase::ThreadBase(ILogger &logger, SoundDevice::Info info, SoundDevice::Sys
 bool ThreadBase::InternalStart()
 {
 	m_ThreadStopRequest.store(false);
-	m_Thread = std::move(std::thread(&ThreadProcStatic, this));
+	m_Thread = std::thread(&ThreadProcStatic, this);
 	m_ThreadStarted.wait();
 	m_ThreadStarted.post();
 	return true;
@@ -641,7 +656,7 @@ void ThreadBase::InternalStop()
 {
 	m_ThreadStopRequest.store(true);
 	m_Thread.join();
-	m_Thread = std::move(std::thread());
+	m_Thread = std::thread();
 	m_ThreadStopRequest.store(false);
 }
 

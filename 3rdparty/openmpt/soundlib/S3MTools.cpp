@@ -9,8 +9,8 @@
 
 
 #include "stdafx.h"
-#include "Loaders.h"
 #include "S3MTools.h"
+#include "Loaders.h"
 #include "../common/mptStringBuffer.h"
 
 
@@ -134,6 +134,13 @@ SampleIO S3MSampleHeader::GetSampleFormat(bool signedSamples) const
 			SampleIO::littleEndian,
 			signedSamples ? SampleIO::signedPCM : SampleIO::unsignedPCM);
 	}
+}
+
+
+// Calculate the sample position in file
+uint32 S3MSampleHeader::GetSampleOffset() const
+{
+	return (dataPointer[1] << 4) | (dataPointer[2] << 12) | (dataPointer[0] << 20);
 }
 
 

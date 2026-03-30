@@ -3,14 +3,14 @@
 * ------------
 * Purpose: UMX/UAX (Unreal package) helper functions
 * Notes  : (currently none)
-* Authors: OpenMPT Devs (inspired by code from http://wiki.beyondunreal.com/Legacy:Package_File_Format)
+* Authors: OpenMPT Devs (inspired by code from https://wiki.beyondunreal.com/Legacy:Package_File_Format)
 * The OpenMPT source code is released under the BSD license. Read LICENSE for more details.
 */
 
 
 #include "stdafx.h"
-#include "Loaders.h"
 #include "UMXTools.h"
+#include "Loaders.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -35,7 +35,7 @@ bool FileHeader::IsValid() const
 
 uint32 FileHeader::GetMinimumAdditionalFileSize() const
 {
-	return std::max({nameOffset + nameCount * 5u, exportOffset + exportCount * 8u, importOffset + importCount * 4u}) - sizeof(FileHeader);
+	return std::max({nameOffset + nameCount * 5u, exportOffset + exportCount * 8u, importOffset + importCount * 4u}) - static_cast<uint32>(sizeof(FileHeader));
 }
 
 
@@ -74,7 +74,7 @@ static int32 ReadIndexImpl(Tfile &chunk)
 	// Read first byte
 	uint8 b = chunk.ReadUint8();
 	bool isSigned = (b & signMask) != 0;
-	int32 result = (b & valueMask1);
+	uint32 result = (b & valueMask1);
 	int shift = 6;
 
 	if(b & continueMask1)
@@ -83,18 +83,19 @@ static int32 ReadIndexImpl(Tfile &chunk)
 		do
 		{
 			b = chunk.ReadUint8();
-			int32 data = static_cast<int32>(b) & valueMask;
+			uint32 data = static_cast<uint32>(b) & valueMask;
 			data <<= shift;
 			result |= data;
 			shift += 7;
 		} while((b & continueMask) != 0 && (shift < 32));
 	}
 
-	if(isSigned)
-	{
-		result = -result;
-	}
-	return result;
+	if(isSigned && result <= int32_max)
+		return -static_cast<int32>(result);
+	else if(isSigned)
+		return int32_min;
+	else
+		return result;
 }
 
 int32 ReadIndex(FileReader &chunk)
@@ -117,7 +118,7 @@ static bool FindNameTableEntryImpl(TFile &file, const FileHeader &fileHeader, co
 		return false;
 	}
 	bool result = false;
-	const FileReader::off_t oldpos = file.GetPosition();
+	const FileReader::pos_type oldpos = file.GetPosition();
 	if(file.Seek(fileHeader.nameOffset))
 	{
 		for(uint32 i = 0; i < fileHeader.nameCount && file.CanRead(5); i++)
@@ -135,7 +136,7 @@ static bool FindNameTableEntryImpl(TFile &file, const FileHeader &fileHeader, co
 			char c = 0;
 			while((c = file.ReadUint8()) != 0)
 			{
-				c = mpt::ToLowerCaseAscii(c);
+				c = mpt::to_lower_ascii(c);
 				if(pos < nameLen)
 				{
 					match = match && (c == name[pos]);

@@ -19,11 +19,7 @@
 	void dct36_sse(real *inbuf,real *o1,real *o2,real *wintab,real *tsbuf);
 */
 	
-#if !defined ( __APPLE__) && !defined (__OS2__)
-	.section	.rodata
-#else
-	.data
-#endif
+	RODATA
 	ALIGN16
 dct36_sse_COS9:
 	.long 0x3f5db3d7
@@ -61,8 +57,8 @@ dct36_sse_sign:
 	.long 0x80000000,0x80000000,0x80000000,0x80000000
 	.text
 	ALIGN16
-	.globl ASM_NAME(dct36_sse)
-ASM_NAME(dct36_sse):
+	.globl ASM_NAME(INT123_dct36_sse)
+ASM_NAME(INT123_dct36_sse):
 	push		%ebp
 	mov			%esp, %ebp
 	and			$-16, %esp

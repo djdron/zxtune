@@ -1,7 +1,7 @@
 ---
 -- tests/base/test_os.lua
 -- Automated test suite for the new OS functions.
--- Copyright (c) 2008-2017 Jason Perkins and the Premake project
+-- Copyright (c) 2008-2017 Jess Perkins and the Premake project
 ---
 
 	local suite = test.declare("base_os")
@@ -17,16 +17,53 @@
 		os.chdir(cwd)
 	end
 
+	local function create_mock_os_getenv(map)
+		return function (key) return map[key] end
+	end
+
+	local function get_LD_PATH_variable_name()
+		if os.istarget("windows") then
+			return 'PATH'
+		elseif os.istarget("haiku") then
+			return 'LIBRARY_PATH'
+		elseif os.istarget("darwin") then
+			return 'DYLD_LIBRARY_PATH'
+		else
+			return 'LD_LIBRARY_PATH'
+		end
+	end
+
+	local function get_surrounded_env_path(dir)
+		if os.istarget("windows") then
+			return "c:\\anyPath;" .. path.getabsolute(dir) .. ";c:\\otherpath"
+		else
+			return "/any_path:" .. path.getabsolute(dir) .. ":/other_path"
+		end
+	end
 
 --
 -- os.findlib() tests
 --
 
 	function suite.findlib_FindSystemLib()
-		if os.istarget("windows") then
+		if os.istarget("macosx") then
+			-- macOS no longer stores system libraries on filesystem; see
+			-- https://developer.apple.com/documentation/macos-release-notes/macos-big-sur-11_0_1-release-notes
+		elseif os.istarget("windows") then
 			test.istrue(os.findlib("user32"))
 		elseif os.istarget("haiku") then
 			test.istrue(os.findlib("root"))
+		elseif os.istarget("bsd") and os.getversion().description == "OpenBSD" then
+			-- OpenBSD doesn't have a 'libm.so' symlink like other systems,
+			-- it only has the versioned files, 'libm.so.X.Y' which will
+			-- change between versions of OpenBSD. os.findlib currently won't
+			-- find these versioned files without the version info.
+
+			-- libm should be '/usr/lib/libm.so.X.Y' find the exact filename
+			-- and use that.
+			local libms = os.matchfiles("/usr/lib/libm.so.*")
+			test.isfalse(0 == #libms)
+			test.istrue(os.findlib(path.getname(libms[1])))
 		else
 			test.istrue(os.findlib("m"))
 		end
@@ -34,6 +71,20 @@
 
 	function suite.findlib_FailsOnBadLibName()
 		test.isfalse(os.findlib("NoSuchLibraryAsThisOneHere"))
+	end
+
+	function suite.findlib_provided()
+		test.isequal(path.getabsolute("folder/subfolder/lib"),
+					 os.findlib("test", path.getabsolute("folder/subfolder/lib")))
+	end
+
+	function suite.findlib_frompath()
+		local os_getenv = os.getenv
+		os.getenv = create_mock_os_getenv({ [get_LD_PATH_variable_name()] = get_surrounded_env_path("folder/subfolder/lib") })
+
+		test.isequal(path.getabsolute("folder/subfolder/lib"), os.findlib("test"))
+
+		os.getenv = os_getenv
 	end
 
 	function suite.findheader_stdheaders()
@@ -46,6 +97,28 @@
 		test.isfalse(os.findheader("Knights/who/say/Ni.hpp"))
 	end
 
+	function suite.findheader_provided()
+		test.isequal(path.getabsolute("folder/subfolder/include"),
+					 os.findheader("test.h", path.getabsolute("folder/subfolder/include")))
+	end
+
+	function suite.findheader_frompath_lib()
+		local os_getenv = os.getenv
+		os.getenv = create_mock_os_getenv({ [get_LD_PATH_variable_name()] = get_surrounded_env_path("folder/subfolder/lib") })
+
+		test.isequal(path.getabsolute("folder/subfolder/include"), os.findheader("test.h"))
+
+		os.getenv = os_getenv
+	end
+
+	function suite.findheader_frompath_bin()
+		local os_getenv = os.getenv
+		os.getenv = create_mock_os_getenv({ [get_LD_PATH_variable_name()] = get_surrounded_env_path("folder/subfolder/bin") })
+
+		test.isequal(path.getabsolute("folder/subfolder/include"), os.findheader("test.h"))
+
+		os.getenv = os_getenv
+	end
 
 --
 -- os.isfile() tests
@@ -59,6 +132,23 @@
 		test.isfalse(os.isfile("no_such_file.lua"))
 	end
 
+--
+-- os.linkdir() and os.linkfile() tests
+--
+
+	function suite.linkdir()
+		test.istrue(os.linkdir("folder/subfolder", "folder/subfolder2"))
+		test.istrue(os.islink("folder/subfolder2"))
+		test.istrue(os.rmdir("folder/subfolder2"))
+		test.isfalse(os.islink("folder/subfolder2"))
+	end
+
+	function suite.linkfile()
+		test.istrue(os.linkfile("folder/ok.lua", "folder/ok2.lua"))
+		test.istrue(os.islink("folder/ok2.lua"))
+		test.istrue(os.remove("folder/ok2.lua"))
+		test.isfalse(os.islink("folder/ok2.lua"))
+	end
 
 
 --
@@ -124,6 +214,20 @@
 		test.istrue(table.contains(result, "folder/subfolder/hello.txt"))
 	end
 
+	function suite.matchfiles_onSymbolicLink()
+		if os.istarget("macosx")
+			or os.istarget("linux")
+			or os.istarget("solaris")
+			or os.istarget("bsd")
+		then
+			os.execute("cd folder && ln -s subfolder symlinkfolder && cd ..")
+			local result = os.matchfiles("folder/**/*.txt")
+			os.execute("rm folder/symlinkfolder")
+			premake.modules.self_test.print(table.tostring(result))
+			test.istrue(table.contains(result, "folder/symlinkfolder/hello.txt"))
+		end
+	end
+
 
 --
 -- os.pathsearch() tests
@@ -171,6 +275,24 @@
 		end
 	end
 
+	-- Check outputof content
+	function suite.outputof_streams_output()
+		if (os.istarget("macosx")
+			or os.istarget("linux")
+			or os.istarget("solaris")
+			or os.istarget("bsd"))
+			and os.isdir (_TESTS_DIR)
+		then
+			local ob, e = os.outputof ("ls " .. _TESTS_DIR .. "/base")
+			local oo, e = os.outputof ("ls " .. _TESTS_DIR .. "/base", "output")
+			test.isequal (oo, ob)
+			local s, e = string.find (oo, "test_os.lua")
+			test.istrue(s ~= nil)
+
+			local o, e = os.outputof ("ls " .. cwd .. "/base", "error")
+			test.istrue(o == nil or #o == 0)
+		end
+	end
 
 --
 -- os.translateCommand() tests
@@ -238,6 +360,28 @@
 		test.isequal('IF EXIST a\\ (xcopy /Q /E /Y /I a "b" > nul) ELSE (xcopy /Q /Y /I a "b" > nul)', os.translateCommands('{COPY} a "b" ', "windows"))
 	end
 
+--
+-- os.translateCommand() LINKDIR/LINKFILE tests
+--
+	function suite.translateCommand_windowsLinkDir()
+		test.isequal('mklink /d a b', os.translateCommands('{LINKDIR} a b', "windows"))
+	end
+
+	function suite.translateCommand_windowsLinkFile()
+		test.isequal('mklink a b', os.translateCommands('{LINKFILE} a b', "windows"))
+	end
+
+	function suite.translateCommand_posixLinkDir()
+		test.isequal('ln -s b a', os.translateCommands('{LINKDIR} a b', "posix"))
+	end
+
+	function suite.translateCommand_posixLinkFile()
+		test.isequal('ln -s b a', os.translateCommands('{LINKFILE} a b', "posix"))
+	end
+
+	function suite.translateCommand_posixLinkDirWithSpaces()
+		test.isequal('ln -s "b b" "a a"', os.translateCommands('{LINKDIR} "a a" "b b"', "posix"))
+	end
 --
 -- os.getWindowsRegistry windows tests
 --
@@ -373,6 +517,9 @@
 		test.isequal('cmdtool "../foo/path1" "../foo/path2/"', os.translateCommandsAndPaths("cmdtool %[path1] %[path2/]", '../foo', '.', 'osx'))
 	end
 
+	function suite.translateCommandsAndPaths_RelativePath()
+		test.isequal('cmdtool "path1" "../bar/path2/"', os.translateCommandsAndPaths("cmdtool %[../foo/path1] %[path2/]", './bar', './foo', 'osx'))
+	end
 
 --
 -- Helpers
@@ -450,3 +597,54 @@
 		test.isequal(true, ok)
 		test.isnil(err)
 	end
+
+
+--
+-- os.getnumcpus() tests.
+--
+
+	function suite.numcpus()
+		local numcpus = os.getnumcpus()
+		test.istrue(numcpus > 0)
+	end
+
+
+--
+-- os.host() tests.
+--
+
+function suite.host()
+	local host = os.host()
+	test.istrue(string.len(host) > 0)
+
+	if _COSMOPOLITAN then
+		test.istrue(host ~= "cosmopolitan")
+	end
+end
+
+
+--
+-- os.hostarch() tests.
+--
+
+	function suite.hostarch()
+		local arch = os.hostarch()
+		test.istrue(string.len(arch) > 0)
+	end
+
+
+--
+-- os.targetarch() tests.
+--
+
+function suite.targetarch()
+	-- nil by default for backwards compatibility
+	test.isequal(nil, os.targetarch())
+
+	_TARGET_ARCH = "x64"
+	test.isequal(_TARGET_ARCH, os.targetarch())
+
+	-- --arch has priority over _TARGET_ARCH
+	_OPTIONS["arch"] = "AARCH64"
+	test.isequal(_OPTIONS["arch"], os.targetarch())
+end

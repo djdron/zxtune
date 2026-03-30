@@ -1,11 +1,15 @@
 AC_INIT([libopenmpt], [!!MPT_LIBOPENMPT_VERSION_MAJOR!!.!!MPT_LIBOPENMPT_VERSION_MINOR!!.!!MPT_LIBOPENMPT_VERSION_PATCH!!!!MPT_LIBOPENMPT_VERSION_PREREL!!+!!MPT_SEMVER_METADATA_PREFIX!!.autotools], [https://bugs.openmpt.org/], [libopenmpt], [https://lib.openmpt.org/])
-AC_PREREQ([2.68])
+AC_PREREQ([2.69])
+# we do want 2.70, but distributions are not ready yet
+#AC_PREREQ([2.70])
 
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_FILES([Makefile libopenmpt/libopenmpt.pc Doxyfile])
 
 AM_INIT_AUTOMAKE([1.11 -Wall -Werror foreign subdir-objects])
+
+AC_USE_SYSTEM_EXTENSIONS
 
 AM_PROG_AR
 
@@ -18,6 +22,64 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 AC_PROG_CXX
 AC_PROG_INSTALL
+
+# We need C++17 support.
+AX_CXX_COMPILE_STDCXX([23], [noext], [optional])
+AS_IF([test "x$HAVE_CXX23" != "x1"],
+ [
+  AX_CXX_COMPILE_STDCXX([20], [noext], [optional])
+  AS_IF([test "x$HAVE_CXX20" != "x1"],
+   [
+    AX_CXX_COMPILE_STDCXX([17], [noext], [mandatory])
+   ],[]
+  )
+ ],[]
+)
+
+GLOBAL_CPPFLAGS=
+GLOBAL_CFLAGS=
+GLOBAL_CXXFLAGS=
+
+AC_LANG_PUSH([C])
+AX_CHECK_COMPILE_FLAG([-fvisibility=hidden], [GLOBAL_CFLAGS="$GLOBAL_CFLAGS -fvisibility=hidden"])
+AX_CFLAGS_WARN_ALL
+AC_LANG_POP([C])
+
+AC_LANG_PUSH([C++])
+AX_CHECK_COMPILE_FLAG([-fvisibility=hidden], [GLOBAL_CXXFLAGS="$GLOBAL_CXXFLAGS -fvisibility=hidden"])
+AX_CXXFLAGS_WARN_ALL
+AC_LANG_POP([C++])
+
+AX_CXX_EXCEPTIONS
+AX_CXX_RTTI
+
+AX_PTHREAD([
+ LIBS="$PTHREAD_LIBS $LIBS"
+ GLOBAL_CFLAGS="$GLOBAL_CFLAGS $PTHREAD_CFLAGS"
+ GLOBAL_CXXFLAGS="$GLOBAL_CXXFLAGS $PTHREAD_CFLAGS"
+ #CC="$PTHREAD_CC"
+ #CXX="$PTHREAD_CXX"
+ ],
+ []
+)
+
+# work-around <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115049>
+# This is somewhat pessimistic, but necessary for GCC 8 or earlier,
+# which we still support and where we cannot use #pragma GCC optimize.
+AC_LANG_PUSH([C])
+AX_CHECK_COMPILE_FLAG([-fno-ipa-ra], [GLOBAL_CFLAGS="$GLOBAL_CFLAGS -fno-ipa-ra"])
+AX_CFLAGS_WARN_ALL
+AC_LANG_POP([C])
+AC_LANG_PUSH([C++])
+AX_CHECK_COMPILE_FLAG([-fno-ipa-ra], [GLOBAL_CXXFLAGS="$GLOBAL_CXXFLAGS -fno-ipa-ra"])
+AX_CXXFLAGS_WARN_ALL
+AC_LANG_POP([C++])
+
+
+AC_SUBST([GLOBAL_CPPFLAGS])
+AC_SUBST([GLOBAL_CFLAGS])
+AC_SUBST([GLOBAL_CXXFLAGS])
+
 
 LIBOPENMPT_LTVER_CURRENT=!!MPT_LIBOPENMPT_LTVER_CURRENT!!
 LIBOPENMPT_LTVER_REVISION=!!MPT_LIBOPENMPT_LTVER_REVISION!!
@@ -36,26 +98,43 @@ AC_ARG_VAR(CXXSTDLIB_PCLIBSPRIVATE, [C++ standard library (or libraries) require
 
 
 AC_CANONICAL_HOST
-case $host_os in
- mingw32*)
-  LIBOPENMPT_WIN32_LIBS="-lole32 -lrpcrt4"
-  LIBOPENMPT_LIBS_PRIVATE_WIN32="-lole32 -lrpcrt4"
-  OPENMPT123_WIN32_LIBS=-lwinmm
-  CXXFLAGS="$CXXFLAGS -municode"
-  CFLAGS="$CFLAGS -municode"
-  WIN32_CONSOLE_CXXFLAGS=-mconsole
-  WIN32_CONSOLE_CFLAGS=-mconsole
-  ;;
- *)
+
+# work-around NetBSD toolchain not understanding transitive shared object dependencies at all
+AS_CASE([$host_os],
+ [netbsd*], [LIBS="$LIBS -lstdc++"],
+ []
+)
+
+AS_CASE([$host_os],
+ [mingw32*],[
   LIBOPENMPT_WIN32_LIBS=
   LIBOPENMPT_LIBS_PRIVATE_WIN32=
+  LIBOPENMPTTEST_WIN32_LIBS="-ladvapi32 -lole32 -lrpcrt4"
+  OPENMPT123_WIN32_LIBS=-lwinmm
+  WIN32_CPPFLAGS="-D_UNICODE -DNOMINMAX"
+  WIN32_CXXFLAGS="-municode -mthreads"
+  WIN32_CFLAGS="-municode -mthreads"
+  WIN32_CONSOLE_CXXFLAGS=-mconsole
+  WIN32_CONSOLE_CFLAGS=-mconsole
+ ],
+ [
+  LIBOPENMPT_WIN32_LIBS=
+  LIBOPENMPT_LIBS_PRIVATE_WIN32=
+  LIBOPENMPTTEST_WIN32_LIBS=
   OPENMPT123_WIN32_LIBS=
+  WIN32_CPPFLAGS=
+  WIN32_CXXFLAGS=
+  WIN32_CFLAGS=
   WIN32_CONSOLE_CXXFLAGS=
   WIN32_CONSOLE_CFLAGS=
-  ;;
-esac
+ ]
+)
 AC_SUBST([LIBOPENMPT_WIN32_LIBS])
+AC_SUBST([LIBOPENMPTTEST_WIN32_LIBS])
 AC_SUBST([OPENMPT123_WIN32_LIBS])
+AC_SUBST([WIN32_CPPFLAGS])
+AC_SUBST([WIN32_CXXFLAGS])
+AC_SUBST([WIN32_CFLAGS])
 AC_SUBST([WIN32_CONSOLE_CXXFLAGS])
 AC_SUBST([WIN32_CONSOLE_CFLAGS])
 
@@ -70,7 +149,7 @@ AS_IF([test "x$with_zlib" != "xno"],
   PKG_CHECK_MODULES([ZLIB], [zlib],
    [
     ZLIB_PKG=zlib
-    AC_DEFINE([MPT_WITH_ZLIB], [], [with zlib])
+    ZLIB_CFLAGS="-DMPT_WITH_ZLIB $ZLIB_CFLAGS"
    ], [AC_MSG_ERROR([Unable to find zlib.])])
  ]
 )
@@ -83,7 +162,7 @@ AS_IF([test "x$with_mpg123" != "xno"],
   PKG_CHECK_MODULES([MPG123], [libmpg123 >= 1.14.0],
    [
     MPG123_PKG=libmpg123
-    AC_DEFINE([MPT_WITH_MPG123], [], [with mpg123])
+    MPG123_CFLAGS="-DMPT_WITH_MPG123 $MPG123_CFLAGS"
    ], [AC_MSG_ERROR([Unable to find libmpg123.])])
  ]
 )
@@ -96,7 +175,7 @@ AS_IF([test "x$with_ogg" != "xno"],
   PKG_CHECK_MODULES([OGG], [ogg],
    [
     OGG_PKG=ogg
-    AC_DEFINE([MPT_WITH_OGG], [], [with ogg])
+    OGG_CFLAGS="-DMPT_WITH_OGG $OGG_CFLAGS"
    ], [AC_MSG_ERROR([Unable to find libogg.])])
  ]
 )
@@ -109,7 +188,7 @@ AS_IF([test "x$with_vorbis" != "xno"],
   PKG_CHECK_MODULES([VORBIS], [vorbis],
    [
     VORBIS_PKG=vorbis
-    AC_DEFINE([MPT_WITH_VORBIS], [], [with vorbis])
+    VORBIS_CFLAGS="-DMPT_WITH_VORBIS $VORBIS_CFLAGS"
    ], [AC_MSG_ERROR([Unable to find libvorbis.])])
  ]
 )
@@ -122,7 +201,7 @@ AS_IF([test "x$with_vorbisfile" != "xno"],
   PKG_CHECK_MODULES([VORBISFILE], [vorbisfile],
    [
     VORBISFILE_PKG=vorbisfile
-    AC_DEFINE([MPT_WITH_VORBISFILE], [], [with vorbisfile])
+    VORBISFILE_CFLAGS="-DMPT_WITH_VORBISFILE $VORBISFILE_CFLAGS"
    ], [AC_MSG_ERROR([Unable to find libvorbisfile.])])
  ]
 )
@@ -152,14 +231,14 @@ AM_CONDITIONAL([ENABLE_TESTS], [test "x$enable_tests" != "xno"])
 # Optional openmpt123 dependency
 AC_ARG_WITH([pulseaudio], AS_HELP_STRING([--with-pulseaudio], [Enable use of libpulse and libpulse-simple (enabled by default on Linux).]))
 AS_IF([test "x$enable_openmpt123" != "xno"],[
-case $host_os in
- linux*)
+AS_CASE([$host_os],
+ [linux*],[
 AS_IF([test "x$with_pulseaudio" != "xno"],
  [
   PKG_CHECK_MODULES([PULSEAUDIO], [libpulse libpulse-simple],
    [
     have_pulseaudio=1
-    AC_DEFINE([MPT_WITH_PULSEAUDIO], [], [with libpulseaudio])
+    PULSEAUDIO_CFLAGS="-DMPT_WITH_PULSEAUDIO $PULSEAUDIO_CFLAGS"
    ],
    [
     have_pulseaudio=0
@@ -178,7 +257,7 @@ AS_IF([test "x$with_pulseaudio" = "xyes"],
   PKG_CHECK_MODULES([PULSEAUDIO], [libpulse libpulse-simple],
    [
     have_pulseaudio=1
-    AC_DEFINE([MPT_WITH_PULSEAUDIO], [], [with libpulseaudio])
+    PULSEAUDIO_CFLAGS="-DMPT_WITH_PULSEAUDIO $PULSEAUDIO_CFLAGS"
    ],
    [
     have_pulseaudio=0
@@ -190,8 +269,9 @@ AS_IF([test "x$with_pulseaudio" = "xyes"],
   have_pulseaudio=0
  ]
 )
- ;;
-esac
+ ],
+ []
+)
 ],[have_pulseaudio=0])
 
 # Optional openmpt123 and examples dependency
@@ -202,7 +282,7 @@ AS_IF([test "x$with_portaudio" != "xno"],
   PKG_CHECK_MODULES([PORTAUDIO], [portaudio-2.0],
    [
     have_portaudio=1
-    AC_DEFINE([MPT_WITH_PORTAUDIO], [], [with libportaudio])
+    PORTAUDIO_CFLAGS="-DMPT_WITH_PORTAUDIO $PORTAUDIO_CFLAGS"
    ],
    [
     have_portaudio=0
@@ -225,7 +305,7 @@ AS_IF([test "x$with_portaudiocpp" != "xno"],
   PKG_CHECK_MODULES([PORTAUDIOCPP], [portaudiocpp],
    [
     have_portaudiocpp=1
-    AC_DEFINE([MPT_WITH_PORTAUDIOCPP], [], [with libportaudiocpp])
+    PORTAUDIOCPP_CFLAGS="-DMPT_WITH_PORTAUDIOCPP $PORTAUDIOCPP_CFLAGS"
    ],
    [
     have_portaudiocpp=0
@@ -245,7 +325,7 @@ AC_ARG_WITH([sdl2], AS_HELP_STRING([--with-sdl2], [Enable use of libsdl2.]))
 AS_IF([test "x$enable_openmpt123" != "xno"],[
 AS_IF([test "x$with_sdl2" = "xyes"],
  [
-  PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.4], [AC_DEFINE([MPT_WITH_SDL2], [], [with libsdl2])], [AC_MSG_ERROR([Unable to find libsdl2.])])
+  PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.4], [SDL2_CFLAGS="-DMPT_WITH_SDL2 $SDL2_CFLAGS"], [AC_MSG_ERROR([Unable to find libsdl2.])])
  ]
 )
 ])
@@ -255,7 +335,7 @@ AC_ARG_WITH([sndfile], AS_HELP_STRING([--without-sndfile], [Disable use of libsn
 AS_IF([test "x$enable_openmpt123" != "xno"],[
 AS_IF([test "x$with_sndfile" != "xno"],
  [
-  PKG_CHECK_MODULES([SNDFILE], [sndfile], [AC_DEFINE([MPT_WITH_SNDFILE], [], [with libsndfile])], [AC_MSG_ERROR([Unable to find libsndfile.])])
+  PKG_CHECK_MODULES([SNDFILE], [sndfile], [SNDFILE_CFLAGS="-DMPT_WITH_SNDFILE $SNDFILE_CFLAGS"], [AC_MSG_ERROR([Unable to find libsndfile.])])
  ]
 )
 ])
@@ -265,61 +345,10 @@ AC_ARG_WITH([flac], AS_HELP_STRING([--without-flac], [Disable use of libflac.]))
 AS_IF([test "x$enable_openmpt123" != "xno"],[
 AS_IF([test "x$with_flac" != "xno"],
  [
-  PKG_CHECK_MODULES([FLAC], [flac >= 1.3.0], [AC_DEFINE([MPT_WITH_FLAC], [], [with libflac])], [AC_MSG_ERROR([Unable to find libflac >= 1.3.0.])])
+  PKG_CHECK_MODULES([FLAC], [flac >= 1.3.0], [FLAC_CFLAGS="-DMPT_WITH_FLAC $FLAC_CFLAGS"], [AC_MSG_ERROR([Unable to find libflac >= 1.3.0.])])
  ]
 )
 ])
-
-# We want a modern C compiler 
-AC_PROG_CC_STDC
-#AC_PROG_CC_C99
-
-# We need C++17 support
-#AX_CXX_COMPILE_STDCXX(20, [noext], [optional])
-#AS_IF([test "x$HAVE_CXX20" != "x1"],
-# [
-#  AX_CXX_COMPILE_STDCXX(17, [noext], [mandatory])
-# ],[]
-#)
-AX_CXX_COMPILE_STDCXX(17, [noext], [mandatory])
-
-AC_LANG_PUSH([C])
-AX_CHECK_COMPILE_FLAG([-fvisibility=hidden], [CFLAGS="$CFLAGS -fvisibility=hidden"])
-AX_CFLAGS_WARN_ALL
-AC_LANG_POP([C])
-
-AC_LANG_PUSH([C++])
-AX_CHECK_COMPILE_FLAG([-fvisibility=hidden], [CXXFLAGS="$CXXFLAGS -fvisibility=hidden"])
-AX_CXXFLAGS_WARN_ALL
-AC_LANG_POP([C++])
-
-# mingw c++ thread
-AC_LANG_PUSH([C++])
-case $host_os in
- mingw32*)
-  AC_CHECK_HEADER([mingw.thread.h],
-   [
-    have_mingwstdtthreads=1
-   ],
-   [
-    have_mingwstdtthreads=0
-   ]
-  )
-  ;;
- *)
-  have_mingwstdtthreads=0
-  ;;
-esac
-AC_LANG_POP([C++])
-AS_IF([test "x$have_mingwstdtthreads" = "x1"],
- [
-  MINGWSTDTHREADS_CPPFLAGS=-DMPT_WITH_MINGWSTDTHREADS
- ],
- [
-  MINGWSTDTHREADS_CPPFLAGS=
- ]
-)
-AC_SUBST([MINGWSTDTHREADS_CPPFLAGS])
 
 DX_DOXYGEN_FEATURE(ON)
 DX_DOT_FEATURE(OFF)

@@ -6,23 +6,20 @@
 	initially written by Taihei Monma
 */
 
+#include "aarch64_defs.h"
 #include "mangle.h"
 
-#ifndef __APPLE__
-	.section	.rodata
-#else
-	.data
-#endif
+	RODATA
 	ALIGN16
 scale:
 	.word   939524096
 	.text
 	ALIGN4
-	.globl ASM_NAME(synth_1to1_real_s_neon64_asm)
+	.globl ASM_NAME(INT123_synth_1to1_real_s_neon64_asm)
 #ifdef __ELF__
-	.type ASM_NAME(synth_1to1_real_s_neon64_asm), %function
+	.type ASM_NAME(INT123_synth_1to1_real_s_neon64_asm), %function
 #endif
-ASM_NAME(synth_1to1_real_s_neon64_asm):
+ASM_NAME(INT123_synth_1to1_real_s_neon64_asm):
 	add		x0, x0, #64
 	sub		x0, x0, x4, lsl #2
 	adrp	x5, AARCH64_PCREL_HI(scale)

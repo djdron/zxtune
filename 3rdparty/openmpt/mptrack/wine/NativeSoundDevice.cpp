@@ -1,12 +1,12 @@
 
 #include "stdafx.h"
 
-#if MPT_COMPILER_MSVC
-#pragma warning(disable:4800) // 'T' : forcing value to bool 'true' or 'false' (performance warning)
-#endif // MPT_COMPILER_MSVC
-
 #include "NativeSoundDevice.h"
 #include "NativeUtils.h"
+
+#include "mpt/osinfo/windows_hx_version.hpp"
+#include "mpt/osinfo_hx/hx.hpp"
+#include "mpt/out_of_memory/out_of_memory.hpp"
 
 #include "openmpt/sounddevice/SoundDevice.hpp"
 #include "openmpt/sounddevice/SoundDeviceManager.hpp"
@@ -43,10 +43,18 @@ private:
 private:
 	static SoundDevice::SysInfo GetSysInfo()
 	{
-		mpt::OS::Wine::VersionContext wineVersionContext;
-		return SoundDevice::SysInfo(mpt::osinfo::get_class(), mpt::OS::Windows::Version::Current(), mpt::OS::Windows::IsWine(), wineVersionContext.HostClass(), wineVersionContext.Version());
+		std::optional<mpt::osinfo::windows::hx::version> hxVersion = mpt::osinfo::windows::hx::current();
+		std::optional<mpt::OS::Wine::VersionContext> wineVersionContext = mpt::OS::Wine::VersionContext::Current();
+		if(hxVersion)
+		{
+			return SoundDevice::SysInfo(mpt::osinfo::get_class(), mpt::osinfo::windows::Version::Current(), hxVersion.value());
+		}
+		if(wineVersionContext)
+		{
+			return SoundDevice::SysInfo(mpt::osinfo::get_class(), mpt::osinfo::windows::Version::Current(), wineVersionContext->Version(), wineVersionContext->HostClass());
+		}
+		return SoundDevice::SysInfo(mpt::osinfo::get_class(), mpt::osinfo::windows::Version::Current());
 	}
-
 public:
 	ComponentSoundDeviceManager()
 		: manager(logger, GetSysInfo(), SoundDevice::AppInfo())
@@ -194,7 +202,7 @@ public:
 		}
 		uintptr_t result = 0;
 		impl.SoundCallbackIsLockedByCurrentThreadFunc(impl.inst, &result);
-		return result;
+		return result != 0;
 	}
 	// audio thread
 	virtual void SoundCallbackLock()
@@ -351,34 +359,44 @@ OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_Destru
 	}
 }
 
-OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_SetMessageReceiver( OpenMPT_SoundDevice * sd, const OpenMPT_SoundDevice_IMessageReceiver * receiver ) {
+OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_SetMessageReceiver( OpenMPT_SoundDevice * sd, const OpenMPT_SoundDevice_IMessageReceiver * receiver ) {
 	if ( !sd ) {
-		return;
+		return 0;
 	}
 	if ( !sd->impl ) {
-		return;
+		return 0;
 	}
 	sd->impl->SetMessageReceiver( nullptr );
 	delete sd->messageReceiver;
 	sd->messageReceiver = nullptr;
-	sd->messageReceiver = new OPENMPT_NAMESPACE::C::NativeMessageReceiverProxy( receiver );
+	try {
+		sd->messageReceiver = new OPENMPT_NAMESPACE::C::NativeMessageReceiverProxy( receiver );
+	} catch ( mpt::out_of_memory e ) {
+		mpt::delete_out_of_memory( e );
+		return 0;
+	}
 	sd->impl->SetMessageReceiver( sd->messageReceiver );
-	return;
+	return 1;
 }
 
-OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_SetCallback( OpenMPT_SoundDevice * sd, const OpenMPT_SoundDevice_ICallback * callback ) {
+OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_SetCallback( OpenMPT_SoundDevice * sd, const OpenMPT_SoundDevice_ICallback * callback ) {
 	if ( !sd ) {
-		return;
+		return 0;
 	}
 	if ( !sd->impl ) {
-		return;
+		return 0;
 	}
 	sd->impl->SetCallback( nullptr );
 	delete sd->callback;
 	sd->callback = nullptr;
-	sd->callback = new OPENMPT_NAMESPACE::C::NativeCallbackProxy( callback );
+	try {
+		sd->callback = new OPENMPT_NAMESPACE::C::NativeCallbackProxy( callback );
+	} catch ( mpt::out_of_memory e ) {
+		mpt::delete_out_of_memory( e );
+		return 0;
+	}
 	sd->impl->SetCallback( sd->callback );
-	return;
+	return 1;
 }
 
 OPENMPT_WINESUPPORT_API char * OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_GetDeviceInfo( const OpenMPT_SoundDevice * sd ) {
@@ -396,26 +414,26 @@ OPENMPT_WINESUPPORT_API char * OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_GetD
 }
 
 OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_Init( OpenMPT_SoundDevice * sd, const char * appInfo ) {
-	return sd->impl->Init( OPENMPT_NAMESPACE::json_cast<OPENMPT_NAMESPACE::SoundDevice::AppInfo>( std::string(appInfo) ) );
+	return sd->impl->Init( OPENMPT_NAMESPACE::json_cast<OPENMPT_NAMESPACE::SoundDevice::AppInfo>( std::string(appInfo) ) ) ? 1 : 0;
 }
 
 OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_Open( OpenMPT_SoundDevice * sd, const char * settings ) {
-	return sd->impl->Open( OPENMPT_NAMESPACE::json_cast<OPENMPT_NAMESPACE::SoundDevice::Settings>( std::string(settings) ) );
+	return sd->impl->Open( OPENMPT_NAMESPACE::json_cast<OPENMPT_NAMESPACE::SoundDevice::Settings>( std::string(settings) ) ) ? 1 : 0;
 }
 
 OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_Close( OpenMPT_SoundDevice * sd ) {
-	return sd->impl->Close();
+	return sd->impl->Close() ? 1 : 0;
 }
 
 OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_Start( OpenMPT_SoundDevice * sd ) {
-	return sd->impl->Start();
+	return sd->impl->Start() ? 1 : 0;
 }
 
 OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_Stop( OpenMPT_SoundDevice * sd ) {
-	return sd->impl->Stop();
+	sd->impl->Stop();
 }
 
-OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_GetRequestFlags( const OpenMPT_SoundDevice * sd, uint32_t * result) {
+OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_GetRequestFlags( const OpenMPT_SoundDevice * sd, uint32_t * result ) {
 	*result = sd->impl->GetRequestFlags().GetRaw();
 }
 
@@ -440,11 +458,11 @@ OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_I
 }
 
 OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_StopAndAvoidPlayingSilence( OpenMPT_SoundDevice * sd ) {
-	return sd->impl->StopAndAvoidPlayingSilence();
+	sd->impl->StopAndAvoidPlayingSilence();
 }
 
 OPENMPT_WINESUPPORT_API void OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_EndPlayingSilence( OpenMPT_SoundDevice * sd ) {
-	return sd->impl->EndPlayingSilence();
+	sd->impl->EndPlayingSilence();
 }
 
 OPENMPT_WINESUPPORT_API uintptr_t OPENMPT_WINESUPPORT_CALL OpenMPT_SoundDevice_OnIdle( OpenMPT_SoundDevice * sd ) {
@@ -498,13 +516,19 @@ typedef struct OpenMPT_PriorityBooster {
 OPENMPT_WINESUPPORT_API OpenMPT_PriorityBooster * OPENMPT_WINESUPPORT_CALL OpenMPT_PriorityBooster_Construct_From_SoundDevice( const OpenMPT_SoundDevice * sd ) {
 #if !MPT_OS_WINDOWS
 	OpenMPT_PriorityBooster * pb = (OpenMPT_PriorityBooster*)OpenMPT_Alloc( sizeof( OpenMPT_PriorityBooster ) );
-	pb->impl = new OPENMPT_NAMESPACE::SoundDevice::ThreadPriorityGuard
-		( dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetLogger()
-		, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetSettings().BoostThreadPriority
-		, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetAppInfo().BoostedThreadRealtimePosix
-		, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetAppInfo().BoostedThreadNicenessPosix
-		, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetAppInfo().BoostedThreadRtprioPosix
-		);
+	try {
+		pb->impl = new OPENMPT_NAMESPACE::SoundDevice::ThreadPriorityGuard
+			( dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetLogger()
+			, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetSettings().BoostThreadPriority
+			, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetAppInfo().BoostedThreadRealtimePosix
+			, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetAppInfo().BoostedThreadNicenessPosix
+			, dynamic_cast<OPENMPT_NAMESPACE::SoundDevice::Base*>(sd->impl)->GetAppInfo().BoostedThreadRtprioPosix
+			);
+	}	catch (mpt::out_of_memory e) {
+		mpt::delete_out_of_memory( e );
+		OpenMPT_Free( pb );
+		return nullptr;
+	}
 	return pb;
 #else
 	MPT_UNREFERENCED_PARAMETER(sd);

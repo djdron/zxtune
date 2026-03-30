@@ -13,6 +13,7 @@
 #include "formats/chiptune/emulation/gameboyadvancesoundformat.h"
 
 #include "contract.h"
+#include "error_tools.h"
 #include "make_ptr.h"
 
 namespace Module::GSF
@@ -30,14 +31,13 @@ namespace Module::GSF
       if (addr)
       {
         addr = FixEntrypoint(addr);
-        Require(addr == EWRAM_START || addr == PAKROM_START);
+        if (addr != EWRAM_START && addr != PAKROM_START)
+        {
+          throw MakeFormattedError(THIS_LINE, "Invalid ROM entrypoint: 0x{:08x}", addr);
+        }
         if (!Rom.EntryPoint)
         {
           Rom.EntryPoint = addr;
-        }
-        else
-        {
-          Require(Rom.EntryPoint == addr);
         }
       }
     }
@@ -61,6 +61,8 @@ namespace Module::GSF
     {
       switch (addr)
       {
+      case 0x20000000:  // Tiny Garden
+        return EWRAM_START;
       case 0x80000000:  // Crash Bandicoot 2
         return PAKROM_START;
       default:

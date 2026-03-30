@@ -1,32 +1,45 @@
 
-CXXFLAGS_WARNINGS += -Wcast-align -Wcast-qual -Wmissing-prototypes -Wshift-count-negative -Wshift-count-overflow -Wshift-op-parentheses -Wshift-overflow -Wshift-sign-overflow -Wundef
-CFLAGS_WARNINGS   += -Wcast-align -Wcast-qual -Wmissing-prototypes -Wshift-count-negative -Wshift-count-overflow -Wshift-op-parentheses -Wshift-overflow -Wshift-sign-overflow -Wundef
+CXXFLAGS_WARNINGS += -Wcast-align -Wcast-qual -Wdouble-promotion -Wfloat-conversion -Wmissing-prototypes -Wshift-count-negative -Wshift-count-overflow -Wshift-op-parentheses -Wshift-overflow -Wshift-sign-overflow -Wundef -Wunreachable-code
+CFLAGS_WARNINGS   += -Wcast-align -Wcast-qual -Wdouble-promotion -Wfloat-conversion -Wmissing-prototypes -Wshift-count-negative -Wshift-count-overflow -Wshift-op-parentheses -Wshift-overflow -Wshift-sign-overflow -Wundef -Wunreachable-code
 
-CXXFLAGS_WARNINGS += -Wdeprecated -Wextra-semi -Wframe-larger-than=16000 -Wglobal-constructors -Wimplicit-fallthrough -Wmissing-declarations -Wnon-virtual-dtor -Wreserved-id-macro
+CXXFLAGS_WARNINGS += -Wdeprecated -Wexit-time-destructors -Wextra-semi -Wglobal-constructors -Wimplicit-fallthrough -Wmissing-declarations -Wnon-virtual-dtor -Wreserved-id-macro
+CFLAGS_WARNINGS   += 
+
+ifneq ($(ANCIENT),1)
+CXXFLAGS_WARNINGS += -Wframe-larger-than=16000
+CFLAGS_WARNINGS   += -Wframe-larger-than=4000
+endif
 
 #CXXFLAGS_WARNINGS += -Wfloat-equal
 #CXXFLAGS_WARNINGS += -Wdocumentation
 #CXXFLAGS_WARNINGS += -Wconversion
 #CXXFLAGS_WARNINGS += -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-c++98-c++11-c++14-compat -Wno-padded -Wno-weak-vtables -Wno-sign-conversion -Wno-shadow-field-in-constructor -Wno-conversion -Wno-switch-enum -Wno-old-style-cast
 
-ifeq ($(MODERN),1)
-LDFLAGS  += -fuse-ld=lld
-ifeq ($(OPTIMIZE_LTO),1)
-LDFLAGS  += -Wl,--thinlto-jobs=all
+ifneq ($(NO_NO_UNDEFINED_LINKER_FLAG),1)
+LDFLAGS_WARNINGS  += -Wl,--no-undefined
 endif
-CXXFLAGS_WARNINGS += 
-CFLAGS_WARNINGS   += -Wframe-larger-than=4000
-LDFLAGS_WARNINGS  += -Wl,-no-undefined -Wl,--detect-odr-violations
-# re-renable after 1.29 branch
-#CXXFLAGS_WARNINGS += -Wdouble-promotion
-#CFLAGS_WARNINGS   += -Wdouble-promotion
+
+ifeq ($(MODERN),1)
+CXXFLAGS_WARNINGS += -Wno-gnu-line-marker
+CFLAGS_WARNINGS   += -Wno-gnu-line-marker
+LDFLAGS_WARNINGS  += 
 endif
 
 CFLAGS_SILENT += -Wno-\#warnings
 CFLAGS_SILENT += -Wno-cast-align
 CFLAGS_SILENT += -Wno-cast-qual
+CFLAGS_SILENT += -Wno-double-promotion
+CFLAGS_SILENT += -Wno-float-conversion
+ifneq ($(ANCIENT),1)
+CFLAGS_SILENT += -Wno-frame-larger-than
+endif
 CFLAGS_SILENT += -Wno-missing-prototypes
 CFLAGS_SILENT += -Wno-sign-compare
+ifneq ($(ANCIENT),1)
+CFLAGS_SILENT += -Wno-unused-but-set-variable
+endif
 CFLAGS_SILENT += -Wno-unused-function
 CFLAGS_SILENT += -Wno-unused-parameter
 CFLAGS_SILENT += -Wno-unused-variable
+
+FASTMATH_STYLE=clang

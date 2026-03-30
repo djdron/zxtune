@@ -11,23 +11,18 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
-
 #include "CommandSet.h"
+#include "../soundlib/Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-// Hook codes
-enum
-{
-	HC_MIDI = 0x8000,
-};
+struct CModSpecifications;
 
 class CInputHandler
 {
 protected:
 	CWnd *m_pMainFrm;
 	KeyMap m_keyMap;
-	FlagSet<Modifiers> m_modifierMask = ModNone;
 	int m_bypassCount = 0;
 	bool m_bInterceptWindowsKeys : 1, m_bInterceptNumLock : 1, m_bInterceptCapsLock : 1, m_bInterceptScrollLock : 1;
 
@@ -37,10 +32,19 @@ public:
 	std::array<CommandID, 10> m_lastCommands;
 	size_t m_lastCommandPos = 0;
 
+	struct KeyboardEvent
+	{
+		uint32 key;
+		uint16 repeatCount;
+		uint16 flags;
+		KeyEventType keyEventType;
+	};
+
 public:
 	CInputHandler(CWnd *mainframe);
-	CommandID GeneralKeyEvent(InputTargetContext context, int code, WPARAM wParam , LPARAM lParam);
-	CommandID KeyEvent(InputTargetContext context, UINT &nChar, UINT &nRepCnt, UINT &nFlags, KeyEventType keyEventType, CWnd *pSourceWnd = nullptr);
+	CommandID KeyEvent(const InputTargetContext context, const KeyboardEvent &event, CWnd *pSourceWnd = nullptr);
+	static KeyboardEvent Translate(const MSG &msg);
+	static KeyEventType GetKeyEventType(const MSG &msg);
 	static KeyEventType GetKeyEventType(UINT nFlags);
 	bool IsKeyPressHandledByTextBox(DWORD wparam, HWND hWnd) const;
 	CommandID HandleMIDIMessage(InputTargetContext context, uint32 message);
@@ -48,25 +52,23 @@ public:
 	int GetKeyListSize(CommandID cmd) const;
 
 protected:
-	void LogModifiers();
-	bool CatchModifierChange(WPARAM wParam, KeyEventType keyEventType, int scancode);
-	bool InterceptSpecialKeys(UINT nChar, UINT nFlags, bool generateMsg);
+	bool InterceptSpecialKeys(const KeyboardEvent &event);
 	void SetupSpecialKeyInterception();
 	CommandID SendCommands(CWnd *wnd, const KeyMapRange &cmd);
 
 public:
-	bool ShiftPressed() const;
 	bool SelectionPressed() const;
-	bool CtrlPressed() const;
-	bool AltPressed() const;
+	static bool ShiftPressed();
+	static bool CtrlPressed();
+	static bool AltPressed();
+	OrderTransitionMode ModifierKeysToTransitionMode();
 	bool IsBypassed() const;
 	void Bypass(bool);
-	FlagSet<Modifiers> GetModifierMask() const;
-	void SetModifierMask(FlagSet<Modifiers> mask);
+	static FlagSet<Modifiers> GetModifierMask();
 	CString GetKeyTextFromCommand(CommandID c, const TCHAR *prependText = nullptr) const;
 	CString GetMenuText(UINT id) const;
 	void UpdateMainMenu();
-	void SetNewCommandSet(const CCommandSet *newSet);
+	void SetNewCommandSet(const CCommandSet &newSet);
 	bool SetEffectLetters(const CModSpecifications &modSpecs);
 };
 

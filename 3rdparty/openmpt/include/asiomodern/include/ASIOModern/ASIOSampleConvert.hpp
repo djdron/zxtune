@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iterator>
 #include <limits>
 #include <type_traits>
 
@@ -26,11 +27,11 @@ namespace ASIO {
 
 
 
-namespace Sample {
-
-
-
 inline namespace ASIO_VERSION_NAMESPACE {
+
+
+
+namespace Sample {
 
 
 
@@ -1085,11 +1086,11 @@ struct Traits {
 
 
 
-} // namespace ASIO_VERSION_NAMESPACE
-
-
-
 } // namespace Sample
+
+
+
+} // namespace ASIO_VERSION_NAMESPACE
 
 
 

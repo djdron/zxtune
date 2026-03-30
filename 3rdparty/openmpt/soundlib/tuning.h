@@ -36,6 +36,14 @@ public:
 	static constexpr USTEPINDEXTYPE s_RatioTableFineSizeMaxDefault = 1000;
 
 public:
+	CTuning(CTuning &) = default;
+	CTuning(CTuning &&) noexcept = default;
+
+	bool operator==(const CTuning &other) const noexcept;
+	bool operator!=(const CTuning &other) const noexcept
+	{
+		return !(*this == other);
+	}
 
 	// To return ratio of certain note.
 	RATIOTYPE GetRatio(const NOTEINDEXTYPE note) const;
@@ -46,18 +54,18 @@ public:
 	//Tuning might not be valid for arbitrarily large range,
 	//so this can be used to ask where it is valid. Tells the lowest and highest
 	//note that are valid.
-	MPT_FORCEINLINE NoteRange GetNoteRange() const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE NoteRange GetNoteRange() const
 	{
 		return NoteRange{m_NoteMin, static_cast<NOTEINDEXTYPE>(m_NoteMin + static_cast<NOTEINDEXTYPE>(m_RatioTable.size()) - 1)};
 	}
 
 	// Return true if note is within note range
-	MPT_FORCEINLINE bool IsValidNote(const NOTEINDEXTYPE n) const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE bool IsValidNote(const NOTEINDEXTYPE n) const
 	{
 		return (GetNoteRange().first <= n && n <= GetNoteRange().last);
 	}
 
-	MPT_FORCEINLINE UNOTEINDEXTYPE GetGroupSize() const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE UNOTEINDEXTYPE GetGroupSize() const
 	{
 		return m_GroupSize;
 	}
@@ -65,7 +73,7 @@ public:
 	RATIOTYPE GetGroupRatio() const {return m_GroupRatio;}
 
 	// To return (fine)stepcount between two consecutive mainsteps.
-	MPT_FORCEINLINE USTEPINDEXTYPE GetFineStepCount() const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE USTEPINDEXTYPE GetFineStepCount() const
 	{
 		return m_FineStepCount;
 	}
@@ -88,7 +96,7 @@ public:
 
 	bool SetRatio(const NOTEINDEXTYPE& s, const RATIOTYPE& r);
 
-	MPT_FORCEINLINE Tuning::Type GetType() const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE Tuning::Type GetType() const
 	{
 		return m_TuningType;
 	}
@@ -208,7 +216,7 @@ private:
 	// GroupPeriodic-specific.
 	// Get the corresponding note in [0, period-1].
 	// For example GetRefNote(-1) is to return note :'groupsize-1'.
-	MPT_FORCEINLINE NOTEINDEXTYPE GetRefNote(NOTEINDEXTYPE note) const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE NOTEINDEXTYPE GetRefNote(NOTEINDEXTYPE note) const
 	{
 		MPT_ASSERT(GetType() == Type::GROUPGEOMETRIC || GetType() == Type::GEOMETRIC);
 		return static_cast<NOTEINDEXTYPE>(mpt::wrapping_modulo(note, GetGroupSize()));
@@ -216,12 +224,13 @@ private:
 
 	static bool IsValidRatio(RATIOTYPE ratio)
 	{
-		return (ratio > static_cast<RATIOTYPE>(0.0));
+		// Arbitrary epsilon > 0 to avoid NaNs and infinite values in ratio calculation
+		return (ratio > static_cast<RATIOTYPE>(0.02f));
 	}
 
 private:
 
-	Tuning::Type m_TuningType;
+	Tuning::Type m_TuningType = Type::GENERAL;
 
 	//Noteratios
 	std::vector<RATIOTYPE> m_RatioTable;
@@ -230,14 +239,14 @@ private:
 	std::vector<RATIOTYPE> m_RatioTableFine;
 
 	// The lowest index of note in the table
-	NOTEINDEXTYPE m_NoteMin;
+	NOTEINDEXTYPE m_NoteMin = s_NoteMinDefault;
 
 	//For groupgeometric tunings, tells the 'group size' and 'group ratio'
 	//m_GroupSize should always be >= 0.
-	NOTEINDEXTYPE m_GroupSize;
-	RATIOTYPE m_GroupRatio;
+	NOTEINDEXTYPE m_GroupSize = 0;
+	RATIOTYPE m_GroupRatio = 0;
 
-	USTEPINDEXTYPE m_FineStepCount; // invariant: 0 <= m_FineStepCount <= FINESTEPCOUNT_MAX
+	USTEPINDEXTYPE m_FineStepCount = 0; // invariant: 0 <= m_FineStepCount <= FINESTEPCOUNT_MAX
 
 	mpt::ustring m_TuningName;
 

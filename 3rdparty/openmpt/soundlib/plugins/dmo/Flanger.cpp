@@ -10,30 +10,28 @@
 
 #include "stdafx.h"
 
-#ifndef NO_PLUGINS
-#include "../../Sndfile.h"
 #include "Flanger.h"
-#endif // !NO_PLUGINS
+#include "../../Sndfile.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-#ifndef NO_PLUGINS
 
 namespace DMO
 {
 
-IMixPlugin* Flanger::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+// cppcheck-suppress duplInheritedMember
+IMixPlugin* Flanger::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) Flanger(factory, sndFile, mixStruct, false);
 }
 
-IMixPlugin* Flanger::CreateLegacy(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin* Flanger::CreateLegacy(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new(std::nothrow) Flanger(factory, sndFile, mixStruct, true);
 }
 
 
-Flanger::Flanger(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct, const bool legacy)
+Flanger::Flanger(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct, const bool legacy)
 	: Chorus(factory, sndFile, mixStruct, !legacy)
 {
 	m_param[kFlangerWetDryMix] = 0.5f;
@@ -46,15 +44,14 @@ Flanger::Flanger(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixSt
 
 	// Already done in Chorus constructor
 	//m_mixBuffer.Initialize(2, 2);
-	//InsertIntoFactoryList();
 }
 
 
-void Flanger::SetParameter(PlugParamIndex index, PlugParamValue value)
+void Flanger::SetParameter(PlugParamIndex index, PlugParamValue value, PlayState *, CHANNELINDEX)
 {
 	if(index < kFlangerNumParameters)
 	{
-		Limit(value, 0.0f, 1.0f);
+		value = mpt::safe_clamp(value, 0.0f, 1.0f);
 		if(index == kFlangerWaveShape)
 		{
 			value = mpt::round(value);
@@ -124,7 +121,7 @@ CString Flanger::GetParamDisplay(PlugParamIndex param)
 		value = FrequencyInHertz();
 		break;
 	case kFlangerWaveShape:
-		return (value < 1) ? _T("Triangle") : _T("Sine");
+		return (value < 1) ? _T("Square") : _T("Sine");
 		break;
 	case kFlangerPhase:
 		switch(Phase())
@@ -150,9 +147,5 @@ CString Flanger::GetParamDisplay(PlugParamIndex param)
 
 } // namespace DMO
 
-#else
-MPT_MSVC_WORKAROUND_LNK4221(Flanger)
-
-#endif // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_END

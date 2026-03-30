@@ -5,12 +5,17 @@
 
 
 
+#if !defined(MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT)
+#include "mpt/base/integer.hpp"
+#endif // !MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT
 #include "mpt/base/memory.hpp"
 #include "mpt/base/namespace.hpp"
 
 #include <algorithm>
 
+#if defined(MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT)
 #include <cstddef>
+#endif // MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT
 
 
 
@@ -25,7 +30,11 @@ namespace IO {
 
 class IFileData {
 public:
-	typedef std::size_t pos_type;
+#if !defined(MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT)
+	using pos_type = uint64;
+#else  // MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT
+	using pos_type = std::size_t;
+#endif // MPT_CONFIGURATION_IO_READ_FILEDATA_NO_64BIT
 
 protected:
 	IFileData() = default;
@@ -43,7 +52,7 @@ public:
 	virtual pos_type GetLength() const = 0;
 	virtual mpt::byte_span Read(pos_type pos, mpt::byte_span dst) const = 0;
 
-	virtual bool CanRead(pos_type pos, std::size_t length) const {
+	virtual bool CanRead(pos_type pos, pos_type length) const {
 		pos_type dataLength = GetLength();
 		if ((pos == dataLength) && (length == 0)) {
 			return true;
@@ -54,7 +63,7 @@ public:
 		return length <= dataLength - pos;
 	}
 
-	virtual std::size_t GetReadableLength(pos_type pos, std::size_t length) const {
+	virtual pos_type GetReadableLength(pos_type pos, pos_type length) const {
 		pos_type dataLength = GetLength();
 		if (pos >= dataLength) {
 			return 0;

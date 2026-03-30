@@ -9,33 +9,19 @@
  */
 
 #include "stdafx.h"
-#include "Mainfrm.h"
+#include "PatternFindReplace.h"
 #include "Moddoc.h"
+#include "PatternEditorDialogs.h"
+#include "PatternFindReplaceDlg.h"
+#include "Reporting.h"
 #include "resource.h"
 #include "View_pat.h"
-#include "PatternEditorDialogs.h"
-#include "PatternFindReplace.h"
-#include "PatternFindReplaceDlg.h"
+#include "WindowMessages.h"
 #include "../soundlib/mod_specifications.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
 FindReplace FindReplace::instance;
-
-FindReplace::FindReplace()
-	: findFlags(FullSearch), replaceFlags(ReplaceAll)
-	, replaceNoteAction(ReplaceValue), replaceInstrAction(ReplaceValue), replaceVolumeAction(ReplaceValue), replaceParamAction(ReplaceValue)
-	, replaceNote(NOTE_NONE), replaceInstr(0), replaceVolume(0), replaceParam(0)
-	, replaceVolCmd(VOLCMD_NONE), replaceCommand(CMD_NONE)
-	, findNoteMin(NOTE_NONE), findNoteMax(NOTE_NONE)
-	, findInstrMin(0), findInstrMax(0)
-	, findVolCmd(VOLCMD_NONE)
-	, findVolumeMin(0), findVolumeMax(0)
-	, findCommand(CMD_NONE)
-	, findParamMin(0), findParamMax(0)
-	, selection(PatternRect())
-	, findChnMin(0), findChnMax(0)
-{ }
 
 
 void CViewPattern::OnEditFind()
@@ -46,7 +32,7 @@ void CViewPattern::OnEditFind()
 	{
 		CSoundFile &sndFile = pModDoc->GetSoundFile();
 		FindReplace settings = FindReplace::instance;
-		ModCommand m = ModCommand::Empty();
+		ModCommand m{};
 		if(m_Selection.GetUpperLeft() != m_Selection.GetLowerRight())
 		{
 			settings.findFlags.set(FindReplace::InPatSelection);
@@ -54,7 +40,7 @@ void CViewPattern::OnEditFind()
 		} else if(sndFile.Patterns.IsValidPat(m_nPattern))
 		{
 			const CPattern &pat = sndFile.Patterns[m_nPattern];
-			m_Cursor.Sanitize(pat.GetNumRows(), pat.GetNumChannels());
+			m_Cursor.Sanitize(pat.GetNumRows(), pat.GetNumChannels(), LastVisibleColumn());
 			m = *pat.GetpModCommand(m_Cursor.GetRow(), m_Cursor.GetChannel());
 		}
 
@@ -169,7 +155,7 @@ void CViewPattern::OnEditFindNext()
 
 			for(; chn <= lastChannel; chn++, m++)
 			{
-				RowMask findWhere;
+				std::bitset<PatternCursor::numColumns> findWhere = std::bitset<PatternCursor::numColumns>{}.set();
 
 				if(FindReplace::instance.findFlags[FindReplace::InPatSelection])
 				{
@@ -183,42 +169,31 @@ void CViewPattern::OnEditFindNext()
 						{
 							PatternCursor cursor(row, chn, static_cast<PatternCursor::Columns>(i));
 							if(!FindReplace::instance.selection.Contains(cursor))
-							{
-								switch(i)
-								{
-								case PatternCursor::noteColumn:		findWhere.note = false; break;
-								case PatternCursor::instrColumn:	findWhere.instrument = false; break;
-								case PatternCursor::volumeColumn:	findWhere.volume = false; break;
-								case PatternCursor::effectColumn:	findWhere.command = false; break;
-								case PatternCursor::paramColumn:	findWhere.parameter = false; break;
-								}
-							}
+								findWhere.reset(i);
 						}
 					} else
 					{
 						// For channels inside the selection, we have an easier job to solve.
 						if(!FindReplace::instance.selection.Contains(PatternCursor(row, chn)))
-						{
-							findWhere.Clear();
-						}
+							findWhere.reset();
 					}
 				}
 
 				if(m->instr > 0)
 					lastInstr[chn] = m->instr;
 
-				if((FindReplace::instance.findFlags[FindReplace::Note] && (!findWhere.note || m->note < FindReplace::instance.findNoteMin || m->note > FindReplace::instance.findNoteMax))
-					|| (FindReplace::instance.findFlags[FindReplace::Instr] && (!findWhere.instrument || m->instr < FindReplace::instance.findInstrMin || m->instr > FindReplace::instance.findInstrMax)))
+				if((FindReplace::instance.findFlags[FindReplace::Note] && (!findWhere[PatternCursor::noteColumn] || m->note < FindReplace::instance.findNoteMin || m->note > FindReplace::instance.findNoteMax))
+					|| (FindReplace::instance.findFlags[FindReplace::Instr] && (!findWhere[PatternCursor::instrColumn] || m->instr < FindReplace::instance.findInstrMin || m->instr > FindReplace::instance.findInstrMax)))
 				{
 					continue;
 				}
 
 				if(!m->IsPcNote())
 				{
-					if((FindReplace::instance.findFlags[FindReplace::VolCmd] && (!findWhere.volume || m->volcmd != FindReplace::instance.findVolCmd))
-						|| (FindReplace::instance.findFlags[FindReplace::Volume] && (!findWhere.volume || m->volcmd == VOLCMD_NONE || m->vol < FindReplace::instance.findVolumeMin || m->vol > FindReplace::instance.findVolumeMax))
-						|| (FindReplace::instance.findFlags[FindReplace::Command] && (!findWhere.command || m->command != FindReplace::instance.findCommand))
-						|| (FindReplace::instance.findFlags[FindReplace::Param] && (!findWhere.parameter || m->command == CMD_NONE ||  m->param < FindReplace::instance.findParamMin || m->param > FindReplace::instance.findParamMax))
+					if((FindReplace::instance.findFlags[FindReplace::VolCmd] && (!findWhere[PatternCursor::volumeColumn] || m->volcmd != FindReplace::instance.findVolCmd))
+						|| (FindReplace::instance.findFlags[FindReplace::Volume] && (!findWhere[PatternCursor::volumeColumn] || m->volcmd == VOLCMD_NONE || m->vol < FindReplace::instance.findVolumeMin || m->vol > FindReplace::instance.findVolumeMax))
+						|| (FindReplace::instance.findFlags[FindReplace::Command] && (!findWhere[PatternCursor::effectColumn] || m->command != FindReplace::instance.findCommand))
+						|| (FindReplace::instance.findFlags[FindReplace::Param] && (!findWhere[PatternCursor::paramColumn] || m->command == CMD_NONE ||  m->param < FindReplace::instance.findParamMin || m->param > FindReplace::instance.findParamMax))
 						|| FindReplace::instance.findFlags[FindReplace::PCParam]
 						|| FindReplace::instance.findFlags[FindReplace::PCValue])
 					{
@@ -226,8 +201,8 @@ void CViewPattern::OnEditFindNext()
 					}
 				} else
 				{
-					if((FindReplace::instance.findFlags[FindReplace::PCParam] && (!findWhere.volume || m->GetValueVolCol() < FindReplace::instance.findParamMin || m->GetValueVolCol() > FindReplace::instance.findParamMax))
-						|| (FindReplace::instance.findFlags[FindReplace::PCValue] && (!(findWhere.command || findWhere.parameter) || m->GetValueEffectCol() < FindReplace::instance.findVolumeMin || m->GetValueEffectCol() > FindReplace::instance.findVolumeMax))
+					if((FindReplace::instance.findFlags[FindReplace::PCParam] && (!findWhere[PatternCursor::volumeColumn] || m->GetValueVolCol() < FindReplace::instance.findParamMin || m->GetValueVolCol() > FindReplace::instance.findParamMax))
+						|| (FindReplace::instance.findFlags[FindReplace::PCValue] && (!(findWhere[PatternCursor::effectColumn] || findWhere[PatternCursor::paramColumn]) || m->GetValueEffectCol() < FindReplace::instance.findVolumeMin || m->GetValueEffectCol() > FindReplace::instance.findVolumeMax))
 						|| FindReplace::instance.findFlags[FindReplace::VolCmd]
 						|| FindReplace::instance.findFlags[FindReplace::Volume]
 						|| FindReplace::instance.findFlags[FindReplace::Command]
@@ -378,7 +353,7 @@ void CViewPattern::OnEditFindNext()
 						if(FindReplace::instance.replaceVolumeAction == FindReplace::ReplaceRelative || FindReplace::instance.replaceVolumeAction == FindReplace::ReplaceMultiply)
 						{
 							if(!hadVolume && m->volcmd == VOLCMD_VOLUME)
-								vol = GetDefaultVolume(*m, lastInstr[chn]);
+								vol = GetDefaultVolume(*m, lastInstr[chn]).value_or(64);
 
 							if(FindReplace::instance.replaceVolumeAction == FindReplace::ReplaceRelative)
 								vol += volReplace;
@@ -415,20 +390,26 @@ void CViewPattern::OnEditFindNext()
 						int param = m->param;
 						if(FindReplace::instance.replaceParamAction == FindReplace::ReplaceRelative || FindReplace::instance.replaceParamAction == FindReplace::ReplaceMultiply)
 						{
+							if(isExtendedEffect)
+								param &= 0x0F;
+
 							if(!hadVolume && m->command == CMD_VOLUME)
-								param = GetDefaultVolume(*m, lastInstr[chn]);
+								param = GetDefaultVolume(*m, lastInstr[chn]).value_or(64);
 
 							if(FindReplace::instance.replaceParamAction == FindReplace::ReplaceRelative)
 								param += paramReplace;
 							else
 								param = Util::muldivr(param, paramReplace, 100);
+
+							if(isExtendedEffect)
+								param = Clamp(param, 0, 15) | (m->param & 0xF0);
 						} else if(FindReplace::instance.replaceParamAction == FindReplace::ReplaceValue)
 						{
 							param = paramReplace;
 						}
 						
 						if(isExtendedEffect && !FindReplace::instance.replaceFlags[FindReplace::Command])
-							m->param = static_cast<ModCommand::PARAM>((m->param & 0xF0) | Clamp(param, 0, 15));
+							m->param = static_cast<ModCommand::PARAM>((m->param & 0xF0) | (param & 0x0F));
 						else
 							m->param = mpt::saturate_cast<ModCommand::PARAM>(param);
 					}
@@ -550,7 +531,7 @@ EndSearch:
 				result.AppendFormat(_T("-%02d"), FindReplace::instance.findVolumeMax);
 		} else if(!FindReplace::instance.findFlags[FindReplace::PCParam])
 		{
-			result.AppendFormat(_T("??"));
+			result.Append(_T("??"));
 		}
 		result.AppendChar(_T(' '));
 
@@ -579,7 +560,7 @@ EndSearch:
 				result.AppendFormat(_T("-%02X"), FindReplace::instance.findParamMax);
 		} else if(!FindReplace::instance.findFlags[FindReplace::PCValue])
 		{
-			result.AppendFormat(_T("??"));
+			result.Append(_T("??"));
 		}
 
 		result.AppendChar(_T('"'));

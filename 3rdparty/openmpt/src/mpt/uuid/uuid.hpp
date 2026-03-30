@@ -19,9 +19,9 @@
 #include "mpt/string/utility.hpp"
 
 #if MPT_OS_WINDOWS
-#if defined(_WIN32_WINNT) && (_WIN32_WINNT >= 0x0600)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 #include <guiddef.h>
-#endif // _WIN32_WINNT
+#endif // MPT_WIN_VISTA
 #include <objbase.h>
 #include <rpc.h>
 #endif // MPT_OS_WINDOWS
@@ -66,53 +66,57 @@ private:
 	uint64 Data4;
 
 public:
-	MPT_CONSTEXPRINLINE uint32 GetData1() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint32 GetData1() const noexcept {
 		return Data1;
 	}
-	MPT_CONSTEXPRINLINE uint16 GetData2() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint16 GetData2() const noexcept {
 		return Data2;
 	}
-	MPT_CONSTEXPRINLINE uint16 GetData3() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint16 GetData3() const noexcept {
 		return Data3;
 	}
-	MPT_CONSTEXPRINLINE uint64 GetData4() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint64 GetData4() const noexcept {
 		return Data4;
 	}
 
 public:
-	MPT_CONSTEXPRINLINE uint64 GetData64_1() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint64 GetData64_1() const noexcept {
 		return (static_cast<uint64>(Data1) << 32) | (static_cast<uint64>(Data2) << 16) | (static_cast<uint64>(Data3) << 0);
 	}
-	MPT_CONSTEXPRINLINE uint64 GetData64_2() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint64 GetData64_2() const noexcept {
 		return Data4;
 	}
 
 public:
 	// xxxxxxxx-xxxx-Mmxx-Nnxx-xxxxxxxxxxxx
 	// <--32-->-<16>-<16>-<-------64------>
-	MPT_CONSTEXPRINLINE bool IsNil() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsNil() const noexcept {
 		return (Data1 == 0) && (Data2 == 0) && (Data3 == 0) && (Data4 == 0);
 	}
-	MPT_CONSTEXPRINLINE bool IsValid() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsValid() const noexcept {
 		return (Data1 != 0) || (Data2 != 0) || (Data3 != 0) || (Data4 != 0);
 	}
-	MPT_CONSTEXPRINLINE uint8 Variant() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint8 Variant() const noexcept {
 		return Nn() >> 4u;
 	}
-	MPT_CONSTEXPRINLINE uint8 Version() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint8 Version() const noexcept {
 		return Mm() >> 4u;
 	}
-	MPT_CONSTEXPRINLINE bool IsRFC4122() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsRFC4122() const noexcept {
 		return (Variant() & 0xcu) == 0x8u;
 	}
 
 private:
-	MPT_CONSTEXPRINLINE uint8 Mm() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint8 Mm() const noexcept {
 		return static_cast<uint8>((Data3 >> 8) & 0xffu);
 	}
-	MPT_CONSTEXPRINLINE uint8 Nn() const noexcept {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint8 Nn() const noexcept {
 		return static_cast<uint8>((Data4 >> 56) & 0xffu);
 	}
+#if MPT_COMPILER_GCC
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif // MPT_COMPILER_GCC
 	void MakeRFC4122(uint8 version) noexcept {
 		// variant
 		uint8 Nn = static_cast<uint8>((Data4 >> 56) & 0xffu);
@@ -128,6 +132,9 @@ private:
 		Mm |= (version << 4u);
 		Data3 |= static_cast<uint16>(Mm) << 8;
 	}
+#if MPT_COMPILER_GCC
+#pragma GCC diagnostic pop
+#endif // MPT_COMPILER_GCC
 #if MPT_OS_WINDOWS
 private:
 	static mpt::UUID UUIDFromWin32(::UUID uuid) {
@@ -158,23 +165,23 @@ public:
 	}
 #endif // MPT_OS_WINDOWS
 private:
-	static MPT_CONSTEXPRINLINE uint8 NibbleFromChar(char x) {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static uint8 NibbleFromChar(char x) {
 		return ('0' <= x && x <= '9') ? static_cast<uint8>(x - '0' + 0) : ('a' <= x && x <= 'z') ? static_cast<uint8>(x - 'a' + 10)
-			: ('A' <= x && x <= 'Z')                                                             ? static_cast<uint8>(x - 'A' + 10)
+																	: ('A' <= x && x <= 'Z')     ? static_cast<uint8>(x - 'A' + 10)
 																								 : mpt::constexpr_throw<uint8>(std::domain_error(""));
 	}
-	static MPT_CONSTEXPRINLINE uint8 ByteFromHex(char x, char y) {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static uint8 ByteFromHex(char x, char y) {
 		return static_cast<uint8>(uint8(0) | (NibbleFromChar(x) << 4) | (NibbleFromChar(y) << 0));
 	}
-	static MPT_CONSTEXPRINLINE uint16 ParseHex16(const char * str) {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static uint16 ParseHex16(const char * str) {
 		return static_cast<uint16>(uint16(0) | (static_cast<uint16>(ByteFromHex(str[0], str[1])) << 8) | (static_cast<uint16>(ByteFromHex(str[2], str[3])) << 0));
 	}
-	static MPT_CONSTEXPRINLINE uint32 ParseHex32(const char * str) {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static uint32 ParseHex32(const char * str) {
 		return static_cast<uint32>(uint32(0) | (static_cast<uint32>(ByteFromHex(str[0], str[1])) << 24) | (static_cast<uint32>(ByteFromHex(str[2], str[3])) << 16) | (static_cast<uint32>(ByteFromHex(str[4], str[5])) << 8) | (static_cast<uint32>(ByteFromHex(str[6], str[7])) << 0));
 	}
 
 public:
-	static MPT_CONSTEXPRINLINE UUID ParseLiteral(const char * str, std::size_t len) {
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static UUID ParseLiteral(const char * str, std::size_t len) {
 		return (len == 36 && str[8] == '-' && str[13] == '-' && str[18] == '-' && str[23] == '-') ? mpt::UUID(
 				   ParseHex32(str + 0),
 				   ParseHex16(str + 9),
@@ -187,14 +194,14 @@ public:
 	}
 
 public:
-	MPT_CONSTEXPRINLINE UUID() noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr UUID() noexcept
 		: Data1(0)
 		, Data2(0)
 		, Data3(0)
 		, Data4(0) {
 		return;
 	}
-	MPT_CONSTEXPRINLINE explicit UUID(uint32 Data1, uint16 Data2, uint16 Data3, uint64 Data4) noexcept
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr explicit UUID(uint32 Data1, uint16 Data2, uint16 Data3, uint64 Data4) noexcept
 		: Data1(Data1)
 		, Data2(Data2)
 		, Data3(Data3)
@@ -234,18 +241,16 @@ public:
 	// Create a UUID
 	template <typename Trng>
 	static UUID Generate(Trng & rng) {
-#if MPT_OS_WINDOWS && MPT_OS_WINDOWS_WINRT
-#if (_WIN32_WINNT >= 0x0602)
+#if MPT_WINRT_AT_LEAST(MPT_WIN_8)
 		::GUID guid = ::GUID();
 		HRESULT result = CoCreateGuid(&guid);
 		if (result != S_OK) {
 			return mpt::UUID::RFC4122Random(rng);
 		}
 		return mpt::UUID::UUIDFromWin32(guid);
-#else
+#elif MPT_WINRT_BEFORE(MPT_WIN_8)
 		return mpt::UUID::RFC4122Random(rng);
-#endif
-#elif MPT_OS_WINDOWS && !MPT_OS_WINDOWS_WINRT
+#elif MPT_OS_WINDOWS
 		::UUID uuid = ::UUID();
 		RPC_STATUS status = ::UuidCreate(&uuid);
 		if (status != RPC_S_OK && status != RPC_S_UUID_LOCAL_ONLY) {
@@ -260,29 +265,23 @@ public:
 		}
 		return mpt::UUID::UUIDFromWin32(uuid);
 #else
-		return RFC4122Random(rng);
+		return mpt::UUID::RFC4122Random(rng);
 #endif
 	}
 	// Create a UUID that contains local, traceable information.
 	// Safe for local use. May be faster.
 	template <typename Trng>
 	static UUID GenerateLocalUseOnly(Trng & rng) {
-#if MPT_OS_WINDOWS && MPT_OS_WINDOWS_WINRT
-#if (_WIN32_WINNT >= 0x0602)
+#if MPT_WINRT_AT_LEAST(MPT_WIN_8)
 		::GUID guid = ::GUID();
 		HRESULT result = CoCreateGuid(&guid);
 		if (result != S_OK) {
 			return mpt::UUID::RFC4122Random(rng);
 		}
 		return mpt::UUID::UUIDFromWin32(guid);
-#else
+#elif MPT_WINRT_BEFORE(MPT_WIN_8)
 		return mpt::UUID::RFC4122Random(rng);
-#endif
-#elif MPT_OS_WINDOWS && !MPT_OS_WINDOWS_WINRT
-#if _WIN32_WINNT >= 0x0501
-		// Available since Win2000, but we check for WinXP in order to not use this
-		// function in Win32old builds. It is not available on some non-fully
-		// patched Win98SE installs in the wild.
+#elif MPT_WINNT_AT_LEAST(MPT_WIN_2000)
 		::UUID uuid = ::UUID();
 		RPC_STATUS status = ::UuidCreateSequential(&uuid);
 		if (status != RPC_S_OK && status != RPC_S_UUID_LOCAL_ONLY) {
@@ -296,11 +295,10 @@ public:
 			return mpt::UUID::RFC4122Random(rng);
 		}
 		return mpt::UUID::UUIDFromWin32(uuid);
-#else
+#elif MPT_OS_WINDOWS
 		// Fallback to ::UuidCreate is safe as ::UuidCreateSequential is only a
 		// tiny performance optimization.
 		return Generate(rng);
-#endif
 #else
 		return RFC4122Random(rng);
 #endif
@@ -343,72 +341,45 @@ public:
 			return UUID();
 		}
 		UUID result;
-		result.Data1 = mpt::ConvertHexStringTo<uint32>(segments[0]);
-		result.Data2 = mpt::ConvertHexStringTo<uint16>(segments[1]);
-		result.Data3 = mpt::ConvertHexStringTo<uint16>(segments[2]);
-		result.Data4 = mpt::ConvertHexStringTo<uint64>(segments[3] + segments[4]);
+		result.Data1 = mpt::parse_hex<uint32>(segments[0]);
+		result.Data2 = mpt::parse_hex<uint16>(segments[1]);
+		result.Data3 = mpt::parse_hex<uint16>(segments[2]);
+		result.Data4 = mpt::parse_hex<uint64>(segments[3] + segments[4]);
 		return result;
-	}
-	std::string ToAString() const {
-		return std::string()
-			+ mpt::format<std::string>::hex0<8>(GetData1())
-			+ std::string("-")
-			+ mpt::format<std::string>::hex0<4>(GetData2())
-			+ std::string("-")
-			+ mpt::format<std::string>::hex0<4>(GetData3())
-			+ std::string("-")
-			+ mpt::format<std::string>::hex0<4>(static_cast<uint16>(GetData4() >> 48))
-			+ std::string("-")
-			+ mpt::format<std::string>::hex0<4>(static_cast<uint16>(GetData4() >> 32))
-			+ mpt::format<std::string>::hex0<8>(static_cast<uint32>(GetData4() >> 0));
 	}
 	mpt::ustring ToUString() const {
 		return mpt::ustring()
-			+ mpt::format<mpt::ustring>::hex0<8>(GetData1())
-			+ MPT_USTRING("-")
-			+ mpt::format<mpt::ustring>::hex0<4>(GetData2())
-			+ MPT_USTRING("-")
-			+ mpt::format<mpt::ustring>::hex0<4>(GetData3())
-			+ MPT_USTRING("-")
-			+ mpt::format<mpt::ustring>::hex0<4>(static_cast<uint16>(GetData4() >> 48))
-			+ MPT_USTRING("-")
-			+ mpt::format<mpt::ustring>::hex0<4>(static_cast<uint16>(GetData4() >> 32))
-			+ mpt::format<mpt::ustring>::hex0<8>(static_cast<uint32>(GetData4() >> 0));
+			 + mpt::format<mpt::ustring>::hex0<8>(GetData1())
+			 + MPT_USTRING("-")
+			 + mpt::format<mpt::ustring>::hex0<4>(GetData2())
+			 + MPT_USTRING("-")
+			 + mpt::format<mpt::ustring>::hex0<4>(GetData3())
+			 + MPT_USTRING("-")
+			 + mpt::format<mpt::ustring>::hex0<4>(static_cast<uint16>(GetData4() >> 48))
+			 + MPT_USTRING("-")
+			 + mpt::format<mpt::ustring>::hex0<4>(static_cast<uint16>(GetData4() >> 32))
+			 + mpt::format<mpt::ustring>::hex0<8>(static_cast<uint32>(GetData4() >> 0));
 	}
 };
 
-MPT_CONSTEXPRINLINE bool operator==(const mpt::UUID & a, const mpt::UUID & b) noexcept {
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator==(const mpt::UUID & a, const mpt::UUID & b) noexcept {
 	return (a.GetData1() == b.GetData1()) && (a.GetData2() == b.GetData2()) && (a.GetData3() == b.GetData3()) && (a.GetData4() == b.GetData4());
 }
 
-MPT_CONSTEXPRINLINE bool operator!=(const mpt::UUID & a, const mpt::UUID & b) noexcept {
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator!=(const mpt::UUID & a, const mpt::UUID & b) noexcept {
 	return (a.GetData1() != b.GetData1()) || (a.GetData2() != b.GetData2()) || (a.GetData3() != b.GetData3()) || (a.GetData4() != b.GetData4());
 }
 
 
 namespace uuid_literals {
 
-MPT_CONSTEXPRINLINE mpt::UUID operator"" _uuid(const char * str, std::size_t len) {
+MPT_ATTR_ALWAYSINLINE MPT_CONSTEVAL mpt::UUID operator""_uuid(const char * str, std::size_t len) {
 	return mpt::UUID::ParseLiteral(str, len);
 }
 
 } // namespace uuid_literals
 
 
-template <typename Tstring>
-inline Tstring uuid_to_string(mpt::UUID uuid) {
-	return mpt::convert<Tstring>(uuid.ToUString());
-}
-
-template <>
-inline std::string uuid_to_string<std::string>(mpt::UUID uuid) {
-	return uuid.ToAString();
-}
-
-template <typename Tstring, typename T, std::enable_if_t<std::is_same<T, mpt::UUID>::value, bool> = true>
-inline Tstring format_value_default(const T & x) {
-	return mpt::convert<Tstring>(mpt::uuid_to_string<typename mpt::select_format_string_type<Tstring>::type>(x));
-}
 
 
 } // namespace MPT_INLINE_NS

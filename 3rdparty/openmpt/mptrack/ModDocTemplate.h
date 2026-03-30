@@ -12,12 +12,15 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#include "mpt/base/namespace.hpp"
+
+#include "../common/mptPathString.h"
+
 #include <unordered_set>
 
 OPENMPT_NAMESPACE_BEGIN
 
 class CModDoc;
-namespace mpt { class PathString; }
 
 class CModDocTemplate: public CMultiDocTemplate
 {

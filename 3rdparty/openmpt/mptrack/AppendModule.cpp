@@ -27,7 +27,6 @@ void CModDoc::AppendModule(const CSoundFile &source)
 
 	///////////////////////////////////////////////////////////////////////////
 	// Copy plugins
-#ifndef NO_PLUGINS
 	if(specs.supportsPlugins)
 	{
 		PLUGINDEX plug = 0;
@@ -60,7 +59,6 @@ void CModDoc::AppendModule(const CSoundFile &source)
 			}
 		}
 	}
-#endif // NO_PLUGINS
 
 	///////////////////////////////////////////////////////////////////////////
 	// Copy samples / instruments
@@ -71,13 +69,11 @@ void CModDoc::AppendModule(const CSoundFile &source)
 	}
 
 	// Check which samples / instruments are actually referenced.
-	for(const auto &pat : source.Patterns) if(pat.IsValid())
+	source.Patterns.ForEachModCommand([&instrMapping] (const ModCommand &m)
 	{
-		for(const auto &m : pat)
-		{
-			if(!m.IsPcNote() && m.instr < instrMapping.size()) instrMapping[m.instr] = 0;
-		}
-	}
+		if(!m.IsPcNote() && m.instr < instrMapping.size())
+			instrMapping[m.instr] = 0;
+	});
 
 	if(m_SndFile.GetNumInstruments())
 	{
@@ -167,6 +163,9 @@ void CModDoc::AppendModule(const CSoundFile &source)
 		{
 			m_SndFile.Order.AddSequence();
 			m_SndFile.Order().SetName(srcOrder.GetName());
+			m_SndFile.Order().SetDefaultTempo(srcOrder.GetDefaultTempo());
+			m_SndFile.Order().SetDefaultSpeed(srcOrder.GetDefaultSpeed());
+			m_SndFile.Order().SetRestartPos(srcOrder.GetRestartPos());
 		} else
 		{
 			insertPos = m_SndFile.Order().GetLengthTailTrimmed();
@@ -201,12 +200,12 @@ void CModDoc::AppendModule(const CSoundFile &source)
 					continue;
 				}
 				insertPat = patternMapping[srcPat];
-			} else if(srcPat == srcOrder.GetIgnoreIndex() && specs.hasIgnoreIndex)
+			} else if(srcPat == PATTERNINDEX_SKIP && specs.hasIgnoreIndex)
 			{
-				insertPat = m_SndFile.Order.GetIgnoreIndex();
-			} else if(srcPat == srcOrder.GetInvalidPatIndex() && specs.hasStopIndex)
+				insertPat = PATTERNINDEX_SKIP;
+			} else if(srcPat == PATTERNINDEX_INVALID && specs.hasStopIndex)
 			{
-				insertPat = m_SndFile.Order.GetInvalidPatIndex();
+				insertPat = PATTERNINDEX_INVALID;
 			} else
 			{
 				continue;
@@ -279,8 +278,8 @@ void CModDoc::AppendModule(const CSoundFile &source)
 		const ROWINDEX copyRows = std::min(sourcePat.GetNumRows(), targetPat.GetNumRows());
 		for(ROWINDEX row = 0; row < copyRows; row++)
 		{
-			const ModCommand *src = sourcePat.GetRow(row);
-			ModCommand *m = targetPat.GetRow(row);
+			const ModCommand *src = sourcePat.GetpModCommand(row, 0);
+			ModCommand *m = targetPat.GetpModCommand(row, 0);
 			for(CHANNELINDEX chn = 0; chn < copyChannels; chn++, src++, m++)
 			{
 				*m = *src;
@@ -311,6 +310,14 @@ void CModDoc::AppendModule(const CSoundFile &source)
 			targetPat.WriteEffect(EffectWriter(CMD_PATTERNBREAK, 0).Row(copyRows - 1).RetryNextRow());
 		}
 	}
+
+	///////////////////////////////////////////////////////////////////////////
+	// Copy edit history
+	auto &history = m_SndFile.GetFileHistory();
+	const auto &sourceHistory = source.GetFileHistory();
+	history.insert(history.end(), sourceHistory.begin(), sourceHistory.end());
+	std::sort(history.begin(), history.end());
+	history.erase(std::unique(history.begin(), history.end()), history.end());
 }
 
 OPENMPT_NAMESPACE_END

@@ -1,27 +1,23 @@
- 
+
+include_dependency "ext-ogg.lua"
+if MPT_MSVC_BEFORE(2022) then
+include_dependency "ext-pthread-win32.lua"
+end
+
  project "flac"
   uuid "E599F5AA-F9A3-46CC-8DB0-C8DEFCEB90C5"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "flac"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-flac"
-  local extincludedirs = {
-		"../../include/ogg/include",
-	}
-	filter { "action:vs*" }
-		includedirs ( extincludedirs )
-	filter { "not action:vs*" }
-		sysincludedirs ( extincludedirs )
-	filter {}
+
+	mpt_use_ogg()
+	defines { "FLAC__HAS_OGG=1" }
+
   includedirs {
 		"../../include/flac/include",
 		"../../include/flac/src/libFLAC/include",
 	}
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   files {
    "../../include/flac/src/libFLAC/bitmath.c",
@@ -30,15 +26,18 @@
    "../../include/flac/src/libFLAC/cpu.c",
    "../../include/flac/src/libFLAC/crc.c",
    "../../include/flac/src/libFLAC/fixed.c",
+   "../../include/flac/src/libFLAC/fixed_intrin_avx2.c",
    "../../include/flac/src/libFLAC/fixed_intrin_sse2.c",
    "../../include/flac/src/libFLAC/fixed_intrin_ssse3.c",
+   "../../include/flac/src/libFLAC/fixed_intrin_sse42.c",
    "../../include/flac/src/libFLAC/float.c",
    "../../include/flac/src/libFLAC/format.c",
    "../../include/flac/src/libFLAC/lpc.c",
    "../../include/flac/src/libFLAC/lpc_intrin_avx2.c",
+   "../../include/flac/src/libFLAC/lpc_intrin_fma.c",
+   "../../include/flac/src/libFLAC/lpc_intrin_neon.c",
    "../../include/flac/src/libFLAC/lpc_intrin_sse2.c",
    "../../include/flac/src/libFLAC/lpc_intrin_sse41.c",
-   "../../include/flac/src/libFLAC/lpc_intrin_sse.c",
    "../../include/flac/src/libFLAC/md5.c",
    "../../include/flac/src/libFLAC/memory.c",
    "../../include/flac/src/libFLAC/metadata_iterators.c",
@@ -54,7 +53,6 @@
    "../../include/flac/src/libFLAC/stream_encoder_intrin_ssse3.c",
    "../../include/flac/src/libFLAC/stream_encoder_framing.c",
    "../../include/flac/src/libFLAC/window.c",
-   "../../include/flac/src/libFLAC/windows_unicode_filenames.c",
   }
   files {
    "../../include/flac/src/libFLAC/include/private/all.h",
@@ -81,11 +79,14 @@
    "../../include/flac/src/libFLAC/include/protected/stream_decoder.h",
    "../../include/flac/src/libFLAC/include/protected/stream_encoder.h",
   }
-  filter { "action:vs*" }
-    files {
-     "../../include/flac/src/share/win_utf8_io/win_utf8_io.c",
-    }
-  filter {}
+	filter {}
+	if MPT_OS_WINDOWS then
+		filter {}
+		files {
+			"../../include/flac/src/share/win_utf8_io/win_utf8_io.c",
+		}
+	end
+	filter {}
   files {
    "../../include/flac/include/FLAC/all.h",
    "../../include/flac/include/FLAC/assert.h",
@@ -100,29 +101,72 @@
   files {
    "../../include/flac/include/share/alloc.h",
    "../../include/flac/include/share/compat.h",
+   "../../include/flac/include/share/compat_threads.h",
    "../../include/flac/include/share/endswap.h",
    "../../include/flac/include/share/macros.h",
    "../../include/flac/include/share/private.h",
    "../../include/flac/include/share/safe_str.h",
   }
-  filter { "action:vs*" }
-    files {
-     "../../include/flac/include/share/win_utf8_io.h",
-     "../../include/flac/include/share/windows_unicode_filenames.h",
-    }
-  filter {}
-  filter { "action:vs*" }
-    buildoptions { "/wd4101", "/wd4244", "/wd4267", "/wd4334" }
-  filter {}
-  filter { "action:vs*" }
-    buildoptions { "/wd6001", "/wd6011", "/wd6031", "/wd6297", "/wd28182" } -- /analyze
-  filter {}
-  defines { "FLAC__HAS_OGG=1" }
-  links { "ogg" }
-  defines { "PACKAGE_VERSION=\"1.3.3\"" }
+	filter {}
+	if MPT_OS_WINDOWS then
+		filter {}
+		files {
+			"../../include/flac/include/share/win_utf8_io.h",
+		}
+	end
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd4101", "/wd4244", "/wd4267", "/wd4334" }
+		buildoptions { "/wd6001", "/wd6011", "/wd6031", "/wd6297", "/wd6386", "/wd26110", "/wd28182" } -- /analyze
+	end
+	filter {}
+  defines { "PACKAGE_VERSION=\"1.5.0\"" }
   filter {}
   filter { "kind:StaticLib" }
    defines { "FLAC__NO_DLL" }
   filter { "kind:SharedLib" }
    defines { "FLAC_API_EXPORTS" }
-  filter {}
+	filter { "architecture:x86" }
+		defines {
+			"FLAC__HAS_X86INTRIN",
+			"FLAC__USE_AVX",
+		}
+	filter { "architecture:x86_64" }
+		defines {
+			"FLAC__HAS_X86INTRIN",
+			"FLAC__USE_AVX",
+		}
+	filter {}
+		if MPT_MSVC_BEFORE(2022) then
+			filter {}
+			mpt_use_pthread_win32()
+			defines { "HAVE_PTHREAD" }
+			filter {}
+		else
+			filter {}
+			filter {  "not configurations:DebugShared" }
+				-- Debug DLL runtime is missing a DLL when using C11 threads
+				defines { "HAVE_C11THREADS" }
+			filter {}
+		end
+	filter {}
+
+function mpt_use_flac ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/flac/include",
+	}
+	filter {}
+	if MPT_OS_WINDOWS then
+		filter {}
+		filter { "configurations:*Shared" }
+		filter { "not configurations:*Shared" }
+			defines { "FLAC__NO_DLL" }
+		filter {}
+	end
+	filter {}
+	links {
+		"flac",
+	}
+	filter {}
+end

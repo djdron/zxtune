@@ -5,11 +5,14 @@
 
 
 
-#include "mpt/base/namespace.hpp"
-
+#include "mpt/base/detect.hpp"
 #include "mpt/base/memory.hpp"
+#include "mpt/base/namespace.hpp"
 #include "mpt/base/span.hpp"
 
+#if MPT_CXX_BEFORE(20)
+#include <algorithm>
+#endif // C++20
 #include <iterator>
 #include <memory>
 #include <string>
@@ -114,6 +117,33 @@ inline Tcont1 & append(Tcont1 & cont1, Tit2 beg, Tit2 end) {
 
 
 
+#if MPT_CXX_AT_LEAST(20)
+
+using std::erase;
+using std::erase_if;
+
+#else // !C++20
+
+template <typename T, typename U>
+inline typename std::vector<T>::size_type erase(std::vector<T> & c, const U & value) {
+	auto it = std::remove(c.begin(), c.end(), value);
+	auto r = c.end() - it;
+	c.erase(it, c.end());
+	return r;
+}
+
+template <typename T, typename Pred>
+inline typename std::vector<T>::size_type erase_if(std::vector<T> & c, Pred pred) {
+	auto it = std::remove_if(c.begin(), c.end(), pred);
+	auto r = c.end() - it;
+	c.erase(it, c.end());
+	return r;
+}
+
+#endif // C++20
+
+
+
 template <typename Tdst, typename Tsrc>
 struct buffer_cast_impl {
 	inline Tdst operator()(const Tsrc & src) const {
@@ -123,7 +153,7 @@ struct buffer_cast_impl {
 
 // casts between vector<->string of byte-castable types
 template <typename Tdst, typename Tsrc>
-inline Tdst buffer_cast(Tsrc src) {
+inline Tdst buffer_cast(const Tsrc & src) {
 	return buffer_cast_impl<Tdst, Tsrc>()(src);
 }
 
@@ -167,6 +197,18 @@ public:
 	}
 	T & operator*() {
 		return *m_value;
+	}
+	const T * operator->() const {
+		return m_value.get();
+	}
+	T * operator->() {
+		return m_value.get();
+	}
+	const T * get() const {
+		return m_value.get();
+	}
+	T * get() {
+		return m_value.get();
 	}
 };
 

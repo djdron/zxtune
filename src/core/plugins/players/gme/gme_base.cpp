@@ -417,6 +417,10 @@ namespace Module::GME
       {
         Dbg("Failed to create {}: {}", Desc.Id, e.what());
       }
+      catch (const Error& e)
+      {
+        Dbg("Failed to create {}: {}", Desc.Id, e.ToString());
+      }
       return {};
     }
 

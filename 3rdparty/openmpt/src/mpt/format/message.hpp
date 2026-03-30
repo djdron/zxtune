@@ -33,17 +33,17 @@ public:
 	}
 };
 
-template <typename Tformatter, typename Tformat>
+template <typename Tformatter, typename Tstring>
 class message_formatter {
 
-public:
-	using Tstring = typename mpt::make_string_type<Tformat>::type;
+private:
+	using Tstringview = typename mpt::make_string_view_type<Tstring>::type;
 
 private:
 	Tstring format;
 
 private:
-	MPT_NOINLINE Tstring do_format(const mpt::span<const Tstring> vals) const {
+	MPT_ATTR_NOINLINE MPT_DECL_NOINLINE Tstring do_format(const mpt::span<const Tstring> vals) const {
 		using traits = typename mpt::string_traits<Tstring>;
 		using char_type = typename traits::char_type;
 		using size_type = typename traits::size_type;
@@ -53,8 +53,7 @@ private:
 		std::size_t max_arg = 0;
 		//std::size_t args = 0;
 		bool success = true;
-		enum class state : int
-		{
+		enum class state : int {
 			error = -1,
 			text = 0,
 			open_seen = 1,
@@ -77,13 +76,13 @@ private:
 						state = state::close_seen;
 					} else {
 						state = state::text;
-						traits::append(result, 1, c); // output c here
+						traits::append(result, c); // output c here
 					}
 					break;
 				case state::open_seen:
 					if (c == char_type('{')) {
 						state = state::text;
-						traits::append(result, 1, char_type('{')); // output { here
+						traits::append(result, char_type('{')); // output { here
 					} else if (c == char_type('}')) {
 						state = state::text;
 						unnumbered_args = true;
@@ -136,7 +135,7 @@ private:
 						state = state::error;
 					} else if (c == char_type('}')) {
 						state = state::text;
-						traits::append(result, 1, char_type('}')); // output } here
+						traits::append(result, char_type('}')); // output } here
 					} else {
 						state = state::error;
 					}
@@ -162,22 +161,25 @@ private:
 	}
 
 public:
-	MPT_FORCEINLINE message_formatter(Tstring format_)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE message_formatter(Tstring format_)
 		: format(std::move(format_)) {
 	}
 
 public:
 	template <typename... Ts>
-	MPT_NOINLINE Tstring operator()(Ts &&... xs) const {
+	MPT_ATTR_NOINLINE MPT_DECL_NOINLINE Tstring operator()(Ts &&... xs) const {
 		const std::array<Tstring, sizeof...(xs)> vals{{Tformatter::template format<Tstring>(std::forward<Ts>(xs))...}};
 		return do_format(mpt::as_span(vals));
 	}
 
-}; // struct message_formatter<Tformat>
+}; // class message_formatter
 
 
 template <typename Tformatter, std::ptrdiff_t N, typename Tchar, typename Tstring>
 class message_formatter_counted {
+
+private:
+	using Tstringview = typename mpt::make_string_view_type<Tstring>::type;
 
 private:
 	message_formatter<Tformatter, Tstring> formatter;
@@ -196,16 +198,15 @@ public:
 		return formatter(std::forward<Ts>(xs)...);
 	}
 
-}; // struct message_formatter_counted<Tformat>
+}; // struct message_formatter_counted
 
 
 template <typename Tchar>
-MPT_CONSTEXPRINLINE std::ptrdiff_t parse_format_string_argument_count_impl(const Tchar * const format, const std::size_t len) {
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr std::ptrdiff_t parse_format_string_argument_count_impl(const Tchar * const format, const std::size_t len) {
 	std::size_t max_arg = 0;
 	std::size_t args = 0;
 	bool success = true;
-	enum class state : int
-	{
+	enum class state : int {
 		error = -1,
 		text = 0,
 		open_seen = 1,
@@ -308,7 +309,7 @@ MPT_CONSTEXPRINLINE std::ptrdiff_t parse_format_string_argument_count_impl(const
 
 
 template <typename Tchar, std::size_t literal_length>
-MPT_CONSTEXPRINLINE std::ptrdiff_t parse_format_string_argument_count(const Tchar (&format)[literal_length]) {
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr std::ptrdiff_t parse_format_string_argument_count(const Tchar (&format)[literal_length]) {
 	return parse_format_string_argument_count_impl(format, literal_length - 1);
 }
 

@@ -12,9 +12,10 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#include "mpt/library/library.hpp"
 #include "mpt/osinfo/class.hpp"
 #include "mpt/osinfo/windows_version.hpp"
+#include "mpt/osinfo/windows_wine_version.hpp"
+#include "mpt/osinfo_wine/wine.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -27,46 +28,17 @@ namespace OS
 namespace Windows
 {
 
-
-class Version
-	: public mpt::osinfo::windows::Version
+namespace Version
 {
 
-public:
+	mpt::ustring GetName(mpt::osinfo::windows::Version version);
 
-	static mpt::ustring VersionToString(mpt::OS::Windows::Version::System version);
+	mpt::ustring GetCurrentName();
 
-private:
+	mpt::osinfo::windows::Version GetMinimumKernelLevel() noexcept;
+	mpt::osinfo::windows::Version GetMinimumAPILevel() noexcept;
 
-	Version() noexcept;
-
-public:
-
-	static Version NoWindows() noexcept;
-
-public:
-
-	Version(mpt::osinfo::windows::Version v) noexcept;
-
-public:
-
-	Version(mpt::OS::Windows::Version::System system, mpt::OS::Windows::Version::ServicePack servicePack, mpt::OS::Windows::Version::Build build, mpt::OS::Windows::Version::TypeId type) noexcept;
-
-public:
-
-	static mpt::OS::Windows::Version Current() noexcept;
-
-public:
-
-	mpt::ustring GetName() const;
-	mpt::ustring GetNameShort() const;
-
-public:
-
-	static mpt::OS::Windows::Version::System GetMinimumKernelLevel() noexcept;
-	static mpt::OS::Windows::Version::System GetMinimumAPILevel() noexcept;
-
-}; // class Version
+} // namespace Version
 
 #if MPT_OS_WINDOWS
 
@@ -135,40 +107,11 @@ namespace OS
 namespace Wine
 {
 
-class Version
-	: public mpt::osinfo::windows::wine::version
-{
-public:
-	Version();
-	Version(uint8 vmajor, uint8 vminor, uint8 vupdate);
-	explicit Version(const mpt::ustring &version);
-public:
-	mpt::ustring AsString() const;
-};
+using Version = mpt::osinfo::windows::wine::version;
 
-mpt::OS::Wine::Version GetMinimumWineVersion();
+using VersionContext = mpt::osinfo::windows::wine::VersionContext;
 
-class VersionContext
-{
-protected:
-	bool m_IsWine;
-	std::string m_RawVersion;
-	std::string m_RawBuildID;
-	std::string m_RawHostSysName;
-	std::string m_RawHostRelease;
-	mpt::OS::Wine::Version m_Version;
-	mpt::osinfo::osclass m_HostClass;
-public:
-	VersionContext();
-public:
-	bool IsWine() const { return m_IsWine; }
-	std::string RawVersion() const { return m_RawVersion; }
-	std::string RawBuildID() const { return m_RawBuildID; }
-	std::string RawHostSysName() const { return m_RawHostSysName; }
-	std::string RawHostRelease() const { return m_RawHostRelease; }
-	mpt::OS::Wine::Version Version() const { return m_Version; }
-	mpt::osinfo::osclass HostClass() const { return m_HostClass; }
-};
+mpt::osinfo::windows::wine::version GetMinimumWineVersion();
 
 } // namespace Wine
 } // namespace OS

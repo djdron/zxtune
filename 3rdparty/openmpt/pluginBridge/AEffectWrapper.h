@@ -13,7 +13,7 @@
 #include "openmpt/all/BuildSettings.hpp"
 
 #include <vector>
-#include "../mptrack/plugins/VstDefinitions.h"
+#include <VstDefinitions.h>
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -29,7 +29,7 @@ struct AEffectProto
 	ptr_t getParameter;
 
 	int32 numPrograms;
-	int32 numParams;
+	uint32 numParams;
 	int32 numInputs;
 	int32 numOutputs;
 
@@ -89,8 +89,8 @@ using AEffect64 = AEffectProto<int64>;
 #pragma pack(pop)
 
 
-// Translate a VSTEvents struct to bridge format (placed in data vector)
-static void TranslateVstEventsToBridge(std::vector<char> &outData, const Vst::VstEvents &events, int32 targetPtrSize)
+// Translate a VSTEvents struct to bridge format (placed in outData vector)
+inline void TranslateVstEventsToBridge(std::vector<char> &outData, const Vst::VstEvents &events, int32 targetPtrSize)
 {
 	outData.reserve(outData.size() + sizeof(int32) + sizeof(Vst::VstMidiEvent) * events.numEvents);
 	// Write number of events
@@ -105,7 +105,7 @@ static void TranslateVstEventsToBridge(std::vector<char> &outData, const Vst::Vs
 			auto sysExEvent = *static_cast<const Vst::VstMidiSysexEvent *>(event);
 			sysExEvent.byteSize = 4 * sizeof(int32) + 4 * targetPtrSize;  // It's 5 int32s and 3 pointers but that means that on 64-bit platforms, the fifth int32 is padded for alignment.
 			PushToVector(outData, sysExEvent, 5 * sizeof(int32));         // Exclude the three pointers at the end for now
-			if(targetPtrSize > sizeof(int32))                             // Padding for 64-bit required?
+			if(targetPtrSize > static_cast<int32>(sizeof(int32)))                             // Padding for 64-bit required?
 				outData.insert(outData.end(), targetPtrSize - sizeof(int32), 0);
 			outData.insert(outData.end(), 3 * targetPtrSize, 0);  // Make space for pointer + two reserved intptr_ts
 			// Embed SysEx dump as well...
@@ -126,8 +126,8 @@ static void TranslateVstEventsToBridge(std::vector<char> &outData, const Vst::Vs
 }
 
 
-// Translate bridge format (void *ptr) back to VSTEvents struct (placed in data vector)
-static void TranslateBridgeToVstEvents(std::vector<char> &outData, const void *inData)
+// Translate bridge format (void *ptr) back to VSTEvents struct (placed in outData vector)
+inline void TranslateBridgeToVstEvents(std::vector<char> &outData, const void *inData)
 {
 	const int32 numEvents = *static_cast<const int32 *>(inData);
 
@@ -174,7 +174,7 @@ static void TranslateBridgeToVstEvents(std::vector<char> &outData, const void *i
 
 
 // Calculate the size total of the VSTEvents (without header) in bridge format
-static size_t BridgeVstEventsSize(const void *ptr)
+inline size_t BridgeVstEventsSize(const void *ptr)
 {
 	const int32 numEvents = *static_cast<const int32 *>(ptr);
 	size_t size = 0;
@@ -191,7 +191,7 @@ static size_t BridgeVstEventsSize(const void *ptr)
 }
 
 
-static void TranslateVstFileSelectToBridge(std::vector<char> &outData, const Vst::VstFileSelect &fileSelect, int32 targetPtrSize)
+inline void TranslateVstFileSelectToBridge(std::vector<char> &outData, const Vst::VstFileSelect &fileSelect, int32 targetPtrSize)
 {
 	outData.reserve(outData.size() + sizeof(Vst::VstFileSelect) + fileSelect.numFileTypes * sizeof(Vst::VstFileType));
 	PushToVector(outData, fileSelect.command);
@@ -202,7 +202,7 @@ static void TranslateVstFileSelectToBridge(std::vector<char> &outData, const Vst
 	PushToVector(outData, fileSelect.title);
 	outData.insert(outData.end(), 2 * targetPtrSize, 0);  // initialPath, returnPath
 	PushToVector(outData, fileSelect.sizeReturnPath);
-	if(targetPtrSize > sizeof(int32))
+	if(targetPtrSize > static_cast<int32>(sizeof(int32)))
 		outData.insert(outData.end(), targetPtrSize - sizeof(int32), 0);  // padding
 	outData.insert(outData.end(), targetPtrSize, 0);                      // returnMultiplePaths
 	PushToVector(outData, fileSelect.numReturnPaths);
@@ -231,7 +231,7 @@ static void TranslateVstFileSelectToBridge(std::vector<char> &outData, const Vst
 }
 
 
-static void TranslateBridgeToVstFileSelect(std::vector<char> &outData, const void *inData, size_t srcSize)
+inline void TranslateBridgeToVstFileSelect(std::vector<char> &outData, const void *inData, size_t srcSize)
 {
 	outData.assign(static_cast<const char *>(inData), static_cast<const char *>(inData) + srcSize);
 

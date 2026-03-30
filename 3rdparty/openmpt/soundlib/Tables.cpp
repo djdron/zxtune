@@ -42,7 +42,6 @@ const mpt::uchar NoteNamesFlat[12][4] =
 
 struct ModFormatInfo
 {
-	MODTYPE format;          // MOD_TYPE_XXXX
 	const mpt::uchar *name;  // "ProTracker"
 	const char *extension;   // "mod"
 };
@@ -50,73 +49,103 @@ struct ModFormatInfo
 // Note: Formats with identical extensions must be grouped together.
 static constexpr ModFormatInfo modFormatInfo[] =
 {
-	{ MOD_TYPE_MPT,  UL_("OpenMPT"),                    "mptm" },
-	{ MOD_TYPE_MOD,  UL_("ProTracker"),                 "mod" },
-	{ MOD_TYPE_S3M,  UL_("ScreamTracker 3"),            "s3m" },
-	{ MOD_TYPE_XM,   UL_("FastTracker 2"),              "xm" },
-	{ MOD_TYPE_IT,   UL_("Impulse Tracker"),            "it" },
+	{ UL_("OpenMPT"),                            "mptm" },
+	{ UL_("ProTracker"),                         "mod" },
+	{ UL_("ChipTracker"),                        "mod" },
+	{ UL_("TCB Tracker"),                        "mod" },
+	{ UL_("Scream Tracker 3"),                   "s3m" },
+	{ UL_("FastTracker 2"),                      "xm" },
+	{ UL_("Impulse Tracker"),                    "it" },
 
-	{ MOD_TYPE_669,  UL_("Composer 669 / UNIS 669"),    "669" },
-	{ MOD_TYPE_AMF0, UL_("ASYLUM Music Format"),        "amf" },
-	{ MOD_TYPE_AMF,  UL_("DSMI Advanced Music Format"), "amf" },
-	{ MOD_TYPE_AMS,  UL_("Extreme's Tracker"),          "ams" },
-	{ MOD_TYPE_AMS,  UL_("Velvet Studio"),              "ams" },
-	{ MOD_TYPE_S3M,  UL_("CDFM / Composer 670"),        "c67" },
-	{ MOD_TYPE_DBM,  UL_("DigiBooster Pro"),            "dbm" },
-	{ MOD_TYPE_DIGI, UL_("DigiBooster"),                "digi" },
-	{ MOD_TYPE_DMF,  UL_("X-Tracker"),                  "dmf" },
-	{ MOD_TYPE_DSM,  UL_("DSIK Format"),                "dsm" },
-	{ MOD_TYPE_MOD,  UL_("Digital Symphony"),           "dsym" },
-	{ MOD_TYPE_DTM,  UL_("Digital Tracker"),            "dtm" },
-	{ MOD_TYPE_FAR,  UL_("Farandole Composer"),         "far" },
-	{ MOD_TYPE_S3M,  UL_("FM Tracker"),                 "fmt" },
-	{ MOD_TYPE_IMF,  UL_("Imago Orpheus"),              "imf" },
-	{ MOD_TYPE_MOD,  UL_("Ice Tracker"),                "ice" },
+	{ UL_("Composer 667"),                       "667" },
+	{ UL_("Composer 669 / UNIS 669"),            "669" },
+	{ UL_("ASYLUM Music Format"),                "amf" },
+	{ UL_("DSMI Advanced Music Format"),         "amf" },
+	{ UL_("Extreme's Tracker"),                  "ams" },
+	{ UL_("Velvet Studio"),                      "ams" },
+	{ UL_("CDFM / Composer 670"),                "c67" },
+	{ UL_("Chuck Biscuits / Black Artist"),      "cba" },
+	{ UL_("DigiBooster Pro"),                    "dbm" },
+	{ UL_("DigiBooster"),                        "digi" },
+	{ UL_("X-Tracker"),                          "dmf" },
+	{ UL_("DSMI Advanced Music Format (Compact)"), "dmf" },
+	{ UL_("DSIK Format"),                        "dsm" },
+	{ UL_("Dynamic Studio"),                     "dsm" },
+	{ UL_("Digital Symphony"),                   "dsym" },
+	{ UL_("Digital Tracker"),                    "dtm" },
+	{ UL_("EasyTrax"),                           "etx" },
+	{ UL_("Farandole Composer"),                 "far" },
+	{ UL_("Future Composer"),                    "fc" },
+	{ UL_("Future Composer"),                    "fc13" },
+	{ UL_("Future Composer"),                    "fc14" },
+	{ UL_("FM Tracker"),                         "fmt" },
+	{ UL_("ProTracker"),                         "fst" },
+	{ UL_("Face The Music"),                     "ftm" },
+	{ UL_("Imago Orpheus"),                      "imf" },
+	{ UL_("Images Music System"),                "ims" },
+	{ UL_("Ice Tracker"),                        "ice" },
 #ifdef MPT_EXTERNAL_SAMPLES
-	{ MOD_TYPE_IT,   UL_("Impulse Tracker Project"),    "itp" },
+	{ UL_("Impulse Tracker Project"),            "itp" },
 #endif
-	{ MOD_TYPE_J2B,  UL_("Galaxy Sound System"),        "j2b" },
-	{ MOD_TYPE_MOD,  UL_("Soundtracker"),               "m15" },
-	{ MOD_TYPE_MDL,  UL_("Digitrakker"),                "mdl" },
-	{ MOD_TYPE_MED,  UL_("OctaMED"),                    "med" },
-	{ MOD_TYPE_SFX,  UL_("MultiMedia Sound"),           "mms" },
-	{ MOD_TYPE_MT2,  UL_("MadTracker 2"),               "mt2" },
-	{ MOD_TYPE_MTM,  UL_("MultiTracker"),               "mtm" },
-	{ MOD_TYPE_MOD,  UL_("Karl Morton Music Format"),   "mus" },
-	{ MOD_TYPE_MOD,  UL_("NoiseTracker"),               "nst" },
-	{ MOD_TYPE_OKT,  UL_("Oktalyzer"),                  "okt" },
-	{ MOD_TYPE_PLM,  UL_("Disorder Tracker 2"),         "plm" },
-	{ MOD_TYPE_PSM,  UL_("Epic Megagames MASI"),        "psm" },
-	{ MOD_TYPE_MOD,  UL_("ProTracker"),                 "pt36" },
-	{ MOD_TYPE_PTM,  UL_("PolyTracker"),                "ptm" },
-	{ MOD_TYPE_SFX,  UL_("SoundFX"),                    "sfx" },
-	{ MOD_TYPE_SFX,  UL_("SoundFX"),                    "sfx2" },
-	{ MOD_TYPE_MOD,  UL_("SoundTracker 2.6"),           "st26" },
-	{ MOD_TYPE_MOD,  UL_("Soundtracker"),               "stk" },
-	{ MOD_TYPE_STM,  UL_("ScreamTracker 2"),            "stm" },
-	{ MOD_TYPE_STP,  UL_("Soundtracker Pro II"),        "stp" },
-	{ MOD_TYPE_MPT,  UL_("Symphonie"),                  "symmod"},
-	{ MOD_TYPE_ULT,  UL_("UltraTracker"),               "ult" },
-	{ MOD_TYPE_MOD,  UL_("Mod's Grave"),                "wow" },
+	{ UL_("Galaxy Sound System"),                "j2b" },
+	{ UL_("Soundtracker"),                       "m15" },
+	{ UL_("Digitrakker"),                        "mdl" },
+	{ UL_("OctaMED"),                            "med" },
+	{ UL_("MultiMedia Sound"),                   "mms" },
+	{ UL_("MadTracker 2"),                       "mt2" },
+	{ UL_("MultiTracker"),                       "mtm" },
+#ifdef MPT_EXTERNAL_SAMPLES
+	{ UL_("MegaTracker"),                        "mtp" },
+#endif
+	{ UL_("Karl Morton Music Format"),           "mus" },
+	{ UL_("NoiseRunner"),                        "nru" },
+	{ UL_("NoiseTracker"),                       "nst" },
+	{ UL_("Oktalyzer"),                          "okt" },
+	{ UL_("Disorder Tracker 2"),                 "plm" },
+	{ UL_("Epic Megagames MASI"),                "psm" },
+	{ UL_("ProTracker"),                         "pt36" },
+	{ UL_("PolyTracker"),                        "ptm" },
+	{ UL_("Puma Tracker"),                       "puma" },
+	{ UL_("Real Tracker 2"),                     "rtm" },
+	{ UL_("SoundFX"),                            "sfx" },
+	{ UL_("SoundFX"),                            "sfx2" },
+	{ UL_("Future Composer"),                    "smod" },
+#ifdef MPT_EXTERNAL_SAMPLES
+	{ UL_("SoundSmith"),                         "ss" },
+#endif
+	{ UL_("SoundTracker 2.6"),                   "st26" },
+	{ UL_("Soundtracker"),                       "stk" },
+	{ UL_("Scream Tracker 2"),                   "stm" },
+	{ UL_("Scream Tracker Music Interface Kit"), "stx" },
+	{ UL_("Soundtracker Pro II"),                "stp" },
+	{ UL_("Symphonie"),                          "symmod"},
+	{ UL_("TCB Tracker"),                        "tcb" },
+	{ UL_("Game Music Creator"),                 "gmc" },
+	{ UL_("Graoumf Tracker"),                    "gtk" },
+	{ UL_("Graoumf Tracker 1 / 2"),              "gt2" },
+	{ UL_("UltraTracker"),                       "ult" },
+	{ UL_("UNIC Tracker"),                       "unic" },
+	{ UL_("Mod's Grave"),                        "wow" },
+	{ UL_("Astroidea XMF"),                      "xmf" },
 	// converted formats (no MODTYPE)
-	{ MOD_TYPE_NONE, UL_("General Digital Music"),      "gdm" },
-	{ MOD_TYPE_NONE, UL_("Un4seen MO3"),                "mo3" },
-	{ MOD_TYPE_NONE, UL_("OggMod FastTracker 2"),       "oxm" },
+	{ UL_("General Digital Music"),              "gdm" },
+	{ UL_("Un4seen MO3"),                        "mo3" },
+	{ UL_("OggMod FastTracker 2"),               "oxm" },
 #ifndef NO_ARCHIVE_SUPPORT
 	// Compressed modules
-	{ MOD_TYPE_MOD,  UL_("Compressed ProTracker"),      "mdz" },
-	{ MOD_TYPE_MOD,  UL_("Compressed Module"),          "mdr" },
-	{ MOD_TYPE_S3M,  UL_("Compressed ScreamTracker 3"), "s3z" },
-	{ MOD_TYPE_XM,   UL_("Compressed FastTracker 2"),   "xmz" },
-	{ MOD_TYPE_IT,   UL_("Compressed Impulse Tracker"), "itz" },
-	{ MOD_TYPE_MPT,  UL_("Compressed OpenMPT"),         "mptmz" },
+	{ UL_("Compressed ProTracker"),              "mdz" },
+	{ UL_("Compressed Module"),                  "mdr" },
+	{ UL_("Compressed Scream Tracker 3"),        "s3z" },
+	{ UL_("Compressed FastTracker 2"),           "xmz" },
+	{ UL_("Compressed Impulse Tracker"),         "itz" },
+	{ UL_("Compressed OpenMPT"),                 "mptmz" },
 #endif
 };
 
 
 struct ModContainerInfo
 {
-	MODCONTAINERTYPE format;  // MOD_CONTAINERTYPE_XXXX
+	ModContainerType format;  // ModContainerType::XXX
 	const mpt::uchar *name;   // "Unreal Music"
 	const char *extension;    // "umx"
 };
@@ -124,13 +153,14 @@ struct ModContainerInfo
 static constexpr ModContainerInfo modContainerInfo[] =
 {
 	// Container formats
-	{ MOD_CONTAINERTYPE_UMX,   UL_("Unreal Music"),             "umx"   },
-	{ MOD_CONTAINERTYPE_XPK,   UL_("XPK packed"),               "xpk"   },
-	{ MOD_CONTAINERTYPE_PP20,  UL_("PowerPack PP20"),           "ppm"   },
-	{ MOD_CONTAINERTYPE_MMCMP, UL_("Music Module Compressor"),  "mmcmp" },
+	{ ModContainerType::UMX,     UL_("Unreal Music"),             "umx"   },
+	{ ModContainerType::XPK,     UL_("XPK packed"),               "xpk"   },
+	{ ModContainerType::PP20,    UL_("PowerPack PP20"),           "ppm"   },
+	{ ModContainerType::MMCMP,   UL_("Music Module Compressor"),  "mmcmp" },
 #ifdef MODPLUG_TRACKER
-	{ MOD_CONTAINERTYPE_WAV,   UL_("Wave"),                     "wav"   },
-	{ MOD_CONTAINERTYPE_UAX,   UL_("Unreal Sounds"),            "uax"   },
+	{ ModContainerType::WAV,     UL_("Wave"),                     "wav"   },
+	{ ModContainerType::UAX,     UL_("Unreal Sounds"),            "uax"   },
+	{ ModContainerType::Generic, UL_("Generic Archive"),          ""      },
 #endif
 };
 
@@ -138,9 +168,9 @@ static constexpr ModContainerInfo modContainerInfo[] =
 #ifdef MODPLUG_TRACKER
 static constexpr ModFormatInfo otherFormatInfo[] =
 {
-	{ MOD_TYPE_MID,  UL_("MIDI"), "mid" },
-	{ MOD_TYPE_MID,  UL_("MIDI"), "rmi" },
-	{ MOD_TYPE_MID,  UL_("MIDI"), "smf" }
+	{ UL_("MIDI"), "mid" },
+	{ UL_("MIDI"), "rmi" },
+	{ UL_("MIDI"), "smf" }
 };
 #endif
 
@@ -151,18 +181,20 @@ std::vector<const char *> CSoundFile::GetSupportedExtensions(bool otherFormats)
 	for(const auto &formatInfo : modFormatInfo)
 	{
 		// Avoid dupes in list
-		if(exts.empty() || strcmp(formatInfo.extension, exts.back()))
-		{
+		const std::string_view ext = formatInfo.extension;
+		if(ext.empty())
+			continue;
+		if(exts.empty() || ext != exts.back())
 			exts.push_back(formatInfo.extension);
-		}
 	}
 	for(const auto &containerInfo : modContainerInfo)
 	{
 		// Avoid dupes in list
-		if(exts.empty() || strcmp(containerInfo.extension, exts.back()))
-		{
-			exts.push_back(containerInfo.extension);
-		}
+		const std::string_view ext = containerInfo.extension;
+		if(ext.empty())
+			continue;
+		if(exts.empty() || ext != exts.back())
+			exts.push_back(ext.data());
 	}
 #ifdef MODPLUG_TRACKER
 	if(otherFormats)
@@ -213,7 +245,7 @@ bool CSoundFile::IsExtensionSupported(std::string_view ext)
 }
 
 
-mpt::ustring CSoundFile::ModContainerTypeToString(MODCONTAINERTYPE containertype)
+mpt::ustring CSoundFile::ModContainerTypeToString(ModContainerType containertype)
 {
 	for(const auto &containerInfo : modContainerInfo)
 	{
@@ -226,7 +258,7 @@ mpt::ustring CSoundFile::ModContainerTypeToString(MODCONTAINERTYPE containertype
 }
 
 
-mpt::ustring CSoundFile::ModContainerTypeToTracker(MODCONTAINERTYPE containertype)
+mpt::ustring CSoundFile::ModContainerTypeToTracker(ModContainerType containertype)
 {
 	std::set<mpt::ustring> retvals;
 	mpt::ustring retval;
@@ -680,6 +712,28 @@ const int16 CResampler::FastSincTable[256*4] =
 };
 
 
+// Note LUT for His Master's Noise command 7 (Mega-Arp)
+const std::array<uint8, 16> HisMastersNoiseMegaArp[16] =
+{
+	{0,  3,  7,  12, 15, 12, 7,  3,  0,  3,  7,  12, 15, 12, 7,  3 },
+	{0,  4,  7,  12, 16, 12, 7,  4,  0,  4,  7,  12, 16, 12, 7,  4 },
+	{0,  3,  8,  12, 15, 12, 8,  3,  0,  3,  8,  12, 15, 12, 8,  3 },
+	{0,  4,  8,  12, 16, 12, 8,  4,  0,  4,  8,  12, 16, 12, 8,  4 },
+	{0,  5,  8,  12, 17, 12, 8,  5,  0,  5,  8,  12, 17, 12, 8,  5 },
+	{0,  5,  9,  12, 17, 12, 9,  5,  0,  5,  9,  12, 17, 12, 9,  5 },
+	{12, 0,  7,  0,  3,  0,  7,  0,  12, 0,  7,  0,  3,  0,  7,  0 },
+	{12, 0,  7,  0,  4,  0,  7,  0,  12, 0,  7,  0,  4,  0,  7,  0 },
+	{0,  3,  7,  3,  7,  12, 7,  12, 15, 12, 7,  12, 7,  3,  7,  3 },
+	{0,  4,  7,  4,  7,  12, 7,  12, 16, 12, 7,  12, 7,  4,  7,  4 },
+	{31, 27, 24, 19, 15, 12, 7,  3,  0,  3,  7,  12, 15, 19, 24, 27},
+	{31, 28, 24, 19, 16, 12, 7,  4,  0,  4,  7,  12, 16, 19, 24, 28},
+	{0,  12, 0,  12, 0,  12, 0,  12, 0,  12, 0,  12, 0,  12, 0,  12},
+	{0,  12, 24, 12, 0,  12, 24, 12, 0,  12, 24, 12, 0,  12, 24, 12},
+	{0,  3,  0,  3,  0,  3,  0,  3,  0,  3,  0,  3,  0,  3,  0,  3 },
+	{0,  4,  0,  4,  0,  4,  0,  4,  0,  4,  0,  4,  0,  4,  0,  4 }
+};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -780,7 +834,7 @@ void CResampler::InitializeTablesFromScratch(bool force)
 
 		getsinc(gKaiserSinc, 9.6377, 0.97);
 		getsinc(gDownsample13x, 8.5, 0.5);
-		getsinc(gDownsample2x, 2.7625, 0.425);
+		getsinc(gDownsample2x, 7.0, 0.425);
 
 #ifdef MODPLUG_TRACKER
 		StaticTablesInitialized = true;

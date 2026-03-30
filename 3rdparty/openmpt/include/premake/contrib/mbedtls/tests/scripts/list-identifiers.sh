@@ -1,34 +1,54 @@
-#!/bin/sh
+#!/bin/bash
+#
+# Create a file named identifiers containing identifiers from internal header
+# files, based on the --internal flag.
+# Outputs the line count of the file to stdout.
+# A very thin wrapper around list_internal_identifiers.py for backwards
+# compatibility.
+# Must be run from Mbed TLS root.
+#
+# Usage: list-identifiers.sh [ -i | --internal ]
+#
+# Copyright The Mbed TLS Contributors
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
 
 set -eu
 
 if [ -d include/mbedtls ]; then :; else
-    echo "$0: must be run from root" >&2
+    echo "$0: Must be run from Mbed TLS root" >&2
     exit 1
 fi
 
-HEADERS=$( ls include/mbedtls/*.h | egrep -v 'compat-1\.3\.h|bn_mul' )
+INTERNAL=""
 
-rm -f identifiers
+until [ -z "${1-}" ]
+do
+  case "$1" in
+    -i|--internal)
+      INTERNAL="1"
+      ;;
+    *)
+      # print error
+      echo "Unknown argument: '$1'"
+      exit 1
+      ;;
+  esac
+  shift
+done
 
-grep '^[^ /#{]' $HEADERS | \
-    sed -e 's/^[^:]*://' | \
-    egrep -v '^(extern "C"|(typedef )?(struct|enum)( {)?$|};?$)' \
-    > _decls
-
-if true; then
-sed -n -e 's/.* \**\([a-zA-Z_][a-zA-Z0-9_]*\)(.*/\1/p' \
-       -e 's/.*(\*\(.*\))(.*/\1/p' _decls
-grep -v '(' _decls | sed -e 's/\([a-zA-Z0-9_]*\)[;[].*/\1/' -e 's/.* \**//'
-fi > _identifiers
-
-if [ $( wc -l < _identifiers ) -eq $( wc -l < _decls ) ]; then
-    rm _decls
-    egrep -v '^(u?int(16|32|64)_t)$' _identifiers | sort > identifiers
-    rm _identifiers
+if [ $INTERNAL ]
+then
+    tests/scripts/list_internal_identifiers.py
+    wc -l identifiers
 else
-    echo "$0: oops, lost some identifiers" 2>&1
-    exit 1
-fi
+    cat <<EOF
+Sorry, this script has to be called with --internal.
 
-wc -l identifiers
+This script exists solely for backwards compatibility with the previous
+iteration of list-identifiers.sh, of which only the --internal option remains in
+use. It is a thin wrapper around list_internal_identifiers.py.
+
+check-names.sh, which used to depend on this script, has been replaced with
+check_names.py and is now self-complete.
+EOF
+fi

@@ -18,7 +18,7 @@ struct UltFileHeader
 {
 	char  signature[14];		// "MAS_UTrack_V00"
 	uint8 version;				// '1'...'4'
-	char  songName[32];			// Song Name, not guaranteed to be null-terminated
+	char  songName[32];			// Song Name, space-padded
 	uint8 messageLength;		// Number of Lines
 };
 
@@ -49,8 +49,9 @@ struct UltSample
 	void ConvertToMPT(ModSample &mptSmp) const
 	{
 		mptSmp.Initialize();
+		mptSmp.Set16BitCuePoints();
 
-		mptSmp.filename = mpt::String::ReadBuf(mpt::String::maybeNullTerminated, filename);
+		mptSmp.filename = mpt::String::ReadBuf(mpt::String::spacePadded, filename);
 
 		if(sizeEnd <= sizeStart)
 		{
@@ -62,7 +63,7 @@ struct UltSample
 		mptSmp.nSustainEnd = std::min(static_cast<SmpLength>(loopEnd), mptSmp.nLength);
 		mptSmp.nVolume = volume;
 
-		mptSmp.nC5Speed = speed;
+		mptSmp.nC5Speed = speed * 2;  // Doubled to fit the note range
 		if(finetune)
 		{
 			mptSmp.Transpose(finetune / (12.0 * 32768.0));
@@ -94,10 +95,10 @@ much anywhere for that matter. I don't even think Ultra Tracker tries to
 convert them. */
 
 
-static void TranslateULTCommands(uint8 &effect, uint8 &param, uint8 version)
+static std::pair<EffectCommand, uint8> TranslateULTCommands(const uint8 e, uint8 param, uint8 version)
 {
 
-	static constexpr uint8 ultEffTrans[] =
+	static constexpr EffectCommand ultEffTrans[] =
 	{
 		CMD_ARPEGGIO,
 		CMD_PORTAMENTOUP,
@@ -111,17 +112,15 @@ static void TranslateULTCommands(uint8 &effect, uint8 &param, uint8 version)
 		CMD_OFFSET,
 		CMD_VOLUMESLIDE,
 		CMD_PANNING8,
-		CMD_VOLUME,
+		CMD_VOLUME8,
 		CMD_PATTERNBREAK,
-		CMD_NONE, // extended effects, processed separately
+		CMD_NONE,  // extended effects, processed separately
 		CMD_SPEED,
 	};
 
+	EffectCommand effect = ultEffTrans[e & 0x0F];
 
-	uint8 e = effect & 0x0F;
-	effect = ultEffTrans[e];
-
-	switch(e)
+	switch(e & 0x0F)
 	{
 	case 0x00:
 		if(!param || version < '3')
@@ -151,11 +150,8 @@ static void TranslateULTCommands(uint8 &effect, uint8 &param, uint8 version)
 	case 0x0B:
 		param = (param & 0x0F) * 0x11;
 		break;
-	case 0x0C: // volume
-		param /= 4u;
-		break;
 	case 0x0D: // pattern break
-		param = 10 * (param >> 4) + (param & 0x0F);
+		param = static_cast<uint8>(10 * (param >> 4) + (param & 0x0F));
 		break;
 	case 0x0E: // special
 		switch(param >> 4)
@@ -197,10 +193,13 @@ static void TranslateULTCommands(uint8 &effect, uint8 &param, uint8 version)
 			effect = CMD_TEMPO;
 		break;
 	}
+	return {effect, param};
 }
 
 
-static int ReadULTEvent(ModCommand &m, FileReader &file, uint8 version)
+struct ULTEventResult { uint8 repeat = 0; ModCommand::COMMAND lostCommand = CMD_NONE; ModCommand::PARAM lostParam = 0; };
+
+static ULTEventResult ReadULTEvent(ModCommand &m, FileReader &file, uint8 version)
 {
 	uint8 repeat = 1;
 	uint8 b = file.ReadUint8();
@@ -210,32 +209,42 @@ static int ReadULTEvent(ModCommand &m, FileReader &file, uint8 version)
 		b = file.ReadUint8();
 	}
 
-	m.note = (b > 0 && b < 61) ? (b + 35 + NOTE_MIN) : NOTE_NONE;
+	m.note = (b > 0 && b < 97) ? (b + 23 + NOTE_MIN) : NOTE_NONE;
 
 	const auto [instr, cmd, para1, para2] = file.ReadArray<uint8, 4>();
 	
 	m.instr = instr;
-	uint8 cmd1 = cmd & 0x0F;
-	uint8 cmd2 = cmd >> 4;
-	uint8 param1 = para1;
-	uint8 param2 = para2;
-	TranslateULTCommands(cmd1, param1, version);
-	TranslateULTCommands(cmd2, param2, version);
+	auto [cmd1, param1] = TranslateULTCommands(cmd & 0x0F, para1, version);
+	auto [cmd2, param2]= TranslateULTCommands(cmd >> 4, para2, version);
 
 	// sample offset -- this is even more special than digitrakker's
 	if(cmd1 == CMD_OFFSET && cmd2 == CMD_OFFSET)
 	{
-		uint32 off = ((param1 << 8) | param2) >> 6;
-		cmd1 = CMD_NONE;
-		param1 = mpt::saturate_cast<uint8>(off);
+		uint32 offset = ((param2 << 8) | param1) >> 6;
+		m.SetEffectCommand(CMD_OFFSET, static_cast<ModCommand::PARAM>(offset));
+		if(offset > 0xFF)
+			m.SetVolumeCommand(VOLCMD_OFFSET, static_cast<ModCommand::VOL>(offset >> 8));
+		return {repeat};
 	} else if(cmd1 == CMD_OFFSET)
 	{
-		uint32 off = param1 * 4;
-		param1 = mpt::saturate_cast<uint8>(off);
+		uint32 offset = param1 * 4;
+		param1 = mpt::saturate_cast<uint8>(offset);
+		if(offset > 0xFF && ModCommand::GetEffectWeight(cmd2) < ModCommand::GetEffectWeight(CMD_OFFSET))
+		{
+			m.SetEffectCommand(CMD_OFFSET, static_cast<ModCommand::PARAM>(offset));
+			m.SetVolumeCommand(VOLCMD_OFFSET, static_cast<ModCommand::VOL>(offset >> 8));
+			return {repeat};
+		}
 	} else if(cmd2 == CMD_OFFSET)
 	{
-		uint32 off = param2 * 4;
-		param2 = mpt::saturate_cast<uint8>(off);
+		uint32 offset = param2 * 4;
+		param2 = mpt::saturate_cast<uint8>(offset);
+		if(offset > 0xFF && ModCommand::GetEffectWeight(cmd1) < ModCommand::GetEffectWeight(CMD_OFFSET))
+		{
+			m.SetEffectCommand(CMD_OFFSET, static_cast<ModCommand::PARAM>(offset));
+			m.SetVolumeCommand(VOLCMD_OFFSET, static_cast<ModCommand::VOL>(offset >> 8));
+			return {repeat};
+		}
 	} else if(cmd1 == cmd2)
 	{
 		// don't try to figure out how ultratracker does this, it's quite random
@@ -250,92 +259,15 @@ static int ReadULTEvent(ModCommand &m, FileReader &file, uint8 version)
 
 	// Combine slide commands, if possible
 	ModCommand::CombineEffects(cmd2, param2, cmd1, param1);
-	ModCommand::TwoRegularCommandsToMPT(cmd1, param1, cmd2, param2);
-
-	m.volcmd = cmd1;
-	m.vol = param1;
-	m.command = cmd2;
-	m.param = param2;
-
-	return repeat;
+	const auto lostCommand = m.FillInTwoCommands(cmd1, param1, cmd2, param2);
+	return {repeat, lostCommand.first, lostCommand.second};
 }
-
-
-// Functor for postfixing ULT patterns (this is easier than just remembering everything WHILE we're reading the pattern events)
-struct PostFixUltCommands
-{
-	PostFixUltCommands(CHANNELINDEX numChannels)
-	{
-		this->numChannels = numChannels;
-		curChannel = 0;
-		writeT125 = false;
-		isPortaActive.resize(numChannels, false);
-	}
-
-	void operator()(ModCommand &m)
-	{
-		// Attempt to fix portamentos.
-		// UltraTracker will slide until the destination note is reached or 300 is encountered.
-
-		// Stop porta?
-		if(m.command == CMD_TONEPORTAMENTO && m.param == 0)
-		{
-			isPortaActive[curChannel] = false;
-			m.command = CMD_NONE;
-		}
-		if(m.volcmd == VOLCMD_TONEPORTAMENTO && m.vol == 0)
-		{
-			isPortaActive[curChannel] = false;
-			m.volcmd = VOLCMD_NONE;
-		}
-
-		// Apply porta?
-		if(m.note == NOTE_NONE && isPortaActive[curChannel])
-		{
-			if(m.command == CMD_NONE && m.volcmd != VOLCMD_TONEPORTAMENTO)
-			{
-				m.command = CMD_TONEPORTAMENTO;
-				m.param = 0;
-			} else if(m.volcmd == VOLCMD_NONE && m.command != CMD_TONEPORTAMENTO)
-			{
-				m.volcmd = VOLCMD_TONEPORTAMENTO;
-				m.vol = 0;
-			}
-		} else	// new note -> stop porta (or initialize again)
-		{
-			isPortaActive[curChannel] = (m.command == CMD_TONEPORTAMENTO || m.volcmd == VOLCMD_TONEPORTAMENTO);
-		}
-
-		// attempt to fix F00 (reset to tempo 125, speed 6)
-		if(writeT125 && m.command == CMD_NONE)
-		{
-			m.command = CMD_TEMPO;
-			m.param = 125;
-		}
-		if(m.command == CMD_SPEED && m.param == 0)
-		{
-			m.param = 6;
-			writeT125 = true;
-		}
-		if(m.command == CMD_TEMPO)	// don't try to fix this anymore if the tempo has already changed.
-		{
-			writeT125 = false;
-		}
-		curChannel = (curChannel + 1) % numChannels;
-	}
-
-	std::vector<bool> isPortaActive;
-	CHANNELINDEX numChannels, curChannel;
-	bool writeT125;
-};
 
 
 static bool ValidateHeader(const UltFileHeader &fileHeader)
 {
-	if(fileHeader.version < '1'
-		|| fileHeader.version > '4'
-		|| std::memcmp(fileHeader.signature, "MAS_UTrack_V00", sizeof(fileHeader.signature))
-		)
+	if(fileHeader.version < '1' || fileHeader.version > '4'
+	   || std::memcmp(fileHeader.signature, "MAS_UTrack_V00", sizeof(fileHeader.signature)))
 	{
 		return false;
 	}
@@ -351,13 +283,9 @@ CSoundFile::ProbeResult CSoundFile::ProbeFileHeaderULT(MemoryFileReader file, co
 {
 	UltFileHeader fileHeader;
 	if(!file.ReadStruct(fileHeader))
-	{
 		return ProbeWantMoreData;
-	}
 	if(!ValidateHeader(fileHeader))
-	{
 		return ProbeFailure;
-	}
 	return ProbeAdditionalSize(file, pfilesize, GetHeaderMinimumAdditionalSize(fileHeader));
 }
 
@@ -368,32 +296,27 @@ bool CSoundFile::ReadULT(FileReader &file, ModLoadingFlags loadFlags)
 
 	UltFileHeader fileHeader;
 	if(!file.ReadStruct(fileHeader))
-	{
 		return false;
-	}
 	if(!ValidateHeader(fileHeader))
-	{
 		return false;
-	}
 	if(loadFlags == onlyVerifyHeader)
-	{
 		return true;
-	}
-	if(!file.CanRead(mpt::saturate_cast<FileReader::off_t>(GetHeaderMinimumAdditionalSize(fileHeader))))
-	{
+	if(!file.CanRead(mpt::saturate_cast<FileReader::pos_type>(GetHeaderMinimumAdditionalSize(fileHeader))))
 		return false;
-	}
 
-	InitializeGlobals(MOD_TYPE_ULT);
-	m_songName = mpt::String::ReadBuf(mpt::String::maybeNullTerminated, fileHeader.songName);
+	InitializeGlobals(MOD_TYPE_ULT, 0);
+	m_songName = mpt::String::ReadBuf(mpt::String::spacePadded, fileHeader.songName);
 
 	const mpt::uchar *versions[] = {UL_("<1.4"), UL_("1.4"), UL_("1.5"), UL_("1.6")};
-	m_modFormat.formatName = U_("UltraTracker");
-	m_modFormat.type = U_("ult");
+	m_modFormat.formatName = UL_("UltraTracker");
+	m_modFormat.type = UL_("ult");
 	m_modFormat.madeWithTracker = U_("UltraTracker ") + versions[fileHeader.version - '1'];
 	m_modFormat.charset = mpt::Charset::CP437;
 
-	m_SongFlags = SONG_ITCOMPATGXX | SONG_ITOLDEFFECTS;  // this will be converted to IT format by MPT.
+	m_SongFlags = SONG_AUTO_TONEPORTA | SONG_AUTO_TONEPORTA_CONT | SONG_ITCOMPATGXX | SONG_ITOLDEFFECTS;  // this will be converted to IT format by MPT.
+	m_playBehaviour.reset(kITClearPortaTarget);
+	m_playBehaviour.reset(kITPortaTargetReached);
+	m_playBehaviour.set(kFT2PortaTargetNoReset);
 
 	// Read "messageLength" lines, each containing 32 characters.
 	m_songMessage.ReadFixedLineLength(file, fileHeader.messageLength * 32, 32, 0);
@@ -419,13 +342,13 @@ bool CSoundFile::ReadULT(FileReader &file, ModLoadingFlags loadFlags)
 		}
 
 		sampleHeader.ConvertToMPT(Samples[smp]);
-		m_szNames[smp] = mpt::String::ReadBuf(mpt::String::maybeNullTerminated, sampleHeader.name);
+		m_szNames[smp] = mpt::String::ReadBuf(mpt::String::spacePadded, sampleHeader.name);
 	}
 
 	ReadOrderFromFile<uint8>(Order(), file, 256, 0xFF, 0xFE);
 
 	if(CHANNELINDEX numChannels = file.ReadUint8() + 1u; numChannels <= MAX_BASECHANNELS)
-		m_nChannels = numChannels;
+		ChnSettings.resize(numChannels);
 	else
 		return false;
 
@@ -433,7 +356,6 @@ bool CSoundFile::ReadULT(FileReader &file, ModLoadingFlags loadFlags)
 
 	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 	{
-		ChnSettings[chn].Reset();
 		if(fileHeader.version >= '3')
 			ChnSettings[chn].nPan = ((file.ReadUint8() & 0x0F) << 4) + 8;
 		else
@@ -447,7 +369,8 @@ bool CSoundFile::ReadULT(FileReader &file, ModLoadingFlags loadFlags)
 			return false;
 	}
 
-	for(CHANNELINDEX chn = 0; chn < m_nChannels; chn++)
+	bool postFixSpeedCommands = false;
+	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 	{
 		ModCommand evnote;
 		for(PATTERNINDEX pat = 0; pat < numPats && file.CanRead(5); pat++)
@@ -456,10 +379,16 @@ bool CSoundFile::ReadULT(FileReader &file, ModLoadingFlags loadFlags)
 			ROWINDEX row = 0;
 			while(row < 64)
 			{
-				int repeat = ReadULTEvent(evnote, file, fileHeader.version);
+				const ULTEventResult eventResult = ReadULTEvent(evnote, file, fileHeader.version);
+				if(eventResult.lostCommand != CMD_NONE && ModCommand::IsGlobalCommand(eventResult.lostCommand, eventResult.lostParam))
+					Patterns[pat].WriteEffect(EffectWriter(eventResult.lostCommand, eventResult.lostParam).Row(row).RetryNextRow());
+				int repeat = eventResult.repeat;
 				if(repeat + row > 64)
 					repeat = 64 - row;
-				if(repeat == 0) break;
+				if(repeat == 0)
+					break;
+				if(evnote.command == CMD_SPEED && evnote.param == 0)
+					postFixSpeedCommands = true;
 				while(repeat--)
 				{
 					*note = evnote;
@@ -469,10 +398,24 @@ bool CSoundFile::ReadULT(FileReader &file, ModLoadingFlags loadFlags)
 			}
 		}
 	}
-
-	// Post-fix some effects.
-	Patterns.ForEachModCommand(PostFixUltCommands(GetNumChannels()));
-
+	if(postFixSpeedCommands)
+	{
+		for(CPattern &pat : Patterns)
+		{
+			for(ROWINDEX row = 0; row < pat.GetNumRows(); row++)
+			{
+				for(auto &m : pat.GetRow(row))
+				{
+					if(m.command == CMD_SPEED && m.param == 0)
+					{
+						m.param = 6;
+						pat.WriteEffect(EffectWriter(CMD_TEMPO, 125).Row(row).RetryNextRow());
+					}
+				}
+			}
+		}
+	}
+	
 	if(loadFlags & loadSampleData)
 	{
 		for(SAMPLEINDEX smp = 1; smp <= GetNumSamples(); smp++)

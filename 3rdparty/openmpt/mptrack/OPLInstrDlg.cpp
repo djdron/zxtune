@@ -9,14 +9,15 @@
 
 #include "stdafx.h"
 #include "OPLInstrDlg.h"
+#include "resource.h"
+#include "UpdateHints.h"
+#include "WindowMessages.h"
 #include "../soundlib/OPL.h"
 #include "../soundlib/Sndfile.h"
-#include "resource.h"
-#include "Mainfrm.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-BEGIN_MESSAGE_MAP(OPLInstrDlg, CDialog)
+BEGIN_MESSAGE_MAP(OPLInstrDlg, DialogBase)
 	ON_WM_HSCROLL()
 	ON_MESSAGE(WM_MOD_DRAGONDROPPING, &OPLInstrDlg::OnDragonDropping)
 	ON_COMMAND(IDC_CHECK1, &OPLInstrDlg::ParamsChanged)
@@ -30,13 +31,12 @@ BEGIN_MESSAGE_MAP(OPLInstrDlg, CDialog)
 	ON_COMMAND(IDC_CHECK9, &OPLInstrDlg::ParamsChanged)
 	ON_CBN_SELCHANGE(IDC_COMBO1, &OPLInstrDlg::ParamsChanged)
 	ON_CBN_SELCHANGE(IDC_COMBO2, &OPLInstrDlg::ParamsChanged)
-	ON_NOTIFY_EX(TTN_NEEDTEXT, 0, &OPLInstrDlg::OnToolTip)
 END_MESSAGE_MAP()
 
 
 void OPLInstrDlg::DoDataExchange(CDataExchange *pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	DialogBase::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_CHECK1, m_additive);
 	DDX_Control(pDX, IDC_SLIDER1, m_feedback);
 
@@ -79,8 +79,7 @@ OPLInstrDlg::~OPLInstrDlg()
 
 BOOL OPLInstrDlg::OnInitDialog()
 {
-	CDialog::OnInitDialog();
-	EnableToolTips();
+	DialogBase::OnInitDialog();
 	m_feedback.SetRange(0, 7);
 	for(int op = 0; op < 2; op++)
 	{
@@ -105,7 +104,7 @@ BOOL OPLInstrDlg::PreTranslateMessage(MSG *pMsg)
 		// Forward key presses and drag&drop support to parent editor
 		if(pMsg->message == WM_SYSKEYUP || pMsg->message == WM_KEYUP ||
 			pMsg->message == WM_SYSKEYDOWN || pMsg->message == WM_KEYDOWN ||
-			pMsg->message == WM_DROPFILES)
+			pMsg->message == WM_DROPFILES || pMsg->message == WM_XBUTTONUP)
 		{
 			if(pMsg->hwnd == m_hWnd)
 			{
@@ -122,7 +121,7 @@ BOOL OPLInstrDlg::PreTranslateMessage(MSG *pMsg)
 				return TRUE;
 		}
 	}
-	return CDialog::PreTranslateMessage(pMsg);
+	return DialogBase::PreTranslateMessage(pMsg);
 }
 
 
@@ -137,6 +136,29 @@ static uint8 KeyScaleLevel(uint8 kslVolume)
 {
 	static constexpr uint8 KSLFix[4] = { 0x00, 0x80, 0x40, 0xC0 };
 	return KSLFix[kslVolume >> 6];
+}
+
+
+void OPLInstrDlg::SetEnabled(bool enabled)
+{
+	if(!enabled)
+		m_lastFocusItem = ::GetFocus();
+	
+	const auto EnableProc = [](HWND hwnd, LPARAM lParam) -> BOOL
+	{
+		::EnableWindow(hwnd, lParam ? TRUE : FALSE);
+		return TRUE;
+	};
+	EnumChildWindows(m_hWnd, EnableProc, enabled);
+	ShowWindow(enabled ? SW_SHOW : SW_HIDE);
+
+	if(enabled && !IsChild(GetFocus()))
+	{
+		if(::IsChild(m_hWnd, m_lastFocusItem))
+			::SetFocus(m_lastFocusItem);
+		else
+			GetNextDlgTabItem(nullptr)->SetFocus();
+	}
 }
 
 
@@ -210,27 +232,19 @@ void OPLInstrDlg::ParamsChanged()
 }
 
 
-BOOL OPLInstrDlg::OnToolTip(UINT /*id*/, NMHDR *pNMHDR, LRESULT* /*pResult*/)
+CString OPLInstrDlg::GetToolTipText(UINT id, HWND) const
 {
-	TOOLTIPTEXT *pTTT = (TOOLTIPTEXT *)pNMHDR;
-	UINT_PTR nID = pNMHDR->idFrom;
-	if(pTTT->uFlags & TTF_IDISHWND)
-	{
-		// idFrom is actually the HWND of the tool
-		nID = ::GetDlgCtrlID((HWND)nID);
-	}
-
 	static constexpr const char *feedback[] = {"disabled", "\xCF\x80/16", "\xCF\x80/8", "\xCF\x80/4", "\xCF\x80/2", "\xCF\x80", "2\xCF\x80", "4\xCF\x80"};
 	static constexpr const TCHAR *ksl[] = {_T("disabled"), _T("1.5 dB / octave"), _T("3 dB / octave"), _T("6 dB / octave")};
 
-	mpt::tstring text;
-	const CWnd *wnd = GetDlgItem(static_cast<int>(nID));
+	CString text;
+	const CWnd *wnd = GetDlgItem(static_cast<int>(id));
 	const CSliderCtrl *slider = static_cast<const CSliderCtrl *>(wnd);
-	switch(nID)
+	switch(id)
 	{
 	case IDC_SLIDER1:
 		// Feedback
-		text = mpt::ToWin(mpt::Charset::UTF8, feedback[slider->GetPos() & 7]);
+		text = mpt::ToCString(mpt::Charset::UTF8, feedback[slider->GetPos() & 7]);
 		break;
 
 	case IDC_SLIDER2:
@@ -240,20 +254,20 @@ BOOL OPLInstrDlg::OnToolTip(UINT /*id*/, NMHDR *pNMHDR, LRESULT* /*pResult*/)
 	case IDC_SLIDER10:
 	case IDC_SLIDER12:
 		// Attack / Decay / Release
-		text = _T("faster < ") + mpt::tfmt::val(slider->GetPos()) + _T(" > slower");
+		text = _T("faster < ") + mpt::cfmt::val(slider->GetPos()) + _T(" > slower");
 		break;
 	case IDC_SLIDER4:
 	case IDC_SLIDER11:
 		// Sustain Level
 		{
 			const int pos = slider->GetPos();
-			text = mpt::tfmt::val((pos == 0) ? -93 : ((-15 + pos) * 3)) + _T(" dB");
+			text = mpt::cfmt::val((pos == 0) ? -93 : ((-15 + pos) * 3)) + _T(" dB");
 		}
 		break;
 	case IDC_SLIDER6:
 	case IDC_SLIDER13:
 		// Volume Level
-		text = mpt::tfmt::fix((-63 + slider->GetPos()) * 0.75, 2) + _T(" dB");
+		text = mpt::cfmt::fix((-63 + slider->GetPos()) * 0.75, 2) + _T(" dB");
 		break;
 	case IDC_SLIDER7:
 	case IDC_SLIDER14:
@@ -266,12 +280,11 @@ BOOL OPLInstrDlg::OnToolTip(UINT /*id*/, NMHDR *pNMHDR, LRESULT* /*pResult*/)
 		if(slider->GetPos() == 0)
 			text = _T("0.5");
 		else
-			text = mpt::tfmt::val(slider->GetPos());
+			text = mpt::cfmt::val(slider->GetPos());
 		break;
 	}
 
-	mpt::String::WriteWinBuf(pTTT->szText) = text.c_str();
-	return TRUE;
+	return text;
 }
 
 OPENMPT_NAMESPACE_END

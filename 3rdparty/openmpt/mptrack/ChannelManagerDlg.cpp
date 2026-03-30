@@ -9,9 +9,13 @@
 
 
 #include "stdafx.h"
-#include "Moddoc.h"
-#include "Mainfrm.h"
 #include "ChannelManagerDlg.h"
+#include "HighDPISupport.h"
+#include "Mainfrm.h"
+#include "Moddoc.h"
+#include "PatternEditorDialogs.h"
+#include "resource.h"
+#include "UpdateHints.h"
 #include "../common/mptStringBuffer.h"
 
 #include <functional>
@@ -24,28 +28,28 @@ OPENMPT_NAMESPACE_BEGIN
 ///////////////////////////////////////////////////////////
 // CChannelManagerDlg
 
-BEGIN_MESSAGE_MAP(CChannelManagerDlg, CDialog)
+BEGIN_MESSAGE_MAP(CChannelManagerDlg, DialogBase)
 	ON_WM_PAINT()
 	ON_WM_MOUSEMOVE()
 	ON_WM_LBUTTONUP()
 	ON_WM_LBUTTONDOWN()
+	ON_WM_LBUTTONDBLCLK()
 	ON_WM_RBUTTONUP()
 	ON_WM_RBUTTONDOWN()
+	ON_WM_RBUTTONDBLCLK()
 	ON_WM_MBUTTONDOWN()
 	ON_WM_CLOSE()
 
-	ON_COMMAND(IDC_BUTTON1,	&CChannelManagerDlg::OnApply)
-	ON_COMMAND(IDC_BUTTON2,	&CChannelManagerDlg::OnClose)
-	ON_COMMAND(IDC_BUTTON3,	&CChannelManagerDlg::OnSelectAll)
-	ON_COMMAND(IDC_BUTTON4,	&CChannelManagerDlg::OnInvert)
-	ON_COMMAND(IDC_BUTTON5,	&CChannelManagerDlg::OnAction1)
-	ON_COMMAND(IDC_BUTTON6,	&CChannelManagerDlg::OnAction2)
-	ON_COMMAND(IDC_BUTTON7,	&CChannelManagerDlg::OnStore)
-	ON_COMMAND(IDC_BUTTON8,	&CChannelManagerDlg::OnRestore)
-	ON_NOTIFY(TCN_SELCHANGE, IDC_TAB1,	&CChannelManagerDlg::OnTabSelchange)
-	
-	ON_WM_LBUTTONDBLCLK()
-	ON_WM_RBUTTONDBLCLK()
+	ON_COMMAND(IDC_BUTTON1, &CChannelManagerDlg::OnApply)
+	ON_COMMAND(IDC_BUTTON2, &CChannelManagerDlg::OnClose)
+	ON_COMMAND(IDC_BUTTON3, &CChannelManagerDlg::OnSelectAll)
+	ON_COMMAND(IDC_BUTTON4, &CChannelManagerDlg::OnInvert)
+	ON_COMMAND(IDC_BUTTON5, &CChannelManagerDlg::OnAction1)
+	ON_COMMAND(IDC_BUTTON6, &CChannelManagerDlg::OnAction2)
+	ON_COMMAND(IDC_BUTTON7, &CChannelManagerDlg::OnStore)
+	ON_COMMAND(IDC_BUTTON8, &CChannelManagerDlg::OnRestore)
+
+	ON_NOTIFY(TCN_SELCHANGE, IDC_TAB1, &CChannelManagerDlg::OnTabSelchange)
 END_MESSAGE_MAP()
 
 CChannelManagerDlg * CChannelManagerDlg::sharedInstance_ = nullptr;
@@ -65,21 +69,21 @@ CChannelManagerDlg * CChannelManagerDlg::sharedInstanceCreate()
 
 void CChannelManagerDlg::SetDocument(CModDoc *modDoc)
 {
-	if(modDoc != m_ModDoc)
+	if(modDoc == m_ModDoc)
+		return;
+	
+	m_ModDoc = modDoc;
+	ResetState(true, true, true);
+	if(m_show)
 	{
-		m_ModDoc = modDoc;
-		ResetState(true, true, true, true, false);
-		if(m_show)
+		if(m_ModDoc)
 		{
-			if(m_ModDoc)
-			{
-				ResizeWindow();
-				ShowWindow(SW_SHOWNOACTIVATE);	// In case the window was hidden because no module was loaded
-				InvalidateRect(m_drawableArea, FALSE);
-			} else
-			{
-				ShowWindow(SW_HIDE);
-			}
+			ResizeWindow();
+			ShowWindow(SW_SHOWNOACTIVATE);  // In case the window was hidden because no module was loaded
+			InvalidateRect(m_drawableArea, FALSE);
+		} else
+		{
+			ShowWindow(SW_HIDE);
 		}
 	}
 }
@@ -89,16 +93,24 @@ bool CChannelManagerDlg::IsDisplayed() const
 	return m_show;
 }
 
-void CChannelManagerDlg::Update(UpdateHint hint, CObject* pHint)
+void CChannelManagerDlg::Update(UpdateHint hint, CObject *pHint)
 {
 	if(!m_hWnd || !m_show)
 		return;
 	if(!hint.ToType<GeneralHint>().GetType()[HINT_MODCHANNELS | HINT_MODGENERAL | HINT_MODTYPE | HINT_MPTOPTIONS])
 		return;
+
+	const size_t oldNumChannels = m_states.size();
+	m_states.resize(m_ModDoc->GetNumChannels());
+	for(size_t chn = oldNumChannels; chn < m_states.size(); chn++)
+	{
+		m_states[chn].sourceChn = static_cast<CHANNELINDEX>(chn);
+	}
+
 	ResizeWindow();
 	InvalidateRect(nullptr, FALSE);
-	if(hint.ToType<GeneralHint>().GetType()[HINT_MODCHANNELS] && m_quickChannelProperties.m_hWnd && pHint != &m_quickChannelProperties)
-		m_quickChannelProperties.UpdateDisplay();
+	if(hint.ToType<GeneralHint>().GetType()[HINT_MODCHANNELS] && m_quickChannelProperties->m_hWnd && pHint != m_quickChannelProperties.get())
+		m_quickChannelProperties->UpdateDisplay();
 }
 
 void CChannelManagerDlg::Show()
@@ -116,7 +128,7 @@ void CChannelManagerDlg::Hide()
 {
 	if(m_hWnd != nullptr && m_show)
 	{
-		ResetState(true, true, true, true, true);
+		ResetState(true, true, true);
 		ShowWindow(SW_HIDE);
 		m_show = false;
 	}
@@ -124,16 +136,9 @@ void CChannelManagerDlg::Hide()
 
 
 CChannelManagerDlg::CChannelManagerDlg()
-	: m_buttonHeight(CM_BT_HEIGHT)
+	: m_quickChannelProperties{std::make_unique<QuickChannelProperties>()}
+	, m_buttonHeight{CM_BT_HEIGHT}
 {
-	for(CHANNELINDEX chn = 0; chn < MAX_BASECHANNELS; chn++)
-	{
-		pattern[chn] = chn;
-		memory[0][chn] = 0;
-		memory[1][chn] = 0;
-		memory[2][chn] = 0;
-		memory[3][chn] = chn;
-	}
 }
 
 CChannelManagerDlg::~CChannelManagerDlg()
@@ -147,7 +152,7 @@ CChannelManagerDlg::~CChannelManagerDlg()
 
 BOOL CChannelManagerDlg::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+	DialogBase::OnInitDialog();
 
 	HWND menu = ::GetDlgItem(m_hWnd, IDC_TAB1);
 
@@ -156,7 +161,7 @@ BOOL CChannelManagerDlg::OnInitDialog()
 	tie.iImage = -1;
 	tie.pszText = const_cast<LPTSTR>(_T("Solo/Mute"));
 	TabCtrl_InsertItem(menu, kSoloMute, &tie);
-	tie.pszText = const_cast<LPTSTR>(_T("Record select"));
+	tie.pszText = const_cast<LPTSTR>(_T("Record Select"));
 	TabCtrl_InsertItem(menu, kRecordSelect, &tie);
 	tie.pszText = const_cast<LPTSTR>(_T("Plugins"));
 	TabCtrl_InsertItem(menu, kPluginState, &tie);
@@ -164,39 +169,100 @@ BOOL CChannelManagerDlg::OnInitDialog()
 	TabCtrl_InsertItem(menu, kReorderRemove, &tie);
 	m_currentTab = kSoloMute;
 
-	m_buttonHeight = MulDiv(CM_BT_HEIGHT, Util::GetDPIy(m_hWnd), 96);
+	m_buttonHeight = HighDPISupport::ScalePixels(CM_BT_HEIGHT, m_hWnd);
 	::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON1), SW_HIDE);
+
+	ResetState(true, true, true, true);
 
 	return TRUE;
 }
+
+
+void CChannelManagerDlg::OnDPIChanged()
+{
+	m_font.DeleteObject();
+	ResizeWindow();
+	DialogBase::OnDPIChanged();
+}
+
+
+INT_PTR CChannelManagerDlg::OnToolHitTest(CPoint point, TOOLINFO *pTI) const
+{
+	CRect rect;
+	pTI->hwnd = m_hWnd;
+	pTI->uId = ButtonHit(point, &rect);
+	pTI->rect = rect;
+	pTI->lpszText = LPSTR_TEXTCALLBACK;
+	if(pTI->uId == CHANNELINDEX_INVALID)
+		return -1;
+	return pTI->uId;
+}
+
+
+CString CChannelManagerDlg::GetToolTipText(UINT id, HWND hwnd) const
+{
+	CString text;
+	if(hwnd || !m_ModDoc || id >= m_states.size())
+		return text;
+
+	const CHANNELINDEX chn = m_states[id].sourceChn;
+	const auto &chnSettings = m_ModDoc->GetSoundFile().ChnSettings[chn];
+	if(!chnSettings.szName.empty())
+		text = MPT_CFORMAT("{}: {}")(chn + 1, mpt::ToWin(m_ModDoc->GetSoundFile().GetCharsetInternal(), chnSettings.szName));
+	else
+		text = MPT_CFORMAT("Channel {}")(chn + 1);
+
+	switch(m_currentTab)
+	{
+	case kSoloMute:
+		text += chnSettings.dwFlags[CHN_MUTE] ? _T(" (Muted)") : _T(" (Unmuted)");
+		break;
+	case kRecordSelect:
+		switch(m_ModDoc->GetChannelRecordGroup(chn))
+		{
+		case RecordGroup::NoGroup: text += _T(" (No Record Group)"); break;
+		case RecordGroup::Group1: text += _T(" (Record Group 1)"); break;
+		case RecordGroup::Group2: text += _T(" (Record Group 2)"); break;
+		}
+		break;
+	case kPluginState:
+		text += chnSettings.dwFlags[CHN_NOFX] ? _T(" (Plugins Bypassed)") : _T(" (Plugins Enabled)");
+		break;
+	case kReorderRemove:
+		if(m_states[id].removed)
+			text += _T(" (Marked for Removal)");
+		break;
+	case kNumTabs:
+		MPT_ASSERT_NOTREACHED();
+		break;
+	}
+	return text;
+}
+
 
 void CChannelManagerDlg::OnApply()
 {
 	if(!m_ModDoc) return;
 
-	CHANNELINDEX numChannels, newMemory[4][MAX_BASECHANNELS];
+	std::vector<State> newStates;
 	std::vector<CHANNELINDEX> newChnOrder;
+	newStates.reserve(m_ModDoc->GetNumChannels());
 	newChnOrder.reserve(m_ModDoc->GetNumChannels());
 
 	// Count new number of channels, copy pattern pointers & manager internal store memory
-	numChannels = 0;
-	for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+	for(const auto &state : m_states)
 	{
-		if(!removed[pattern[chn]])
+		if(!state.removed)
 		{
-			newMemory[0][numChannels] = memory[0][numChannels];
-			newMemory[1][numChannels] = memory[1][numChannels];
-			newMemory[2][numChannels] = memory[2][numChannels];
-			newChnOrder.push_back(pattern[chn]);
-			numChannels++;
+			newStates.push_back(state);
+			newChnOrder.push_back(state.sourceChn);
 		}
 	}
 
 	BeginWaitCursor();
 
-	//Creating new order-vector for ReArrangeChannels.
 	CriticalSection cs;
-	if(m_ModDoc->ReArrangeChannels(newChnOrder) != numChannels)
+	if(m_ModDoc->ReArrangeChannels(newChnOrder) != newChnOrder.size())
 	{
 		cs.Leave();
 		EndWaitCursor();
@@ -204,22 +270,16 @@ void CChannelManagerDlg::OnApply()
 	}
 
 	// Update manager internal store memory
-	for(CHANNELINDEX chn = 0; chn < numChannels; chn++)
+	m_states = std::move(newStates);
+	for(CHANNELINDEX chn = 0; chn < m_states.size(); chn++)
 	{
-		CHANNELINDEX newChn = newChnOrder[chn];
-		if(chn != newChn)
-		{
-			memory[0][chn] = newMemory[0][newChn];
-			memory[1][chn] = newMemory[1][newChn];
-			memory[2][chn] = newMemory[2][newChn];
-		}
-		memory[3][chn] = chn;
+		m_states[chn].sourceChn = chn;
 	}
 
 	cs.Leave();
 	EndWaitCursor();
 
-	ResetState(true, true, true, true, true);
+	ResetState(true, true, true, true);
 
 	// Update document & windows
 	m_ModDoc->SetModified();
@@ -233,267 +293,157 @@ void CChannelManagerDlg::OnApply()
 void CChannelManagerDlg::OnClose()
 {
 	if(m_bkgnd) DeleteBitmap(m_bkgnd);
-	ResetState(true, true, true, true, true);
+	ResetState(true, true, true, true);
 	m_bkgnd = nullptr;
 	m_show = false;
 
-	CDialog::OnCancel();
+	DialogBase::OnCancel();
 }
 
 void CChannelManagerDlg::OnSelectAll()
 {
-	select.set();
+	for(auto &state : m_states)
+		state.select = true;
 	InvalidateRect(m_drawableArea, FALSE);
 }
 
 void CChannelManagerDlg::OnInvert()
 {
-	select.flip();
+	for(auto &state : m_states)
+		state.select = !state.select;
 	InvalidateRect(m_drawableArea, FALSE);
 }
 
-void CChannelManagerDlg::OnAction1()
+void CChannelManagerDlg::OnAction(uint8 action)
 {
-	if(m_ModDoc)
+	if(!m_show || m_ModDoc == nullptr)
+		return;
+
+	int numSelectedAndMatching = 0, numSelected = 0;
+	const auto recordGroup = (action == 1 ? RecordGroup::Group1 : RecordGroup::Group2);
+
+	switch(m_currentTab)
 	{
-		int nbOk = 0, nbSelect = 0;
-		
-		switch(m_currentTab)
-		{
-			case kSoloMute:
+		case kSoloMute:
+			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+			{
+				CHANNELINDEX sourceChn = m_states[chn].sourceChn;
+				if(action == 1)
+					m_ModDoc->MuteChannel(sourceChn, !m_states[chn].select);
+				else if(m_states[chn].select)
+					m_ModDoc->MuteChannel(sourceChn, !m_ModDoc->IsChannelMuted(sourceChn));
+			}
+			break;
+		case kRecordSelect:
+			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+			{
+				CHANNELINDEX sourceChn = m_states[chn].sourceChn;
+				if(m_states[chn].select)
+					numSelected++;
+				if(m_states[chn].select && m_ModDoc->GetChannelRecordGroup(sourceChn) == recordGroup)
+					numSelectedAndMatching++;
+			}
+			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+			{
+				if(m_states[chn].select)
+				{
+					CHANNELINDEX sourceChn = m_states[chn].sourceChn;
+					if(numSelected != numSelectedAndMatching && m_ModDoc->GetChannelRecordGroup(sourceChn) != recordGroup)
+						m_ModDoc->SetChannelRecordGroup(sourceChn, recordGroup);
+					else if(numSelected == numSelectedAndMatching)
+						m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::NoGroup);
+				}
+			}
+			break;
+		case kPluginState:
+			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+			{
+				CHANNELINDEX sourceChn = m_states[chn].sourceChn;
+				if(m_states[chn].select)
+					m_ModDoc->NoFxChannel(sourceChn, action == 2);
+			}
+			break;
+		case kReorderRemove:
+			if(action == 1)
+			{
 				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
 				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(!removed[sourceChn])
-					{
-						if(select[sourceChn])
-							nbSelect++;
-						if(select[sourceChn] && m_ModDoc->IsChannelSolo(sourceChn))
-							nbOk++;
-					}
+					if(m_states[chn].select)
+						m_states[chn].removed = !m_states[chn].removed;
 				}
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(select[sourceChn] && !removed[sourceChn])
-					{
-						if(m_ModDoc->IsChannelMuted(sourceChn))
-							m_ModDoc->MuteChannel(sourceChn, false);
-						if(nbSelect == nbOk)
-							m_ModDoc->SoloChannel(sourceChn, !m_ModDoc->IsChannelSolo(sourceChn));
-						else
-							m_ModDoc->SoloChannel(sourceChn, true);
-					}
-					else if(!m_ModDoc->IsChannelSolo(sourceChn))
-						m_ModDoc->MuteChannel(sourceChn, true);
-				}
-				break;
-			case kRecordSelect:
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(!removed[sourceChn])
-					{
-						if(select[sourceChn])
-							nbSelect++;
-						if(select[sourceChn] && m_ModDoc->GetChannelRecordGroup(sourceChn) == RecordGroup::Group1)
-							nbOk++;
-					}
-				}
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(!removed[sourceChn] && select[sourceChn])
-					{
-						if(select[sourceChn] && nbSelect != nbOk && m_ModDoc->GetChannelRecordGroup(sourceChn) != RecordGroup::Group1)
-							m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::Group1);
-						else if(nbSelect == nbOk)
-							m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::NoGroup);
-					}
-				}
-				break;
-			case kPluginState:
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(select[sourceChn] && !removed[sourceChn])
-						m_ModDoc->NoFxChannel(sourceChn, false);
-				}
-				break;
-			case kReorderRemove:
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(select[sourceChn])
-						removed[sourceChn] = !removed[sourceChn];
-				}
-				break;
-			default:
-				break;
-		}
+			} else
+			{
+				ResetState(false, false, false, true);
+			}
+			break;
+		case kNumTabs:
+			MPT_ASSERT_NOTREACHED();
+			break;
+	}
+
+	ResetState();
+
+	m_ModDoc->UpdateAllViews(nullptr, GeneralHint().Channels(), this);
+	InvalidateRect(m_drawableArea, FALSE);
+}
 
 
+void CChannelManagerDlg::OnStore()
+{
+	if(!m_show || m_ModDoc == nullptr)
+		return;
+
+	switch(m_currentTab)
+	{
+		case kSoloMute:
+			for(auto &state : m_states)
+				state.memoryMute = m_ModDoc->IsChannelMuted(state.sourceChn);
+			break;
+		case kRecordSelect:
+			for(auto &state : m_states)
+				state.memoryRecordGroup = static_cast<uint8>(m_ModDoc->GetChannelRecordGroup(state.sourceChn));
+			break;
+		case kPluginState:
+			for(auto &state : m_states)
+				state.memoryNoFx = m_ModDoc->IsChannelNoFx(state.sourceChn);
+			break;
+		case kReorderRemove:
+		default:
+			break;
+	}
+}
+
+void CChannelManagerDlg::OnRestore()
+{
+	if(!m_show || m_ModDoc == nullptr)
+		return;
+
+	switch(m_currentTab)
+	{
+		case kSoloMute:
+			for(auto &state : m_states)
+				m_ModDoc->MuteChannel(state.sourceChn, state.memoryMute);
+			break;
+		case kRecordSelect:
+			m_ModDoc->ReinitRecordState();
+			for(auto &state : m_states)
+				m_ModDoc->SetChannelRecordGroup(state.sourceChn, static_cast<RecordGroup>(state.memoryRecordGroup));
+			break;
+		case kPluginState:
+			for(auto &state : m_states)
+				m_ModDoc->NoFxChannel(state.sourceChn, state.memoryNoFx);
+			break;
+		case kReorderRemove:
+			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+				m_states[chn].sourceChn = chn;
+			ResetState(false, false, false, true);
+			break;
+		default:
+			break;
+	}
+
+	if(m_currentTab != kReorderRemove)
 		ResetState();
-
-		m_ModDoc->UpdateAllViews(nullptr, GeneralHint().Channels(), this);
-		InvalidateRect(m_drawableArea, FALSE);
-	}
-}
-
-void CChannelManagerDlg::OnAction2()
-{
-	if(m_ModDoc)
-	{
-		
-		int nbOk = 0, nbSelect = 0;
-		
-		switch(m_currentTab)
-		{
-			case kSoloMute:
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(!removed[sourceChn])
-					{
-						if(select[sourceChn])
-							nbSelect++;
-						if(select[sourceChn] && m_ModDoc->IsChannelMuted(sourceChn))
-							nbOk++;
-					}
-				}
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(select[sourceChn] && !removed[sourceChn])
-					{
-						if(m_ModDoc->IsChannelSolo(sourceChn))
-							m_ModDoc->SoloChannel(sourceChn, false);
-						if(nbSelect == nbOk)
-							m_ModDoc->MuteChannel(sourceChn, !m_ModDoc->IsChannelMuted(sourceChn));
-						else
-							m_ModDoc->MuteChannel(sourceChn, true);
-					}
-				}
-				break;
-			case kRecordSelect:
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(!removed[sourceChn])
-					{
-						if(select[sourceChn])
-							nbSelect++;
-						if(select[sourceChn] && m_ModDoc->GetChannelRecordGroup(sourceChn) == RecordGroup::Group2)
-							nbOk++;
-					}
-				}
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(!removed[sourceChn] && select[sourceChn])
-					{
-						if(select[sourceChn] && nbSelect != nbOk && m_ModDoc->GetChannelRecordGroup(sourceChn) != RecordGroup::Group2)
-							m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::Group2);
-						else if(nbSelect == nbOk)
-							m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::NoGroup);
-					}
-				}
-				break;
-			case kPluginState:
-				for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				{
-					CHANNELINDEX sourceChn = pattern[chn];
-					if(select[sourceChn] && !removed[sourceChn])
-						m_ModDoc->NoFxChannel(sourceChn, true);
-				}
-				break;
-			case kReorderRemove:
-				ResetState(false, false, false, false, true);
-				break;
-			default:
-				break;
-		}
-
-		if(m_currentTab != 3) ResetState();
-
-		m_ModDoc->UpdateAllViews(nullptr, GeneralHint().Channels(), this);
-		InvalidateRect(m_drawableArea, FALSE);
-	}
-}
-
-void CChannelManagerDlg::OnStore(void)
-{
-	if(!m_show || m_ModDoc == nullptr)
-	{
-		return;
-	}
-
-	switch(m_currentTab)
-	{
-		case kSoloMute:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-			{
-				CHANNELINDEX sourceChn = pattern[chn];
-				memory[0][sourceChn] = 0;
-				if(m_ModDoc->IsChannelMuted(sourceChn)) memory[0][chn] |= 1;
-				if(m_ModDoc->IsChannelSolo(sourceChn))  memory[0][chn] |= 2;
-			}
-			break;
-		case kRecordSelect:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				memory[1][chn] = static_cast<uint8>(m_ModDoc->GetChannelRecordGroup(pattern[chn]));
-			break;
-		case kPluginState:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				memory[2][chn] = m_ModDoc->IsChannelNoFx(pattern[chn]);
-			break;
-		case kReorderRemove:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				memory[3][chn] = pattern[chn];
-			break;
-		default:
-			break;
-	}
-}
-
-void CChannelManagerDlg::OnRestore(void)
-{
-	if(!m_show || m_ModDoc == nullptr)
-	{
-		return;
-	}
-
-	switch(m_currentTab)
-	{
-		case kSoloMute:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-			{
-				CHANNELINDEX sourceChn = pattern[chn];
-				m_ModDoc->MuteChannel(sourceChn, (memory[0][chn] & 1) != 0);
-				m_ModDoc->SoloChannel(sourceChn, (memory[0][chn] & 2) != 0);
-			}
-			break;
-		case kRecordSelect:
-			m_ModDoc->ReinitRecordState(true);
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-			{
-				m_ModDoc->SetChannelRecordGroup(chn, static_cast<RecordGroup>(memory[1][chn]));
-			}
-			break;
-		case kPluginState:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				m_ModDoc->NoFxChannel(pattern[chn], memory[2][chn] != 0);
-			break;
-		case kReorderRemove:
-			for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-				pattern[chn] = memory[3][chn];
-			ResetState(false, false, false, false, true);
-			break;
-		default:
-			break;
-	}
-
-	if(m_currentTab != 3) ResetState();
 
 	m_ModDoc->UpdateAllViews(nullptr, GeneralHint().Channels(), this);
 	InvalidateRect(m_drawableArea, FALSE);
@@ -508,29 +458,29 @@ void CChannelManagerDlg::OnTabSelchange(NMHDR* /*header*/, LRESULT* /*pResult*/)
 	switch(m_currentTab)
 	{
 		case kSoloMute:
-			SetDlgItemText(IDC_BUTTON5, _T("Solo"));
-			SetDlgItemText(IDC_BUTTON6, _T("Mute"));
+			SetDlgItemText(IDC_BUTTON5, _T("S&olo"));
+			SetDlgItemText(IDC_BUTTON6, _T("M&ute"));
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON5),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON6),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON1),SW_HIDE);
 			break;
 		case kRecordSelect:
-			SetDlgItemText(IDC_BUTTON5, _T("Instrument 1"));
-			SetDlgItemText(IDC_BUTTON6, _T("Instrument 2"));
+			SetDlgItemText(IDC_BUTTON5, _T("Instrument &1"));
+			SetDlgItemText(IDC_BUTTON6, _T("Instrument &2"));
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON5),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON6),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON1),SW_HIDE);
 			break;
 		case kPluginState:
-			SetDlgItemText(IDC_BUTTON5, _T("Enable FX"));
-			SetDlgItemText(IDC_BUTTON6, _T("Disable FX"));
+			SetDlgItemText(IDC_BUTTON5, _T("&Enable FX"));
+			SetDlgItemText(IDC_BUTTON6, _T("&Disable FX"));
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON5),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON6),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON1),SW_HIDE);
 			break;
 		case kReorderRemove:
-			SetDlgItemText(IDC_BUTTON5, _T("Remove"));
-			SetDlgItemText(IDC_BUTTON6, _T("Cancel All"));
+			SetDlgItemText(IDC_BUTTON5, _T("R&emove"));
+			SetDlgItemText(IDC_BUTTON6, _T("Ca&ncel All"));
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON5),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON6),SW_SHOW);
 			::ShowWindow(::GetDlgItem(m_hWnd, IDC_BUTTON1),SW_SHOW);
@@ -545,12 +495,13 @@ void CChannelManagerDlg::OnTabSelchange(NMHDR* /*header*/, LRESULT* /*pResult*/)
 
 void CChannelManagerDlg::ResizeWindow()
 {
-	if(!m_hWnd || !m_ModDoc) return;
+	if(!m_hWnd || !m_ModDoc)
+		return;
 
-	const int dpiX = Util::GetDPIx(m_hWnd);
-	const int dpiY = Util::GetDPIy(m_hWnd);
+	const int dpi = HighDPISupport::GetDpiForWindow(m_hWnd);
 
-	m_buttonHeight = MulDiv(CM_BT_HEIGHT, dpiY, 96);
+	const auto oldButtonHeight = m_buttonHeight;
+	m_buttonHeight = MulDiv(CM_BT_HEIGHT, dpi, 96);
 
 	CHANNELINDEX channels = m_ModDoc->GetNumChannels();
 	int lines = channels / CM_NB_COLS + (channels % CM_NB_COLS ? 1 : 0);
@@ -561,18 +512,19 @@ void CChannelManagerDlg::ResizeWindow()
 	CRect client;
 	GetClientRect(client);
 	m_drawableArea = client;
-	m_drawableArea.DeflateRect(MulDiv(10, dpiX, 96), MulDiv(38, dpiY, 96), MulDiv(8, dpiX, 96), MulDiv(30, dpiY, 96));
+	m_drawableArea.DeflateRect(MulDiv(10, dpi, 96), MulDiv(38, dpi, 96), MulDiv(8, dpi, 96), MulDiv(30, dpi, 96));
 
 	int chnSizeY = m_drawableArea.Height() / lines;
 
-	if(chnSizeY != m_buttonHeight)
+	if(chnSizeY != m_buttonHeight || oldButtonHeight != m_buttonHeight)
 	{
 		SetWindowPos(nullptr, 0, 0, window.Width(), window.Height() + (m_buttonHeight - chnSizeY) * lines, SWP_NOMOVE | SWP_NOZORDER | SWP_NOREDRAW);
 
 		GetClientRect(client);
 
 		// Move butttons to bottom of the window
-		for(auto id : { IDC_BUTTON1, IDC_BUTTON2, IDC_BUTTON3, IDC_BUTTON4, IDC_BUTTON5, IDC_BUTTON6 })
+		auto dwp = ::BeginDeferWindowPos(6);
+		for(auto id : {IDC_BUTTON1, IDC_BUTTON2, IDC_BUTTON3, IDC_BUTTON4, IDC_BUTTON5, IDC_BUTTON6})
 		{
 			CWnd *button = GetDlgItem(id);
 			if(button != nullptr)
@@ -580,9 +532,11 @@ void CChannelManagerDlg::ResizeWindow()
 				CRect btn;
 				button->GetClientRect(btn);
 				button->MapWindowPoints(this, btn);
-				button->SetWindowPos(nullptr, btn.left, client.Height() - btn.Height() - MulDiv(3, dpiY, 96), 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				::DeferWindowPos(dwp, *button, nullptr, btn.left, client.Height() - btn.Height() - MulDiv(3, dpi, 96), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 			}
 		}
+
+		::EndDeferWindowPos(dwp);
 
 		if(m_bkgnd)
 		{
@@ -591,8 +545,8 @@ void CChannelManagerDlg::ResizeWindow()
 		}
 
 		m_drawableArea = client;
-		m_drawableArea.DeflateRect(MulDiv(10, dpiX, 96), MulDiv(38, dpiY, 96), MulDiv(8, dpiX, 96), MulDiv(30, dpiY, 96));
-		InvalidateRect(nullptr, FALSE);
+		m_drawableArea.DeflateRect(MulDiv(10, dpi, 96), MulDiv(38, dpi, 96), MulDiv(8, dpi, 96), MulDiv(30, dpi, 96));
+		Invalidate(FALSE);
 	}
 }
 
@@ -601,19 +555,20 @@ void CChannelManagerDlg::OnPaint()
 {
 	if(!m_hWnd || !m_show || m_ModDoc == nullptr)
 	{
-		CDialog::OnPaint();
+		DialogBase::OnPaint();
 		ShowWindow(SW_HIDE);
 		return;
 	}
 	if(IsIconic())
 	{
-		CDialog::OnPaint();
+		DialogBase::OnPaint();
 		return;
 	}
 
-	const int dpiX = Util::GetDPIx(m_hWnd);
-	const int dpiY = Util::GetDPIy(m_hWnd);
-	const CHANNELINDEX channels = m_ModDoc->GetNumChannels();
+	if(!m_font.m_hObject)
+	{
+		HighDPISupport::CreateGUIFont(m_font, m_hWnd);
+	}
 
 	PAINTSTRUCT pDC;
 	::BeginPaint(m_hWnd, &pDC);
@@ -622,7 +577,7 @@ void CChannelManagerDlg::OnPaint()
 	const int chnSizeX = m_drawableArea.Width() / CM_NB_COLS;
 	const int chnSizeY = m_buttonHeight;
 
-	if(m_currentTab == 3 && m_moveRect && m_bkgnd)
+	if(m_currentTab == kReorderRemove && m_moveRect && m_bkgnd)
 	{
 		// Only draw channels to be moved around
 		HDC bdc = ::CreateCompatibleDC(pDC.hdc);
@@ -635,19 +590,18 @@ void CChannelManagerDlg::OnPaint()
 		ftn.SourceConstantAlpha = 192;
 		ftn.AlphaFormat = 0;
 
-		for(CHANNELINDEX chn = 0; chn < channels; chn++)
+		for(const auto &state : m_states)
 		{
-			CHANNELINDEX sourceChn = pattern[chn];
-			if(select[sourceChn])
+			if(state.select)
 			{
-				CRect btn = move[sourceChn];
+				CRect btn = state.move;
 				btn.DeflateRect(3, 3, 0, 0);
 
 				AlphaBlend(pDC.hdc, btn.left + m_moveX - m_downX, btn.top + m_moveY - m_downY, btn.Width(), btn.Height(), bdc,
 					btn.left, btn.top, btn.Width(), btn.Height(), ftn);
 			}
 		}
-		::SelectObject(bdc, (HBITMAP)NULL);
+		::SelectObject(bdc, nullptr);
 		::DeleteDC(bdc);
 
 		::EndPaint(m_hWnd, &pDC);
@@ -661,11 +615,12 @@ void CChannelManagerDlg::OnPaint()
 	if(!m_bkgnd)
 		m_bkgnd = ::CreateCompatibleBitmap(pDC.hdc, client.Width(), client.Height());
 	HGDIOBJ oldBmp = ::SelectObject(dc, m_bkgnd);
-	HGDIOBJ oldFont = ::SelectObject(dc, CMainFrame::GetGUIFont());
+	HGDIOBJ oldFont = ::SelectObject(dc, m_font);
 
 	const auto dcBrush = GetStockBrush(DC_BRUSH);
 
-	client.SetRect(client.left + MulDiv(2, dpiX, 96), client.top + MulDiv(32, dpiY, 96), client.right - MulDiv(2, dpiX, 96), client.bottom - MulDiv(24, dpiY, 96));
+	const int dpi = HighDPISupport::GetDpiForWindow(m_hWnd);
+	client.SetRect(client.left + MulDiv(2, dpi, 96), client.top + MulDiv(32, dpi, 96), client.right - MulDiv(2, dpi, 96), client.bottom - MulDiv(24, dpi, 96));
 	// Draw background
 	{
 		const auto bgIntersected = client & pDC.rcPaint;  // In case of partial redraws, FillRect may still draw into areas that are not part of the redraw area and thus make some buttons disappear
@@ -685,15 +640,9 @@ void CChannelManagerDlg::OnPaint()
 	uint32 col = 0, row = 0;
 	const CSoundFile &sndFile = m_ModDoc->GetSoundFile();
 	CString s;
-	for(CHANNELINDEX chn = 0; chn < channels; chn++, col++)
+	for(const auto &state : m_states)
 	{
-		if(col >= CM_NB_COLS)
-		{
-			col = 0;
-			row++;
-		}
-
-		const CHANNELINDEX sourceChn = pattern[chn];
+		const CHANNELINDEX sourceChn = state.sourceChn;
 		const auto &chnSettings = sndFile.ChnSettings[sourceChn];
 
 		if(!chnSettings.szName.empty())
@@ -701,19 +650,25 @@ void CChannelManagerDlg::OnPaint()
 		else
 			s = MPT_CFORMAT("Channel {}")(sourceChn + 1);
 
-		const int borderX = MulDiv(3, dpiX, 96), borderY = MulDiv(3, dpiY, 96);
+		const int border = HighDPISupport::ScalePixels(3, m_hWnd);
 		CRect btn;
-		btn.left = client.left + col * chnSizeX + borderX;
-		btn.right = btn.left + chnSizeX - borderX;
-		btn.top = client.top + row * chnSizeY + borderY;
-		btn.bottom = btn.top + chnSizeY - borderY;
+		btn.left = client.left + col * chnSizeX + border;
+		btn.right = btn.left + chnSizeX - border;
+		btn.top = client.top + row * chnSizeY + border;
+		btn.bottom = btn.top + chnSizeY - border;
+		col++;
+		if(col >= CM_NB_COLS)
+		{
+			col = 0;
+			row++;
+		}
 
 		if(!CRect{}.IntersectRect(&pDC.rcPaint, &btn))
 			continue;
 
 		// Button
-		const bool activate = select[sourceChn];
-		const bool enable = !removed[sourceChn];
+		const bool activate = state.select;
+		const bool enable = !state.removed;
 		auto btnAdjusted = btn;  // Without border
 		::DrawEdge(dc, btnAdjusted, enable ? EDGE_RAISED : EDGE_SUNKEN, BF_RECT | BF_MIDDLE | BF_ADJUST);
 		if(activate)
@@ -726,13 +681,14 @@ void CChannelManagerDlg::OnPaint()
 			const auto endColor = activate ? windowColor : buttonFaceColor;
 			const auto width = btnAdjusted.Width() / 2;
 			auto rect = btnAdjusted;
+			rect.left = rect.right - width;
 			rect.right = rect.left + 1;
 			for(int i = 0; i < width; i++)
 			{
 				auto blend = static_cast<double>(i) / width, blendInv = 1.0 - blend;
-				auto blendColor = RGB(mpt::saturate_round<uint8>(GetRValue(startColor) * blendInv + GetRValue(endColor) * blend),
-				                      mpt::saturate_round<uint8>(GetGValue(startColor) * blendInv + GetGValue(endColor) * blend),
-				                      mpt::saturate_round<uint8>(GetBValue(startColor) * blendInv + GetBValue(endColor) * blend));
+				auto blendColor = RGB(mpt::saturate_round<uint8>(GetRValue(startColor) * blend + GetRValue(endColor) * blendInv),
+				                      mpt::saturate_round<uint8>(GetGValue(startColor) * blend + GetGValue(endColor) * blendInv),
+				                      mpt::saturate_round<uint8>(GetBValue(startColor) * blend + GetBValue(endColor) * blendInv));
 				::SetDCBrushColor(dc, blendColor);
 				::FillRect(dc, &rect, dcBrush);
 				rect.left++;
@@ -743,8 +699,8 @@ void CChannelManagerDlg::OnPaint()
 		// Text
 		{
 			auto rect = btnAdjusted;
-			rect.left += Util::ScalePixels(9, m_hWnd);
-			rect.right -= Util::ScalePixels(3, m_hWnd);
+			rect.left += HighDPISupport::ScalePixels(9, m_hWnd);
+			rect.right -= HighDPISupport::ScalePixels(3, m_hWnd);
 
 			::SetBkMode(dc, TRANSPARENT);
 			::SetTextColor(dc, GetSysColor(enable || activate ? COLOR_BTNTEXT : COLOR_GRAYTEXT));
@@ -753,10 +709,10 @@ void CChannelManagerDlg::OnPaint()
 
 		// Draw red/green markers
 		{
-			const int margin = Util::ScalePixels(1, m_hWnd);
+			const int margin = HighDPISupport::ScalePixels(1, m_hWnd);
 			auto rect = btnAdjusted;
 			rect.DeflateRect(margin, margin);
-			rect.right = rect.left + Util::ScalePixels(7, m_hWnd);
+			rect.right = rect.left + HighDPISupport::ScalePixels(7, m_hWnd);
 			const auto &brushes = activate ? brushColorsBright : brushColors;
 			const auto redBrush = brushes[2], greenBrush = brushes[1];
 			COLORREF color = 0;
@@ -772,7 +728,10 @@ void CChannelManagerDlg::OnPaint()
 				color = chnSettings.dwFlags[CHN_NOFX] ? redBrush : greenBrush;
 				break;
 			case kReorderRemove:
-				color = removed[sourceChn] ? redBrush : greenBrush;
+				color = state.removed ? redBrush : greenBrush;
+				break;
+			case kNumTabs:
+				MPT_ASSERT_NOTREACHED();
 				break;
 			}
 			::SetDCBrushColor(dc, color);
@@ -792,7 +751,7 @@ void CChannelManagerDlg::OnPaint()
 }
 
 
-bool CChannelManagerDlg::ButtonHit(CPoint point, CHANNELINDEX *id, CRect *invalidate) const
+CHANNELINDEX CChannelManagerDlg::ButtonHit(CPoint point, CRect *invalidate) const
 {
 	const CRect &client = m_drawableArea;
 
@@ -811,7 +770,6 @@ bool CChannelManagerDlg::ButtonHit(CPoint point, CHANNELINDEX *id, CRect *invali
 		CHANNELINDEX n = static_cast<CHANNELINDEX>(y * nColns + x);
 		if(n < m_ModDoc->GetNumChannels())
 		{
-			if(id) *id = n;
 			if(invalidate)
 			{
 				invalidate->left = client.left + x * dx;
@@ -819,25 +777,25 @@ bool CChannelManagerDlg::ButtonHit(CPoint point, CHANNELINDEX *id, CRect *invali
 				invalidate->top = client.top + y * dy;
 				invalidate->bottom = invalidate->top + dy;
 			}
-			return true;
+			return n;
 		}
 	}
-	return false;
+	return CHANNELINDEX_INVALID;
 }
 
 
-void CChannelManagerDlg::ResetState(bool bSelection, bool bMove, bool bButton, bool bInternal, bool bOrder)
+void CChannelManagerDlg::ResetState(bool bSelection, bool bMove, bool bInternal, bool bOrder)
 {
-	for(CHANNELINDEX chn = 0; chn < MAX_BASECHANNELS; chn++)
+	size_t oldSize = m_states.size();
+	m_states.resize(m_ModDoc ? m_ModDoc->GetNumChannels() : 0);
+	for(CHANNELINDEX chn = 0; chn < m_states.size(); chn++)
 	{
 		if(bSelection)
-			select[pattern[chn]] = false;
-		if(bButton)
-			state[pattern[chn]]  = false;
-		if(bOrder)
+			m_states[chn].select = false;
+		if(bOrder || chn > oldSize)
 		{
-			pattern[chn] = chn;
-			removed[chn] = false;
+			m_states[chn].sourceChn = chn;
+			m_states[chn].removed = false;
 		}
 	}
 	if(bMove || bInternal)
@@ -845,7 +803,8 @@ void CChannelManagerDlg::ResetState(bool bSelection, bool bMove, bool bButton, b
 		m_leftButton = false;
 		m_rightButton = false;
 	}
-	if(bMove) m_moveRect = false;
+	if(bMove)
+		m_moveRect = false;
 }
 
 
@@ -865,39 +824,41 @@ void CChannelManagerDlg::OnMouseMove(UINT nFlags,CPoint point)
 void CChannelManagerDlg::OnLButtonUp(UINT /*nFlags*/,CPoint point)
 {
 	ReleaseCapture();
-	if(!m_hWnd || m_show == false) return;
+	if(!m_hWnd || !m_show)
+		return;
 
 	if(m_moveRect && m_ModDoc)
 	{
-		CHANNELINDEX dropChn = 0;
 		CRect dropRect;
-		if(ButtonHit(point, &dropChn, &dropRect))
+		CHANNELINDEX dropChn = ButtonHit(point, &dropRect);
+		if(dropChn != CHANNELINDEX_INVALID)
 		{
 			// Rearrange channels
-			const auto IsSelected = std::bind(&decltype(select)::test, &select, std::placeholders::_1);
-
 			const auto numChannels = m_ModDoc->GetNumChannels();
 			if(point.x > dropRect.left + dropRect.Width() / 2 && dropChn < numChannels)
 				dropChn++;
 
-			std::vector<CHANNELINDEX> newOrder{ pattern.begin(), pattern.begin() + numChannels };
-			// How many selected channels are there before the drop target?
-			// cppcheck false-positive
-			// cppcheck-suppress danglingTemporaryLifetime
-			const CHANNELINDEX selectedBeforeDropChn = static_cast<CHANNELINDEX>(std::count_if(pattern.begin(), pattern.begin() + dropChn, IsSelected));
-			dropChn -= selectedBeforeDropChn;
-			// Remove all selected channels from the order
-			newOrder.erase(std::remove_if(newOrder.begin(), newOrder.end(), IsSelected), newOrder.end());
-			const CHANNELINDEX numSelected = static_cast<CHANNELINDEX>(numChannels - newOrder.size());
-			// Then insert them at the drop position
-			newOrder.insert(newOrder.begin() + dropChn, numSelected, PATTERNINDEX_INVALID);
-			std::copy_if(pattern.begin(), pattern.begin() + numChannels, newOrder.begin() + dropChn, IsSelected);
+			std::vector<State> states;
+			CHANNELINDEX selectedBeforeDropChn = 0;
+			for(CHANNELINDEX chn = 0; chn < numChannels; chn++)
+			{
+				if(m_states[chn].select)
+				{
+					states.push_back(m_states[chn]);
+					states.back().select = false;
+					if(chn < dropChn)
+						selectedBeforeDropChn++;
+				}
+			}
 
-			std::copy(newOrder.begin(), newOrder.begin() + numChannels, pattern.begin());
-			select.reset();
+			// Remove all selected channels from the order
+			const auto IsSelected = [](const State &state) { return state.select; };
+			m_states.erase(std::remove_if(m_states.begin(), m_states.end(), IsSelected), m_states.end());
+			// Then insert them at the drop position
+			m_states.insert(m_states.begin() + dropChn - selectedBeforeDropChn, states.begin(), states.end());
 		} else
 		{
-			ResetState(true, false, false, false, false);
+			ResetState(true, false, false, false);
 		}
 
 		m_moveRect = false;
@@ -906,9 +867,6 @@ void CChannelManagerDlg::OnLButtonUp(UINT /*nFlags*/,CPoint point)
 	}
 
 	m_leftButton = false;
-
-	for(CHANNELINDEX chn : pattern)
-		state[chn] = false;
 }
 
 void CChannelManagerDlg::OnLButtonDown(UINT nFlags,CPoint point)
@@ -916,7 +874,8 @@ void CChannelManagerDlg::OnLButtonDown(UINT nFlags,CPoint point)
 	if(!m_hWnd || m_show == false) return;
 	SetCapture();
 
-	if(!ButtonHit(point, nullptr, nullptr)) ResetState(true,  false, false, false);
+	if(ButtonHit(point) == CHANNELINDEX_INVALID)
+		ResetState(true, false, false);
 
 	m_leftButton = true;
 	m_buttonAction = kUndetermined;
@@ -928,10 +887,6 @@ void CChannelManagerDlg::OnLButtonDown(UINT nFlags,CPoint point)
 void CChannelManagerDlg::OnRButtonUp(UINT /*nFlags*/,CPoint /*point*/)
 {
 	ReleaseCapture();
-	if(!m_hWnd || m_show == false) return;
-
-	ResetState(false, false, true, false);
-
 	m_rightButton = false;
 }
 
@@ -944,7 +899,7 @@ void CChannelManagerDlg::OnRButtonDown(UINT nFlags,CPoint point)
 	m_buttonAction = kUndetermined;
 	if(m_moveRect)
 	{
-		ResetState(true, true, false, false, false);
+		ResetState(true, true, false, false);
 		InvalidateRect(m_drawableArea, FALSE);
 	} else
 	{
@@ -956,113 +911,119 @@ void CChannelManagerDlg::OnRButtonDown(UINT nFlags,CPoint point)
 
 void CChannelManagerDlg::OnMButtonDown(UINT /*nFlags*/, CPoint point)
 {
-	CHANNELINDEX chn;
 	CRect rect;
-	if(m_ModDoc != nullptr && (m_ModDoc->GetModType() & (MOD_TYPE_XM | MOD_TYPE_IT | MOD_TYPE_MPT)) && ButtonHit(point, &chn, &rect))
+	CHANNELINDEX chn = ButtonHit(point, &rect);
+	if(m_ModDoc != nullptr && chn != CHANNELINDEX_INVALID)
 	{
 		ClientToScreen(&point);
-		m_quickChannelProperties.Show(m_ModDoc, pattern[chn], point);
+		m_quickChannelProperties->Show(m_ModDoc, m_states[chn].sourceChn, point);
 	}
 }
 
 void CChannelManagerDlg::MouseEvent(UINT nFlags,CPoint point, MouseButton button)
 {
-	CHANNELINDEX n;
-	CRect client, invalidate;
-	bool hit = ButtonHit(point, &n, &invalidate);
-	if(hit) n = pattern[n];
+	if(!m_ModDoc)
+		return;
 
 	m_moveX = point.x;
 	m_moveY = point.y;
 
-	if(!m_ModDoc) return;
-
-	if(hit && !state[n] && button != CM_BT_NONE)
+	CRect client, invalidate;
+	const CHANNELINDEX n = ButtonHit(point, &invalidate);
+	if(n != CHANNELINDEX_INVALID && button != CM_BT_NONE)
 	{
+		const CHANNELINDEX sourceChn = m_states[n].sourceChn;
 		if(nFlags & MK_CONTROL)
 		{
 			if(button == CM_BT_LEFT)
 			{
-				if(!select[n] && !removed[n]) move[n] = invalidate;
-				select[n] = true;
+				if(!m_states[n].select && !m_states[n].removed)
+					m_states[n].move = invalidate;
+				m_states[n].select = true;
+			} else if(button == CM_BT_RIGHT)
+			{
+				m_states[n].select = false;
 			}
-			else if(button == CM_BT_RIGHT) select[n] = false;
-		}
-		else if(!removed[n] || m_currentTab == 3)
+		} else
 		{
 			switch(m_currentTab)
 			{
-				case kSoloMute:
-					if(button == CM_BT_LEFT)
-					{
-						if(m_buttonAction == kUndetermined)
-							m_buttonAction = (!m_ModDoc->IsChannelSolo(n) || m_ModDoc->IsChannelMuted(n)) ? kAction1 : kAction2;
-						if(m_buttonAction == kAction1)
-						{
-							m_ModDoc->MuteChannel(n, false);
-							m_ModDoc->SoloChannel(n, true);
-							for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
-							{
-								if(chn != n)
-									m_ModDoc->MuteChannel(chn, true);
-							}
-							invalidate = client = m_drawableArea;
-						}
-						else m_ModDoc->SoloChannel(n, false);
-					} else
-					{
-						if(m_ModDoc->IsChannelSolo(n)) m_ModDoc->SoloChannel(n, false);
-						if(m_buttonAction == kUndetermined)
-							m_buttonAction = m_ModDoc->IsChannelMuted(n) ? kAction1 : kAction2;
-						m_ModDoc->MuteChannel(n, m_buttonAction == kAction2);
-					}
-					m_ModDoc->SetModified();
-					m_ModDoc->UpdateAllViews(nullptr, GeneralHint(n).Channels(), this);
-					break;
-				case kRecordSelect:
+			case kSoloMute:
+				if(button == CM_BT_LEFT)
 				{
-					auto rec = m_ModDoc->GetChannelRecordGroup(n);
 					if(m_buttonAction == kUndetermined)
-						m_buttonAction = (rec == RecordGroup::NoGroup || rec != (button == CM_BT_LEFT ? RecordGroup::Group1 : RecordGroup::Group2)) ? kAction1 : kAction2;
-
-					if(m_buttonAction == kAction1 && button == CM_BT_LEFT)
-						m_ModDoc->SetChannelRecordGroup(n, RecordGroup::Group1);
-					else if(m_buttonAction == kAction1 && button == CM_BT_RIGHT)
-						m_ModDoc->SetChannelRecordGroup(n, RecordGroup::Group2);
-					else
-						m_ModDoc->SetChannelRecordGroup(n, RecordGroup::NoGroup);
-					m_ModDoc->UpdateAllViews(nullptr, GeneralHint(n).Channels(), this);
-					break;
+					{
+						bool isAlreadySolo = true;
+						for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+						{
+							if((chn == sourceChn) == m_ModDoc->IsChannelMuted(chn))
+							{
+								isAlreadySolo = false;
+								break;
+							}
+						}
+						m_buttonAction = isAlreadySolo ? kAction2 : kAction1;
+						for(CHANNELINDEX chn = 0; chn < m_ModDoc->GetNumChannels(); chn++)
+						{
+							m_ModDoc->MuteChannel(chn, m_buttonAction == kAction1);
+						}
+					}
+					if(m_buttonAction == kAction1)
+						m_ModDoc->MuteChannel(sourceChn, false);
+					invalidate = client = m_drawableArea;
+				} else
+				{
+					if(m_buttonAction == kUndetermined)
+						m_buttonAction = m_ModDoc->IsChannelMuted(sourceChn) ? kAction1 : kAction2;
+					m_ModDoc->MuteChannel(sourceChn, m_buttonAction == kAction2);
 				}
-				case kPluginState:
-					if(button == CM_BT_LEFT) m_ModDoc->NoFxChannel(n, false);
-					else m_ModDoc->NoFxChannel(n, true);
-					m_ModDoc->SetModified();
-					m_ModDoc->UpdateAllViews(nullptr, GeneralHint(n).Channels(), this);
-					break;
-				case kReorderRemove:
-					if(button == CM_BT_LEFT)
-					{
-						move[n] = invalidate;
-						select[n] = true;
-					}
-					if(button == CM_BT_RIGHT)
-					{
-						if(m_buttonAction == kUndetermined)
-							m_buttonAction = removed[n] ? kAction1 : kAction2;
-							select[n] = false;
-						removed[n] = (m_buttonAction == kAction2);
-					}
+				m_ModDoc->SetModified();
+				m_ModDoc->UpdateAllViews(nullptr, GeneralHint(sourceChn).Channels(), this);
+				break;
+			case kRecordSelect:
+				if(m_buttonAction == kUndetermined)
+				{
+					auto rec = m_ModDoc->GetChannelRecordGroup(sourceChn);
+					m_buttonAction = (rec == RecordGroup::NoGroup || rec != (button == CM_BT_LEFT ? RecordGroup::Group1 : RecordGroup::Group2)) ? kAction1 : kAction2;
+				}
 
-					if(select[n] || button == 0)
-					{
-						m_moveRect = true;
-					}
-					break;
+				if(m_buttonAction == kAction1 && button == CM_BT_LEFT)
+					m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::Group1);
+				else if(m_buttonAction == kAction1 && button == CM_BT_RIGHT)
+					m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::Group2);
+				else
+					m_ModDoc->SetChannelRecordGroup(sourceChn, RecordGroup::NoGroup);
+				m_ModDoc->UpdateAllViews(nullptr, GeneralHint(sourceChn).Channels(), this);
+				break;
+			case kPluginState:
+				m_ModDoc->NoFxChannel(sourceChn, (button != CM_BT_LEFT));
+				m_ModDoc->SetModified();
+				m_ModDoc->UpdateAllViews(nullptr, GeneralHint(sourceChn).Channels(), this);
+				break;
+			case kReorderRemove:
+				if(button == CM_BT_LEFT)
+				{
+					m_states[n].move = invalidate;
+					m_states[n].select = true;
+				} else if(button == CM_BT_RIGHT)
+				{
+					if(m_buttonAction == kUndetermined)
+						m_buttonAction = m_states[n].removed ? kAction1 : kAction2;
+					m_states[n].select = false;
+					m_states[n].removed = (m_buttonAction == kAction2);
+				}
+
+				if(m_states[n].select || button == CM_BT_NONE)
+				{
+					m_moveRect = true;
+				}
+				break;
+			case kNumTabs:
+				MPT_ASSERT_NOTREACHED();
+				break;
 			}
 		}
 
-		state[n] = false;
 		InvalidateRect(invalidate, FALSE);
 	} else
 	{
@@ -1074,13 +1035,13 @@ void CChannelManagerDlg::MouseEvent(UINT nFlags,CPoint point, MouseButton button
 void CChannelManagerDlg::OnLButtonDblClk(UINT nFlags, CPoint point)
 {
 	OnLButtonDown(nFlags, point);
-	CDialog::OnLButtonDblClk(nFlags, point);
+	DialogBase::OnLButtonDblClk(nFlags, point);
 }
 
 void CChannelManagerDlg::OnRButtonDblClk(UINT nFlags, CPoint point)
 {
 	OnRButtonDown(nFlags, point);
-	CDialog::OnRButtonDblClk(nFlags, point);
+	DialogBase::OnRButtonDblClk(nFlags, point);
 }
 
 

@@ -10,13 +10,18 @@
 
 #include "stdafx.h"
 #include "Autotune.h"
-#include <math.h>
+#include "resource.h"
 #include "../common/misc_util.h"
 #include "../soundlib/Sndfile.h"
+
 #include <algorithm>
+#include <cmath>
 #include <execution>
 #include <numeric>
-#ifdef ENABLE_SSE2
+#if defined(MPT_WANT_ARCH_INTRINSICS_X86_SSE2) && defined(MPT_ARCH_INTRINSICS_X86_SSE2)
+#if MPT_COMPILER_MSVC
+#include <intrin.h>
+#endif
 #include <emmintrin.h>
 #endif
 
@@ -33,20 +38,27 @@ OPENMPT_NAMESPACE_BEGIN
 #define HISTORY_BINS	(12 * BINS_PER_NOTE)	// One octave
 
 
-static double FrequencyToNote(double freq, double pitchReference)
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+#endif // MPT_COMPILER_CLANG
+static inline double FrequencyToNote(double freq, double pitchReference)
 {
 	return ((12.0 * (log(freq / (pitchReference / 2.0)) / log(2.0))) + 57.0);
 }
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic pop
+#endif // MPT_COMPILER_CLANG
 
 
-static double NoteToFrequency(double note, double pitchReference)
+static inline double NoteToFrequency(double note, double pitchReference)
 {
 	return pitchReference * pow(2.0, (note - 69.0) / 12.0);
 }
 
 
 // Calculate the amount of samples for autocorrelation shifting for a given note
-static SmpLength NoteToShift(uint32 sampleFreq, int note, double pitchReference)
+static inline SmpLength NoteToShift(uint32 sampleFreq, int note, double pitchReference)
 {
 	const double fundamentalFrequency = NoteToFrequency((double)note / BINS_PER_NOTE, pitchReference);
 	return std::max(mpt::saturate_round<SmpLength>((double)sampleFreq / fundamentalFrequency), SmpLength(1));
@@ -170,7 +182,7 @@ struct AutotuneContext
 	uint32 sampleFreq;
 };
 
-#if defined(ENABLE_SSE2)
+#if defined(MPT_WANT_ARCH_INTRINSICS_X86_SSE2) && defined(MPT_ARCH_INTRINSICS_X86_SSE2)
 
 static inline AutotuneHistogramEntry CalculateNoteHistogramSSE2(int note, AutotuneContext ctx)
 {
@@ -196,7 +208,7 @@ static inline AutotuneHistogramEntry CalculateNoteHistogramSSE2(int note, Autotu
 	return {note % HISTORY_BINS, autocorrSum};
 }
 
-#endif // ENABLE_SSE2
+#endif
 
 static inline AutotuneHistogramEntry CalculateNoteHistogram(int note, AutotuneContext ctx)
 {
@@ -226,6 +238,10 @@ static inline AutotuneHistogram operator+(AutotuneHistogram a, AutotuneHistogram
 }
 
 
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+#endif // MPT_COMPILER_CLANG
 static inline AutotuneHistogram & operator+=(AutotuneHistogram &a, AutotuneHistogram b) noexcept
 {
 	for(std::size_t i = 0; i < HISTORY_BINS; ++i)
@@ -234,6 +250,9 @@ static inline AutotuneHistogram & operator+=(AutotuneHistogram &a, AutotuneHisto
 	}
 	return a;
 }
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic pop
+#endif // MPT_COMPILER_CLANG
 
 
 static inline AutotuneHistogram &operator+=(AutotuneHistogram &a, AutotuneHistogramEntry b) noexcept
@@ -301,10 +320,15 @@ bool Autotune::Apply(double pitchReference, int targetNote)
 	std::iota(notes.begin(), notes.end(), START_NOTE);
 
 	AutotuneHistogram autocorr =
-#ifdef ENABLE_SSE2
-		(CPU::HasFeatureSet(CPU::feature::sse2)) ? std::transform_reduce(std::execution::par_unseq, std::begin(notes), std::end(notes), AutotuneHistogram{}, AutotuneHistogramReduce{}, [ctx](int note) { return CalculateNoteHistogramSSE2(note, ctx); } ) :
+#if defined(MPT_WANT_ARCH_INTRINSICS_X86_SSE2) && defined(MPT_ARCH_INTRINSICS_X86_SSE2)
+		(CPU::HasFeatureSetAndModesEnabled(CPU::feature::sse2, CPU::mode::xmm128sse)) ?
+			[&]() {
+				mpt::arch::feature_fence_guard arch_feature_guard;
+				return std::transform_reduce(std::execution::par_unseq, std::begin(notes), std::end(notes), AutotuneHistogram{}, AutotuneHistogramReduce{}, [ctx](int note) { return CalculateNoteHistogramSSE2(note, ctx); } );
+			}()
+		:
 #endif
-		std::transform_reduce(std::execution::par_unseq, std::begin(notes), std::end(notes), AutotuneHistogram{}, AutotuneHistogramReduce{}, [ctx](int note) { return CalculateNoteHistogram(note, ctx); } );
+			std::transform_reduce(std::execution::par_unseq, std::begin(notes), std::end(notes), AutotuneHistogram{}, AutotuneHistogramReduce{}, [ctx](int note) { return CalculateNoteHistogram(note, ctx); } );
 	
 	// Interpolate the histogram...
 	AutotuneHistogram interpolated;
@@ -369,16 +393,19 @@ int CAutotuneDlg::m_targetNote = 0;       // Target note (C- = 0, C# = 1, etc...
 
 void CAutotuneDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	DialogBase::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(CAutotuneDlg)
 	DDX_Control(pDX, IDC_COMBO1,	m_CbnNoteBox);
 	//}}AFX_DATA_MAP
 }
 
 
+CAutotuneDlg::CAutotuneDlg(CWnd *parent) : DialogBase(IDD_AUTOTUNE, parent) {}
+
+
 BOOL CAutotuneDlg::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+	DialogBase::OnInitDialog();
 
 	m_CbnNoteBox.ResetContent();
 	for(int note = 0; note < 12; note++)
@@ -406,7 +433,7 @@ void CAutotuneDlg::OnOK()
 		return;
 	}
 
-	CDialog::OnOK();
+	DialogBase::OnOK();
 	m_targetNote = (int)m_CbnNoteBox.GetItemData(m_CbnNoteBox.GetCurSel());
 	m_pitchReference = pitch;
 }

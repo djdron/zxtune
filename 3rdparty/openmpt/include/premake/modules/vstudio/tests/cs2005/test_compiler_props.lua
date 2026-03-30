@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/cs2005/test_compiler_props.lua
 -- Test the compiler flags of a Visual Studio 2005+ C# project.
--- Copyright (c) 2012-2013 Jason Perkins and the Premake project
+-- Copyright (c) 2012-2013 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -39,7 +39,6 @@
 		]]
 	end
 
-
 --
 -- Check handling of the Unsafe flag.
 --
@@ -55,14 +54,25 @@
 		]]
 	end
 
+	function suite.allowUnsafeBlocks_onUnsafeFlagNonConfigOnNetcore()
+		dotnetframework "netcoreapp3.1"
+		clr "Unsafe"
+		prepare()
+		test.capture [[
+		<DefineConstants></DefineConstants>
+		<ErrorReport>prompt</ErrorReport>
+		<WarningLevel>4</WarningLevel>
+		]]
+	end
+
 
 --
 -- Check handling of FatalWarnings flag.
 --
 
 
-	function suite.treatWarningsAsErrors_onFatalWarningsFlag()
-		flags { "FatalWarnings" }
+	function suite.treatWarningsAsErrors_onFatalWarningsAPI()
+		fatalwarnings "All"
 		prepare()
 		test.capture [[
 		<DefineConstants></DefineConstants>

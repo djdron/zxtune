@@ -38,11 +38,11 @@
 		prepare()
 		test.capture [[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <BuildMatrix>
     <WorkspaceConfiguration Name="Debug" Selected="yes">
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
     </WorkspaceConfiguration>
   </BuildMatrix>
 </CodeLite_Workspace>
@@ -53,13 +53,13 @@
 		prepare()
 		test.capture [[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <Project Name="MyProject" Path="MyProject.project"/>
   <BuildMatrix>
     <WorkspaceConfiguration Name="Debug" Selected="yes">
       <Project Name="MyProject" ConfigName="Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
       <Project Name="MyProject" ConfigName="Release"/>
     </WorkspaceConfiguration>
   </BuildMatrix>
@@ -72,7 +72,7 @@
 		prepare()
 		test.capture [[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <Project Name="MyProject" Path="MyProject.project"/>
   <Project Name="MyProject2" Path="MyProject2.project"/>
   <BuildMatrix>
@@ -80,7 +80,7 @@
       <Project Name="MyProject" ConfigName="Debug"/>
       <Project Name="MyProject2" ConfigName="Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
       <Project Name="MyProject" ConfigName="Release"/>
       <Project Name="MyProject2" ConfigName="Release"/>
     </WorkspaceConfiguration>
@@ -99,13 +99,13 @@
 		prepare()
 		test.capture([[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <Project Name="MyProject" Path="MyProject/MyProject.project"/>
   <BuildMatrix>
     <WorkspaceConfiguration Name="Debug" Selected="yes">
       <Project Name="MyProject" ConfigName="Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
       <Project Name="MyProject" ConfigName="Release"/>
     </WorkspaceConfiguration>
   </BuildMatrix>
@@ -118,13 +118,13 @@
 		prepare()
 		test.capture([[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <Project Name="MyProject" Path="../MyProject/MyProject.project"/>
   <BuildMatrix>
     <WorkspaceConfiguration Name="Debug" Selected="yes">
       <Project Name="MyProject" ConfigName="Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
       <Project Name="MyProject" ConfigName="Release"/>
     </WorkspaceConfiguration>
   </BuildMatrix>
@@ -139,13 +139,13 @@
 		prepare()
 		test.capture([[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <Project Name="MyProject" Path="MyProject.project" Active="Yes"/>
   <BuildMatrix>
     <WorkspaceConfiguration Name="Debug" Selected="yes">
       <Project Name="MyProject" ConfigName="Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
       <Project Name="MyProject" ConfigName="Release"/>
     </WorkspaceConfiguration>
   </BuildMatrix>
@@ -164,7 +164,7 @@
     prepare()
     test.capture([[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <VirtualDirectory Name="My">
     <VirtualDirectory Name="Nested">
       <VirtualDirectory Name="Group">
@@ -182,7 +182,7 @@
       <Project Name="MyGroupedProject" ConfigName="Debug"/>
       <Project Name="MyGrouplessProject" ConfigName="Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release" Selected="yes">
+    <WorkspaceConfiguration Name="Release" Selected="no">
       <Project Name="MyNestedGroupedProject" ConfigName="Release"/>
       <Project Name="MyGroupedProject" ConfigName="Release"/>
       <Project Name="MyGrouplessProject" ConfigName="Release"/>
@@ -203,19 +203,19 @@
 		prepare()
 		test.capture [[
 <?xml version="1.0" encoding="UTF-8"?>
-<CodeLite_Workspace Name="MyWorkspace" Database="" SWTLW="No">
+<CodeLite_Workspace Name="MyWorkspace" Database="" Version="10000">
   <Project Name="MyProject" Path="MyProject.project"/>
   <BuildMatrix>
     <WorkspaceConfiguration Name="x86_64-Debug" Selected="yes">
       <Project Name="MyProject" ConfigName="x86_64-Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="x86-Debug" Selected="yes">
+    <WorkspaceConfiguration Name="x86-Debug" Selected="no">
       <Project Name="MyProject" ConfigName="x86-Debug"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="x86_64-Release" Selected="yes">
+    <WorkspaceConfiguration Name="x86_64-Release" Selected="no">
       <Project Name="MyProject" ConfigName="x86_64-Release"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="x86-Release" Selected="yes">
+    <WorkspaceConfiguration Name="x86-Release" Selected="no">
       <Project Name="MyProject" ConfigName="x86-Release"/>
     </WorkspaceConfiguration>
   </BuildMatrix>

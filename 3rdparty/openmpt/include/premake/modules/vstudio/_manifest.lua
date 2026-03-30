@@ -22,7 +22,11 @@ return {
 	"vs2012.lua",
 	"vs2013.lua",
 	"vs2013_vcxitems.lua",
+	"vs2015_androidproj.lua",
 	"vs2015.lua",
 	"vs2017.lua",
-	"vs2019.lua"
+	"vs2019.lua",
+	"vs2022.lua",
+	"vs2026_solution.lua",
+	"vs2026.lua",
 }

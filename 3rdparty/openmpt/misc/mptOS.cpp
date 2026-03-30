@@ -12,6 +12,13 @@
 #include "mptOS.h"
 
 #include "mpt/binary/hex.hpp"
+#include "mpt/format/join.hpp"
+#include "mpt/library/library.hpp"
+#include "mpt/osinfo/windows_hx_version.hpp"
+#include "mpt/osinfo/windows_version.hpp"
+#include "mpt/osinfo/windows_wine_version.hpp"
+#include "mpt/parse/split.hpp"
+#include "mpt/path/native_path.hpp"
 
 #if MPT_OS_WINDOWS
 #include <windows.h>
@@ -29,146 +36,118 @@ namespace Windows
 {
 
 
-#if MPT_OS_WINDOWS
 
-namespace {
-struct WindowsVersionCache
+static constexpr struct { mpt::osinfo::windows::Epoch epoch; mpt::osinfo::windows::System system; mpt::osinfo::windows::Build build; const mpt::uchar * name; } versionMap[] =
 {
-	mpt::OS::Windows::Version version;
-	WindowsVersionCache() noexcept
-		: version(mpt::osinfo::windows::Version::Current())
-	{
-	}
-};
-}
-
-static mpt::OS::Windows::Version GatherWindowsVersionFromCache() noexcept
-{
-	static WindowsVersionCache gs_WindowsVersionCache;
-	return gs_WindowsVersionCache.version;
-}
-
-#endif // MPT_OS_WINDOWS
-
-
-mpt::OS::Windows::Version Version::Current() noexcept
-{
-	#if MPT_OS_WINDOWS
-		#ifdef MODPLUG_TRACKER
-			return GatherWindowsVersionFromCache();
-		#else // !MODPLUG_TRACKER
-			return mpt::osinfo::windows::Version::Current();
-		#endif // MODPLUG_TRACKER
-	#else // !MPT_OS_WINDOWS
-		return mpt::OS::Windows::Version::NoWindows();
-	#endif // MPT_OS_WINDOWS
-}
-
-
-Version::Version() noexcept
-	: mpt::osinfo::windows::Version(mpt::osinfo::windows::Version::NoWindows())
-{
-}
-
-
-Version Version::NoWindows() noexcept
-{
-	return Version();
-}
-
-
-Version::Version(mpt::osinfo::windows::Version v) noexcept
-	: mpt::osinfo::windows::Version(v)
-{
-}
-
-
-Version::Version(mpt::OS::Windows::Version::System system, mpt::OS::Windows::Version::ServicePack servicePack, mpt::OS::Windows::Version::Build build, mpt::OS::Windows::Version::TypeId type) noexcept
-	: mpt::osinfo::windows::Version(system, servicePack, build, type)
-{
-}
-
-
-static constexpr struct { Version::System version; const mpt::uchar * name; bool showDetails; } versionMap[] =
-{
-	{ mpt::OS::Windows::Version::WinNewer, UL_("Windows 10 (or newer)"), false },
-	{ mpt::OS::Windows::Version::Win10, UL_("Windows 10"), true },
-	{ mpt::OS::Windows::Version::Win81, UL_("Windows 8.1"), true },
-	{ mpt::OS::Windows::Version::Win8, UL_("Windows 8"), true },
-	{ mpt::OS::Windows::Version::Win7, UL_("Windows 7"), true },
-	{ mpt::OS::Windows::Version::WinVista, UL_("Windows Vista"), true },
-	{ mpt::OS::Windows::Version::WinXP64, UL_("Windows XP x64 / Windows Server 2003"), true },
-	{ mpt::OS::Windows::Version::WinXP, UL_("Windows XP"), true },
-	{ mpt::OS::Windows::Version::Win2000, UL_("Windows 2000"), true },
-	{ mpt::OS::Windows::Version::WinNT4, UL_("Windows NT4"), true }
+	// clang-format off
+	// WinNT 10.0
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 28001, UL_("Windows 11 (future)")    },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 28000, UL_("Windows 11 26H1")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 26200, UL_("Windows 11 25H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 26100, UL_("Windows 11 24H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 22631, UL_("Windows 11 23H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 22621, UL_("Windows 11 22H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 22000, UL_("Windows 11 21H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 19045, UL_("Windows 10 22H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 19044, UL_("Windows 10 21H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 19043, UL_("Windows 10 21H1")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 19042, UL_("Windows 10 20H2")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 19041, UL_("Windows 10 2004")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 18363, UL_("Windows 10 1909")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 18362, UL_("Windows 10 1903")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 17763, UL_("Windows 10 1809")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 17134, UL_("Windows 10 1803")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 16299, UL_("Windows 10 1709")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 15063, UL_("Windows 10 1703")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 14393, UL_("Windows 10 1607")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 10586, UL_("Windows 10 1511")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10     , 10240, UL_("Windows 10 1507")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win10Pre  ,     0, UL_("Windows 10 (Preview)")   },
+	// WinNT 6.x
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win81     ,     0, UL_("Windows 8.1")            },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win8      ,     0, UL_("Windows 8")              },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win7      ,     0, UL_("Windows 7")              },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinVista  ,     0, UL_("Windows Vista")          },
+	// WinNT 5.x
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinXP64   ,     0, UL_("Windows XP x64")         },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinXP     ,     0, UL_("Windows XP")             },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::Win2000   ,     0, UL_("Windows 2000")           },
+	// WinNT 4.0
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinNT4    ,     0, UL_("Windows NT 4")           },
+	// WinNT 3.x
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinNT351  ,     0, UL_("Windows NT 3.51")        },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinNT35   ,     0, UL_("Windows NT 3.5")         },
+	{ mpt::osinfo::windows::Epoch::WinNT , mpt::osinfo::windows::Version::WinNT31   ,     0, UL_("Windows NT 3.1")         },
+	// Win9x 4.x
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::WinME     ,  3000, UL_("Windows ME")             },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::WinME     ,     0, UL_("Windows ME (Beta)")      },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win98     ,  2222, UL_("Windows 98 SE")          },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win98     ,  1998, UL_("Windows 98")             },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win98     ,     0, UL_("Windows 98 (Beta)")      },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95C    ,  1216, UL_("Windows 95 C OSR 2.5")   },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95OSR21,   971, UL_("Windows 95 B OSR 2.1")   },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95     ,  1212, UL_("Windows 95 B OSR 2.1")   },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95     ,  1111, UL_("Windows 95 B OSR 2")     },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95     ,  1080, UL_("Windows 95 B (Preview)") },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95     ,   951, UL_("Windows 95 a OSR 1")     },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95     ,   950, UL_("Windows 95")             },
+	{ mpt::osinfo::windows::Epoch::Win9x , mpt::osinfo::windows::Version::Win95     ,     0, UL_("Windows 95 (Beta)")      },
+	// Win32s 3.x
+	{ mpt::osinfo::windows::Epoch::Win32s, mpt::osinfo::windows::Version::Win311    ,     0, UL_("Windows 3.11")           },
+	{ mpt::osinfo::windows::Epoch::Win32s, mpt::osinfo::windows::Version::Win31     ,     0, UL_("Windows 3.1")            },
+	{ mpt::osinfo::windows::Epoch::Win32s, mpt::osinfo::windows::Version::Win30     ,     0, UL_("Windows 3.0")            },
+	// clang-format on
 };
 
 
-mpt::ustring Version::VersionToString(mpt::OS::Windows::Version::System version)
+mpt::ustring Version::GetName(mpt::osinfo::windows::Version version)
 {
-	mpt::ustring result;
+	mpt::ustring name = U_("Windows");
 	for(const auto &v : versionMap)
 	{
-		if(version > v.version)
-		{
-			result = U_("> ") + v.name;
-			break;
-		} else if(version == v.version)
-		{
-			result = v.name;
-			break;
-		}
-	}
-	if(result.empty())
-	{
-		result = MPT_UFORMAT("0x{}")(mpt::ufmt::hex0<16>(static_cast<uint64>(version)));
-	}
-	return result;
-}
-
-
-mpt::ustring Version::GetName() const
-{
-	mpt::ustring name = U_("Generic Windows NT");
-	bool showDetails = false;
-	for(const auto &v : versionMap)
-	{
-		if(IsAtLeast(v.version))
+		if(version.Is(v.epoch, v.system, v.build))
 		{
 			name = v.name;
-			showDetails = v.showDetails;
 			break;
 		}
 	}
 	name += U_(" (");
-	name += MPT_UFORMAT("Version {}.{}")(m_System.Major, m_System.Minor);
-	if(showDetails)
+	name += MPT_UFORMAT("Version {}.{}")(version.GetSystem().Major, version.GetSystem().Minor);
+	if(version.GetServicePack().HasServicePack())
 	{
-		if(m_ServicePack.HasServicePack())
+		if(version.GetServicePack().Minor)
 		{
-			if(m_ServicePack.Minor)
-			{
-				name += MPT_UFORMAT(" Service Pack {}.{}")(m_ServicePack.Major, m_ServicePack.Minor);
-			} else
-			{
-				name += MPT_UFORMAT(" Service Pack {}")(m_ServicePack.Major);
-			}
-		}
-		if(m_Build != 0)
+			name += MPT_UFORMAT(" Service Pack {}.{}")(version.GetServicePack().Major, version.GetServicePack().Minor);
+		} else
 		{
-			name += MPT_UFORMAT(" (Build {})")(m_Build);
+			name += MPT_UFORMAT(" Service Pack {}")(version.GetServicePack().Major);
 		}
 	}
+	if(version.Is(mpt::osinfo::windows::Epoch::Win9x) && version.GetInternetExplorer().HasInternetExplorer())
+	{
+		name += MPT_UFORMAT(" IE {}.{}.{}")(version.GetInternetExplorer().Major, version.GetInternetExplorer().Minor, version.GetInternetExplorer().Build);
+	}
+	if(version.GetBuild() != 0)
+	{
+		name += MPT_UFORMAT(" (Build {})")(version.GetBuild());
+	}
 	name += U_(")");
+	return name;
+}
+
+
+mpt::ustring Version::GetCurrentName()
+{
+	mpt::ustring name = GetName(mpt::osinfo::windows::Version::Current());
 	mpt::ustring result = name;
 	#if defined(MODPLUG_TRACKER) && MPT_OS_WINDOWS
 		if(mpt::OS::Windows::IsWine())
 		{
-			mpt::OS::Wine::VersionContext v;
-			if(v.Version().IsValid())
+			mpt::OS::Wine::VersionContext v = mpt::OS::Wine::VersionContext::Current().value();
+			if(v.IsValid())
 			{
 				result = MPT_UFORMAT("Wine {} ({})")(
-					  v.Version().AsString()
+					  mpt::ToUnicode(mpt::Charset::UTF8, v.VersionAsString())
 					, name
 					);
 			} else
@@ -184,47 +163,30 @@ mpt::ustring Version::GetName() const
 }
 
 
-mpt::ustring Version::GetNameShort() const
+mpt::osinfo::windows::Version Version::GetMinimumKernelLevel() noexcept
 {
-	mpt::ustring name;
-	if(mpt::OS::Windows::IsWine())
-	{
-		mpt::OS::Wine::VersionContext v;
-		if(v.Version().IsValid())
-		{
-			name = MPT_UFORMAT("wine-{}")(v.Version().AsString());
-		} else if(v.RawVersion().length() > 0)
-		{
-			name = U_("wine-") + mpt::encode_hex(mpt::as_span(v.RawVersion()));
-		} else
-		{
-			name = U_("wine-");
-		}
-		name += U_("-") + mpt::encode_hex(mpt::as_span(v.RawHostSysName()));
-	} else
-	{
-		name = MPT_UFORMAT("{}.{}")(mpt::ufmt::dec(m_System.Major), mpt::ufmt::dec0<2>(m_System.Minor));
-	}
-	return name;
-}
-
-
-mpt::OS::Windows::Version::System Version::GetMinimumKernelLevel() noexcept
-{
-	uint64 minimumKernelVersion = 0;
 	#if MPT_OS_WINDOWS && MPT_COMPILER_MSVC
-		minimumKernelVersion = std::max(minimumKernelVersion, static_cast<uint64>(mpt::OS::Windows::Version::WinVista));
+		#if MPT_MSVC_AT_LEAST(2026, 0)
+			return mpt::osinfo::windows::Version(mpt::osinfo::windows::Epoch::WinNT, mpt::osinfo::windows::Version::Win10, mpt::osinfo::windows::ServicePack{0, 0}, mpt::osinfo::windows::InternetExplorer{0, 0}, 10240);
+		#elif MPT_MSVC_AT_LEAST(2022, 0)
+			return mpt::osinfo::windows::Version(mpt::osinfo::windows::Epoch::WinNT, mpt::osinfo::windows::Version::Win7, mpt::osinfo::windows::ServicePack{0, 0}, mpt::osinfo::windows::InternetExplorer{0, 0}, 0);
+		#elif MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
+			return mpt::osinfo::windows::Version(mpt::osinfo::windows::Epoch::WinNT, mpt::osinfo::windows::Version::WinVista, mpt::osinfo::windows::ServicePack{0, 0}, mpt::osinfo::windows::InternetExplorer{0, 0}, 0);
+		#else
+			return mpt::osinfo::windows::Version(mpt::osinfo::windows::Epoch::WinNT, mpt::osinfo::windows::Version::WinXP, mpt::osinfo::windows::ServicePack{0, 0}, mpt::osinfo::windows::InternetExplorer{0, 0}, 0);
+		#endif
+	#else
+		return mpt::osinfo::windows::Version(mpt::osinfo::windows::Epoch::Win32s, mpt::osinfo::windows::System{0, 0}, mpt::osinfo::windows::ServicePack{0, 0}, mpt::osinfo::windows::InternetExplorer{0, 0}, 0);
 	#endif
-	return mpt::OS::Windows::Version::System(minimumKernelVersion);
 }
 
 
-mpt::OS::Windows::Version::System Version::GetMinimumAPILevel() noexcept
+mpt::osinfo::windows::Version Version::GetMinimumAPILevel() noexcept
 {
 	#if MPT_OS_WINDOWS
-		return SystemVersionFrom_WIN32_WINNT();
+		return mpt::osinfo::windows::Version::FromSDK();
 	#else // !MPT_OS_WINDOWS
-		return mpt::OS::Windows::Version::System();
+		return mpt::osinfo::windows::Version::NoWindows();
 	#endif // MPT_OS_WINDOWS
 }
 
@@ -269,6 +231,108 @@ static constexpr OSArchitecture architectures [] = {
 	{ PROCESSOR_ARCHITECTURE_MSIL          , Architecture::unknown, Architecture::unknown },
 	{ PROCESSOR_ARCHITECTURE_NEUTRAL       , Architecture::unknown, Architecture::unknown },
 	{ PROCESSOR_ARCHITECTURE_UNKNOWN       , Architecture::unknown, Architecture::unknown }
+};
+
+
+struct MachineArchitecture
+{
+	USHORT ImageFileMachine;
+	Architecture Host;
+};
+static constexpr MachineArchitecture machinearchitectures [] = {
+#ifdef IMAGE_FILE_MACHINE_UNKNOWN
+	{ IMAGE_FILE_MACHINE_UNKNOWN    , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_TARGET_HOST
+	{ IMAGE_FILE_MACHINE_TARGET_HOST, Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_I386
+	{ IMAGE_FILE_MACHINE_I386       , Architecture::x86     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_R3000
+	{ IMAGE_FILE_MACHINE_R3000      , Architecture::mips    },
+#endif
+#ifdef IMAGE_FILE_MACHINE_R4000
+	{ IMAGE_FILE_MACHINE_R4000      , Architecture::mips    },
+#endif
+#ifdef IMAGE_FILE_MACHINE_R10000
+	{ IMAGE_FILE_MACHINE_R10000     , Architecture::mips    },
+#endif
+#ifdef IMAGE_FILE_MACHINE_WCEMIPSV2
+	{ IMAGE_FILE_MACHINE_WCEMIPSV2  , Architecture::mips    },
+#endif
+#ifdef IMAGE_FILE_MACHINE_ALPHA
+	{ IMAGE_FILE_MACHINE_ALPHA      , Architecture::alpha   },
+#endif
+#ifdef IMAGE_FILE_MACHINE_SH3
+	{ IMAGE_FILE_MACHINE_SH3        , Architecture::shx     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_SH3DSP
+	{ IMAGE_FILE_MACHINE_SH3DSP     , Architecture::shx     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_SH3E
+	{ IMAGE_FILE_MACHINE_SH3E       , Architecture::shx     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_SH4
+	{ IMAGE_FILE_MACHINE_SH4        , Architecture::shx     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_SH5
+	{ IMAGE_FILE_MACHINE_SH5        , Architecture::shx     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_ARM
+	{ IMAGE_FILE_MACHINE_ARM        , Architecture::arm     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_THUMB
+	{ IMAGE_FILE_MACHINE_THUMB      , Architecture::arm     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_ARMNT
+	{ IMAGE_FILE_MACHINE_ARMNT      , Architecture::arm     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_AM33
+	{ IMAGE_FILE_MACHINE_AM33       , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_POWERPC
+	{ IMAGE_FILE_MACHINE_POWERPC    , Architecture::ppc     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_POWERPCFP
+	{ IMAGE_FILE_MACHINE_POWERPCFP  , Architecture::ppc     },
+#endif
+#ifdef IMAGE_FILE_MACHINE_MIPS16
+	{ IMAGE_FILE_MACHINE_MIPS16     , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_ALPHA64
+	{ IMAGE_FILE_MACHINE_ALPHA64    , Architecture::alpha64 },
+#endif
+#ifdef IMAGE_FILE_MACHINE_MIPSFPU
+	{ IMAGE_FILE_MACHINE_MIPSFPU    , Architecture::mips    },
+#endif
+#ifdef IMAGE_FILE_MACHINE_MIPSFPU16
+	{ IMAGE_FILE_MACHINE_MIPSFPU16  , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_AXP64
+	{ IMAGE_FILE_MACHINE_AXP64      , Architecture::alpha64 },
+#endif
+#ifdef IMAGE_FILE_MACHINE_TRICORE
+	{ IMAGE_FILE_MACHINE_TRICORE    , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_CEF
+	{ IMAGE_FILE_MACHINE_CEF        , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_EBC
+	{ IMAGE_FILE_MACHINE_EBC        , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_AMD64
+	{ IMAGE_FILE_MACHINE_AMD64      , Architecture::amd64   },
+#endif
+#ifdef IMAGE_FILE_MACHINE_M32R
+	{ IMAGE_FILE_MACHINE_M32R       , Architecture::unknown },
+#endif
+#ifdef IMAGE_FILE_MACHINE_ARM64
+	{ IMAGE_FILE_MACHINE_ARM64      , Architecture::arm64   },
+#endif
+#ifdef IMAGE_FILE_MACHINE_CEE
+	{ IMAGE_FILE_MACHINE_CEE        , Architecture::unknown }
+#endif
 };
 
 
@@ -347,6 +411,27 @@ mpt::ustring Name(Architecture arch)
 Architecture GetHostArchitecture() noexcept
 {
 	SYSTEM_INFO systemInfo = {};
+	mpt::osinfo::windows::Version WindowsVersion = mpt::osinfo::windows::Version::Current();
+	if(WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version(mpt::osinfo::windows::Epoch::WinNT, mpt::osinfo::windows::Version::Win10, mpt::osinfo::windows::ServicePack(0, 0), mpt::osinfo::windows::InternetExplorer(0, 0), 16299)))
+	{
+		std::optional<mpt::library> kernel32{mpt::library::load_optional({mpt::library::path_search::system, mpt::library::path_prefix::none, MPT_NATIVE_PATH("kernel32.dll"), mpt::library::path_suffix::none})};
+		mpt::library::optional_function<BOOL WINAPI(HANDLE, USHORT *, USHORT *)> IsWow64Process2{kernel32, "IsWow64Process2"};
+		USHORT ProcessMachine = 0;
+		USHORT NativeMachine = 0;
+		if(IsWow64Process2(GetCurrentProcess(), &ProcessMachine, &NativeMachine).value_or(FALSE) != FALSE)
+		{
+			for(const auto &arch : machinearchitectures)
+			{
+				if(NativeMachine == arch.ImageFileMachine)
+				{
+					if(arch.Host != Architecture::unknown)
+					{
+						return arch.Host;
+					}
+				}
+			}
+		}
+	}
 	GetNativeSystemInfo(&systemInfo);
 	for(const auto &arch : architectures)
 	{
@@ -421,23 +506,12 @@ uint64 GetSystemMemorySize()
 
 #if MPT_OS_WINDOWS
 
-static bool GatherSystemIsWine()
-{
-	bool SystemIsWine = false;
-	std::optional<mpt::library> NTDLL = mpt::library::load({ mpt::library::path_search::system, mpt::library::path_prefix::none, MPT_PATH("ntdll.dll"), mpt::library::path_suffix::none });
-	if(NTDLL)
-	{
-		SystemIsWine = (NTDLL->get_address("wine_get_version") != nullptr);
-	}
-	return SystemIsWine;
-}
-
 namespace {
 struct SystemIsWineCache
 {
 	bool SystemIsWine;
 	SystemIsWineCache()
-		: SystemIsWine(GatherSystemIsWine())
+		: SystemIsWine(mpt::osinfo::windows::wine::current_is_wine())
 	{
 		return;
 	}
@@ -473,12 +547,12 @@ void PreventWineDetection()
 
 bool IsOriginal()
 {
-	return mpt::OS::Windows::Version::Current().IsWindows() && !SystemIsWine();
+	return mpt::osinfo::windows::Version::Current().IsWindows() && !SystemIsWine();
 }
 
 bool IsWine()
 {
-	return mpt::OS::Windows::Version::Current().IsWindows() && SystemIsWine();
+	return mpt::osinfo::windows::Version::Current().IsWindows() && SystemIsWine();
 }
 
 
@@ -499,102 +573,14 @@ namespace Wine
 {
 
 
-Version::Version()
+
+mpt::osinfo::windows::wine::version GetMinimumWineVersion()
 {
-	return;
-}
-
-
-Version::Version(const mpt::ustring &rawVersion)
-	: mpt::osinfo::windows::wine::version()
-{
-	if(rawVersion.empty())
-	{
-		return;
-	}
-	std::vector<uint8> version = mpt::String::Split<uint8>(rawVersion, U_("."));
-	if(version.size() < 2)
-	{
-		return;
-	}
-	mpt::ustring parsedVersion = mpt::String::Combine(version, U_("."));
-	std::size_t len = std::min(parsedVersion.length(), rawVersion.length());
-	if(len == 0)
-	{
-		return;
-	}
-	if(parsedVersion.substr(0, len) != rawVersion.substr(0, len))
-	{
-		return;
-	}
-	valid = true;
-	vmajor = version[0];
-	vminor = version[1];
-	vupdate = (version.size() >= 3) ? version[2] : 0;
-}
-
-
-Version::Version(uint8 vmajor, uint8 vminor, uint8 vupdate)
-	: mpt::osinfo::windows::wine::version(vmajor, vminor, vupdate)
-{
-	return;
-}
-
-
-mpt::ustring Version::AsString() const
-{
-	return mpt::ufmt::dec(GetMajor()) + U_(".") + mpt::ufmt::dec(GetMinor()) + U_(".") + mpt::ufmt::dec(GetUpdate());
-}
-
-
-
-mpt::OS::Wine::Version GetMinimumWineVersion()
-{
-	mpt::OS::Wine::Version minimumWineVersion = mpt::OS::Wine::Version(0,0,0);
+	mpt::osinfo::windows::wine::version minimumWineVersion = mpt::osinfo::windows::wine::version{0,0,0};
 	#if MPT_OS_WINDOWS && MPT_COMPILER_MSVC
-		minimumWineVersion = mpt::OS::Wine::Version(1,8,0);
+		minimumWineVersion = mpt::osinfo::windows::wine::version{1,8,0};
 	#endif
 	return minimumWineVersion;
-}
-
-
-VersionContext::VersionContext()
-	: m_IsWine(false)
-	, m_HostClass(mpt::osinfo::osclass::Unknown)
-{
-	#if MPT_OS_WINDOWS
-		m_IsWine = mpt::OS::Windows::IsWine();
-		if(!m_IsWine)
-		{
-			return;
-		}
-		std::optional<mpt::library> NTDLL = mpt::library::load({mpt::library::path_search::system, mpt::library::path_prefix::none, MPT_PATH("ntdll.dll"), mpt::library::path_suffix::none});
-		if(NTDLL)
-		{
-			const char * (__cdecl * wine_get_version)(void) = nullptr;
-			const char * (__cdecl * wine_get_build_id)(void) = nullptr;
-			void (__cdecl * wine_get_host_version)(const char * *, const char * *) = nullptr;
-			NTDLL->bind(wine_get_version, "wine_get_version");
-			NTDLL->bind(wine_get_build_id, "wine_get_build_id");
-			NTDLL->bind(wine_get_host_version, "wine_get_host_version");
-			const char * wine_version = nullptr;
-			const char * wine_build_id = nullptr;
-			const char * wine_host_sysname = nullptr;
-			const char * wine_host_release = nullptr;
-			wine_version = wine_get_version ? wine_get_version() : "";
-			wine_build_id = wine_get_build_id ? wine_get_build_id() : "";
-			if(wine_get_host_version)
-			{
-				wine_get_host_version(&wine_host_sysname, &wine_host_release);
-			}
-			m_RawVersion = wine_version ? wine_version : "";
-			m_RawBuildID = wine_build_id ? wine_build_id : "";
-			m_RawHostSysName = wine_host_sysname ? wine_host_sysname : "";
-			m_RawHostRelease = wine_host_release ? wine_host_release : "";
-		}
-		m_Version = mpt::OS::Wine::Version(mpt::ToUnicode(mpt::Charset::UTF8, m_RawVersion));
-		m_HostClass = mpt::osinfo::get_class_from_sysname(m_RawHostSysName);
-	#endif // MPT_OS_WINDOWS
 }
 
 

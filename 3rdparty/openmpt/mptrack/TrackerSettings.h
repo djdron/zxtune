@@ -23,6 +23,9 @@
 #include "../sounddsp/EQ.h"
 #include "../sounddsp/DSP.h"
 #include "../sounddsp/Reverb.h"
+#include "mpt/format/join.hpp"
+#include "mpt/parse/parse.hpp"
+#include "mpt/parse/split.hpp"
 #include "openmpt/sounddevice/SoundDevice.hpp"
 #include "StreamEncoderSettings.h"
 #include "Settings.h"
@@ -83,10 +86,12 @@ enum ModColor : uint8
 	MODCOLOR_SAMPLE_LOOPMARKER,
 	MODCOLOR_SAMPLE_SUSTAINMARKER,
 	MODCOLOR_SAMPLE_CUEPOINT,
+	MODCOLOR_BACKRECORDROW,
 	MAX_MODCOLORS,
 	// Internal color codes (not saved to color preset files)
 	MODCOLOR_2NDHIGHLIGHT,
 	MODCOLOR_DEFAULTVOLUME,
+	MODCOLOR_DUMMYCOMMAND,
 	MAX_MODPALETTECOLORS
 };
 
@@ -94,54 +99,73 @@ enum ModColor : uint8
 // Pattern Setup (contains also non-pattern related settings)
 // Feel free to replace the deprecated flags by new flags, but be sure to
 // update TrackerSettings::TrackerSettings() as well.
-#define PATTERN_PLAYNEWNOTE			0x01		// play new notes while recording
-#define PATTERN_SMOOTHSCROLL		0x02		// scroll tick by tick, not row by row
-#define PATTERN_STDHIGHLIGHT		0x04		// enable primary highlight (measures)
-#define PATTERN_NOFOLLOWONCLICK		0x08		// disable song follow when clicking into pattern
-#define PATTERN_CENTERROW			0x10		// always center active row
-#define PATTERN_WRAP				0x20		// wrap around cursor in editor
-#define PATTERN_EFFECTHILIGHT		0x40		// effect syntax highlighting
-#define PATTERN_HEXDISPLAY			0x80		// display row number in hex
-#define PATTERN_FLATBUTTONS			0x100		// flat toolbar buttons
-//#define PATTERN_CREATEBACKUP		0x200		// create .bak files when saving
-#define PATTERN_SINGLEEXPAND		0x400		// single click to expand tree
-#define PATTERN_PLAYEDITROW			0x800		// play all notes on the current row while entering notes
-#define PATTERN_NOEXTRALOUD			0x1000		// no loud samples in sample editor
-#define PATTERN_DRAGNDROPEDIT		0x2000		// enable drag and drop editing
-#define PATTERN_2NDHIGHLIGHT		0x4000		// activate secondary highlight (beats)
-#define PATTERN_MUTECHNMODE			0x8000		// ignore muted channels
-#define PATTERN_SHOWPREVIOUS		0x10000		// show prev/next patterns
-#define PATTERN_CONTSCROLL			0x20000		// continous pattern scrolling
-#define PATTERN_KBDNOTEOFF			0x40000		// Record note-off events
-#define PATTERN_FOLLOWSONGOFF		0x80000		// follow song off by default
-#define PATTERN_PLAYTRANSPOSE		0x100000	// Preview note transposition
-#define PATTERN_NOCLOSEDIALOG		0x200000	// Don't use OpenMPT's custom close dialog with a list of saved files when closing the main window
-#define PATTERN_DBLCLICKSELECT		0x400000	// Double-clicking pattern selects whole channel
-#define PATTERN_OLDCTXMENUSTYLE		0x800000	// Hide pattern context menu entries instead of greying them out.
-#define PATTERN_SYNCMUTE			0x1000000	// maintain sample sync on mute
-#define PATTERN_AUTODELAY			0x2000000	// automatically insert delay commands in pattern when entering notes
-#define PATTERN_NOTEFADE			0x4000000	// alt. note fade behaviour when entering notes
-#define PATTERN_OVERFLOWPASTE		0x8000000	// continue paste in the next pattern instead of cutting off
-#define PATTERN_SHOWDEFAULTVOLUME	0x10000000	// if there is no volume command next to note+instr, display the sample's default volume.
-#define PATTERN_RESETCHANNELS		0x20000000	// reset channels when looping
-#define PATTERN_LIVEUPDATETREE		0x40000000	// update active sample / instr icons in treeview
-#define PATTERN_SYNCSAMPLEPOS		0x80000000	// sync sample positions when seeking
+enum class PatternSetup : uint32
+{
+	PlayNewNotesWhileRecording =       0x01,  // play new notes while recording
+	SmoothScrolling            =       0x02,  // scroll tick by tick, not row by row
+	HighlightMeasures          =       0x04,  // enable primary highlight (measures)
+	DisableFollowOnClick       =       0x08,  // disable song follow when clicking into pattern
+	CenterActiveRow            =       0x10,  // always center active row
+	CursorWrap                 =       0x20,  // wrap around cursor in editor
+	EffectHighlight            =       0x40,  // effect syntax highlighting
+	RowAndOrderNumbersHex      =       0x80,  // display row number and order in hex
+	FlatToolbarButtons         =      0x100,  // flat toolbar buttons
+	PlayRowOnNavigate          =      0x200,  // play whole row when navigating
+	SingleClickToExpand        =      0x400,  // single click to expand tree
+	PlayRowOnNoteEntry         =      0x800,  // play all notes on the current row while entering notes
+	NoLoudSamplePreview        =     0x1000,  // no loud samples in sample editor
+	DragNDropEdit              =     0x2000,  // enable drag and drop editing
+	HighlightBeats             =     0x4000,  // activate secondary highlight (beats)
+	IgnoreMutedChannels        =     0x8000,  // ignore muted channels
+	ShowPrevNextPattern        =    0x10000,  // show prev/next patterns
+	ContinuousScrolling        =    0x20000,  // continous pattern scrolling
+	RecordNoteOff              =    0x40000,  // Record note-off events
+	FollowSongOffByDefault     =    0x80000,  // follow song off by default
+	PreviewNoteTransposition   =   0x100000,  // Preview note transposition
+	NoCustomCloseDialog        =   0x200000,  // Don't use OpenMPT's custom close dialog with a list of saved files when closing the main window
+	DblClickSelectsChannel     =   0x400000,  // Double-clicking pattern selects whole channel
+	HideUnavailableMenuEntries =   0x800000,  // Hide pattern context menu entries instead of greying them out.
+	SyncMute                   =  0x1000000,  // maintain sample sync on mute
+	AutoDelayCommands          =  0x2000000,  // automatically insert delay commands in pattern when entering notes
+	NoteFadeOnKeyUp            =  0x4000000,  // alt. note fade behaviour when entering notes
+	OverflowPaste              =  0x8000000,  // continue paste in the next pattern instead of cutting off
+	ShowDefaultVolume          = 0x10000000,  // if there is no volume command next to note+instr, display the sample's default volume.
+	ResetChannelsOnLoop        = 0x20000000,  // reset channels when looping
+	LiveUpdateTreeView         = 0x40000000,  // update active sample / instr icons in treeview
+	SampleSyncOnSeek           = 0x80000000,  // sync sample positions when seeking
+
+	Default = PlayNewNotesWhileRecording | EffectHighlight
+			| CenterActiveRow | DragNDropEdit
+			| FlatToolbarButtons | NoLoudSamplePreview | HighlightBeats
+			| HighlightMeasures | ShowPrevNextPattern | ContinuousScrolling
+			| SyncMute | AutoDelayCommands | NoteFadeOnKeyUp
+			| ShowDefaultVolume | LiveUpdateTreeView | SampleSyncOnSeek
+};
+DECLARE_FLAGSET(PatternSetup)
 
 #define PATTERNFONT_SMALL UL_("@1")
 #define PATTERNFONT_LARGE UL_("@2")
 
 // MIDI Setup
-#define MIDISETUP_RECORDVELOCITY			0x01	// Record MIDI velocity
-#define MIDISETUP_TRANSPOSEKEYBOARD			0x02	// Apply transpose value to MIDI Notes
-#define MIDISETUP_MIDITOPLUG				0x04	// Pass MIDI messages to plugins
-#define MIDISETUP_MIDIVOL_TO_NOTEVOL		0x08	// Combine MIDI volume to note velocity
-#define MIDISETUP_RECORDNOTEOFF				0x10	// Record MIDI Note Off to pattern
-#define MIDISETUP_RESPONDTOPLAYCONTROLMSGS	0x20	// Respond to Restart/Continue/Stop MIDI commands
-#define MIDISETUP_MIDIMACROCONTROL			0x80	// Record MIDI controller changes a MIDI macro changes in pattern
-#define MIDISETUP_PLAYPATTERNONMIDIIN		0x100	// Play pattern if MIDI Note is received and playback is paused
-#define MIDISETUP_ENABLE_RECORD_DEFAULT		0x200	// Enable MIDI recording by default
-#define MIDISETUP_MIDIMACROPITCHBEND		0x400	// Record MIDI pitch bend messages a MIDI macro changes in pattern
+enum class MidiSetup : int32
+{
+	RecordVelocity               =  0x01,  // Record MIDI velocity
+	TransposeKeyboard            =  0x02,  // Apply transpose value to MIDI Notes
+	SendMidiToPlugins            =  0x04,  // Pass MIDI messages to plugins
+	ApplyChannelVolumeToVelocity =  0x08,  // Combine MIDI volume to note velocity
+	RecordNoteOff                =  0x10,  // Record MIDI Note Off to pattern
+	RespondToPlayControl         =  0x20,  // Respond to Restart/Continue/Stop MIDI commands
+	RecordCCsAsMacros            =  0x80,  // Record MIDI controller changes a MIDI macro changes in pattern
+	PlayPatternOnMidiNote        = 0x100,  // Play pattern if MIDI Note is received and playback is paused
+	EnableMidiInOnStartup        = 0x200,  // Enable MIDI recording by default
+	PlayPatternFromStart         = 0x800,  // When continuing playback due to received MIDI events, restart pattern instead of continuing from current row
 
+	Default = RecordVelocity | RecordNoteOff | TransposeKeyboard | SendMidiToPlugins
+};
+DECLARE_FLAGSET(MidiSetup)
+
+
+#ifndef NO_EQ
 
 // EQ
 
@@ -172,13 +196,15 @@ template<> inline SettingValue ToSettingValue(const EQPreset &val)
 template<> inline EQPreset FromSettingValue(const SettingValue &val)
 {
 	ASSERT(val.GetTypeTag() == "EQPreset");
-	EQPresetPacked valpacked = DecodeBinarySetting<EQPresetPacked>(val.as<std::vector<std::byte> >());
+	EQPresetPacked valpacked = DecodeBinarySetting<EQPresetPacked>(val.as<std::vector<std::byte>>());
 	EQPreset valresult;
 	std::memcpy(valresult.szName, valpacked.szName, std::size(valresult.szName));
 	std::copy(valpacked.Gains, valpacked.Gains + MAX_EQ_BANDS, valresult.Gains);
 	std::copy(valpacked.Freqs, valpacked.Freqs + MAX_EQ_BANDS, valresult.Freqs);
 	return valresult;
 }
+
+#endif // !NO_EQ
 
 
 template<> inline SettingValue ToSettingValue(const mpt::UUID &val) { return SettingValue(val.ToUString()); }
@@ -201,14 +227,22 @@ struct MPTChord
 	std::array<NoteType, notesPerChord - 1> notes;  // Additional chord notes
 };
 
-using MPTChords = std::array<MPTChord, 3 * 12>;	// 3 octaves
+using MPTChords = std::array<MPTChord, 60>;  // Size == kcCommandSetNumNotes + 1
 
 // MIDI recording
-enum RecordAftertouchOptions
+enum class RecordAftertouch
 {
-	atDoNotRecord = 0,
-	atRecordAsVolume,
-	atRecordAsMacro,
+	DoNotRecord = 0,
+	RecordAsVolume,
+	RecordAsMacro,
+};
+
+enum class RecordPitchBend
+{
+	DoNotRecord = 0,
+	RecordAsMacro,
+	RecordAsFinetuneOrMacro,
+	RecordAsFinetune,
 };
 
 // New file action
@@ -233,6 +267,15 @@ enum SampleEditorDefaultFormat
 	dfWAV,
 	dfRAW,
 	dfS3I,
+	dfIFF,
+};
+
+enum class FollowSamplePlayCursor
+{
+	DoNotFollow = 0,
+	Follow,
+	FollowCentered,
+	MaxOptions
 };
 
 enum class TimelineFormat
@@ -249,6 +292,13 @@ enum class DefaultChannelColors
 	Random,
 };
 
+enum class DPIAwarenessMode
+{
+	NoDPIAwareness = 0,
+	NoDPIAwarenessGDIUpscaled,
+	SystemDPIAware,
+	PerMonitorDPIAware,
+};
 
 class SampleUndoBufferSize
 {
@@ -261,7 +311,7 @@ protected:
 public:
 	enum
 	{
-		defaultSize = 10,	// In percent
+		defaultSize = 10,  // In percent
 	};
 
 	SampleUndoBufferSize(int32 percent = defaultSize) : sizePercent(percent) { CalculateSize(); }
@@ -275,6 +325,15 @@ template<> inline SettingValue ToSettingValue(const SampleUndoBufferSize &val) {
 template<> inline SampleUndoBufferSize FromSettingValue(const SettingValue &val) { return SampleUndoBufferSize(val.as<int32>()); }
 
 
+struct LastPluginID
+{
+	uint32 pluginID1, pluginID2, shellPluginID;
+};
+
+template<> inline SettingValue ToSettingValue(const LastPluginID &val) { return EncodeBinarySetting(val); }
+template<> inline LastPluginID FromSettingValue(const SettingValue &val) { return DecodeBinarySetting<LastPluginID>(val.as<std::vector<std::byte>>()); }
+
+
 mpt::ustring IgnoredCCsToString(const std::bitset<128> &midiIgnoreCCs);
 std::bitset<128> StringToIgnoredCCs(const mpt::ustring &in);
 
@@ -282,17 +341,32 @@ mpt::ustring SettingsModTypeToString(MODTYPE modtype);
 MODTYPE SettingsStringToModType(const mpt::ustring &str);
 
 
-template<> inline SettingValue ToSettingValue(const RecordAftertouchOptions &val) { return SettingValue(int32(val)); }
-template<> inline RecordAftertouchOptions FromSettingValue(const SettingValue &val) { return RecordAftertouchOptions(val.as<int32>()); }
+template<> inline SettingValue ToSettingValue(const RecordAftertouch &val) { return SettingValue(int32(val)); }
+template<> inline RecordAftertouch FromSettingValue(const SettingValue &val) { return RecordAftertouch(val.as<int32>()); }
+
+template<> inline SettingValue ToSettingValue(const RecordPitchBend &val) { return SettingValue(int32(val)); }
+template<> inline RecordPitchBend FromSettingValue(const SettingValue& val) { return RecordPitchBend(val.as<int32>()); }
 
 template<> inline SettingValue ToSettingValue(const SampleEditorKeyBehaviour &val) { return SettingValue(int32(val)); }
 template<> inline SampleEditorKeyBehaviour FromSettingValue(const SettingValue &val) { return SampleEditorKeyBehaviour(val.as<int32>()); }
+
+template<> inline SettingValue ToSettingValue(const FollowSamplePlayCursor &val) { return SettingValue(int32(val)); }
+template<> inline FollowSamplePlayCursor FromSettingValue(const SettingValue& val) { return FollowSamplePlayCursor(val.as<int32>()); }
 
 template<> inline SettingValue ToSettingValue(const TimelineFormat &val) { return SettingValue(int32(val)); }
 template<> inline TimelineFormat FromSettingValue(const SettingValue &val) { return TimelineFormat(val.as<int32>()); }
 
 template<> inline SettingValue ToSettingValue(const DefaultChannelColors & val) { return SettingValue(int32(val)); }
 template<> inline DefaultChannelColors FromSettingValue(const SettingValue& val) { return DefaultChannelColors(val.as<int32>()); }
+
+template<> inline SettingValue ToSettingValue(const DPIAwarenessMode &val) { return SettingValue(int32(val)); }
+template<> inline DPIAwarenessMode FromSettingValue(const SettingValue &val) { return DPIAwarenessMode(val.as<int32>()); }
+
+template<> inline SettingValue ToSettingValue(const FlagSet<PatternSetup>& val) { return SettingValue(int32(val.GetRaw())); }
+template<> inline FlagSet<PatternSetup> FromSettingValue(const SettingValue& val) { return PatternSetup(val.as<int32>()); }
+
+template<> inline SettingValue ToSettingValue(const FlagSet<MidiSetup> &val) { return SettingValue(int32(val.GetRaw())); }
+template<> inline FlagSet<MidiSetup> FromSettingValue(const SettingValue &val) { return MidiSetup(val.as<int32>()); }
 
 template<> inline SettingValue ToSettingValue(const MODTYPE &val) { return SettingValue(SettingsModTypeToString(val), "MODTYPE"); }
 template<> inline MODTYPE FromSettingValue(const SettingValue &val) { ASSERT(val.GetTypeTag() == "MODTYPE"); return SettingsStringToModType(val.as<mpt::ustring>()); }
@@ -311,13 +385,13 @@ template<> inline PlugVolumeHandling FromSettingValue(const SettingValue &val)
 	return static_cast<PlugVolumeHandling>(val.as<int32>());
 }
 
-template<> inline SettingValue ToSettingValue(const std::vector<uint32> &val) { return mpt::String::Combine(val, U_(",")); }
-template<> inline std::vector<uint32> FromSettingValue(const SettingValue &val) { return mpt::String::Split<uint32>(val, U_(",")); }
+template<> inline SettingValue ToSettingValue(const std::vector<uint32> &val) { return mpt::join_format(val, U_(",")); }
+template<> inline std::vector<uint32> FromSettingValue(const SettingValue &val) { return mpt::split_parse<uint32>(val.as<mpt::ustring>(), U_(",")); }
 
-template<> inline SettingValue ToSettingValue(const std::vector<mpt::ustring> &val) { return mpt::String::Combine(val, U_(";")); }
-template<> inline std::vector<mpt::ustring> FromSettingValue(const SettingValue &val) { return mpt::String::Split<mpt::ustring>(val, U_(";")); }
+template<> inline SettingValue ToSettingValue(const std::vector<mpt::ustring> &val) { return mpt::join_format(val, U_(";")); }
+template<> inline std::vector<mpt::ustring> FromSettingValue(const SettingValue &val) { return mpt::split(val.as<mpt::ustring>(), U_(";")); }
 
-template<> inline SettingValue ToSettingValue(const SampleFormat &val) { return SettingValue(val.AsInt()); }
+template<> inline SettingValue ToSettingValue(const SampleFormat &val) { return SettingValue(SampleFormat::ToInt(val)); }
 template<> inline SampleFormat FromSettingValue(const SettingValue &val) { return SampleFormat::FromInt(val.as<int32>()); }
 
 template<> inline SettingValue ToSettingValue(const SoundDevice::ChannelMapping &val) { return SettingValue(val.ToUString(), "ChannelMapping"); }
@@ -331,6 +405,27 @@ template<> inline Resampling::AmigaFilter FromSettingValue(const SettingValue &v
 
 template<> inline SettingValue ToSettingValue(const NewFileAction &val) { return SettingValue(int32(val)); }
 template<> inline NewFileAction FromSettingValue(const SettingValue &val) { return NewFileAction(val.as<int32>()); }
+
+enum class MainToolBarItem : uint32
+{
+	Octave = 0x01,
+	Tempo = 0x02,
+	Speed = 0x04,
+	RowsPerBeat = 0x08,
+	GlobalVolume = 0x10,
+	VUMeter = 0x20,
+	IconsFile = 0x40,
+	IconsEdit = 0x80,
+	IconsPlayback = 0x100,
+	IconsMisc = 0x200,
+
+	AllIcons = IconsFile | IconsEdit | IconsPlayback | IconsMisc,
+	Default = Octave | Tempo | Speed | RowsPerBeat | GlobalVolume | VUMeter | AllIcons
+};
+DECLARE_FLAGSET(MainToolBarItem)
+
+template<> inline SettingValue ToSettingValue(const MainToolBarItem &val) { return SettingValue(static_cast<int32>(val)); }
+template<> inline MainToolBarItem FromSettingValue(const SettingValue &val) { return static_cast<MainToolBarItem>(val.as<int32>()); }
 
 template<> inline SettingValue ToSettingValue(const std::bitset<128> &val)
 {
@@ -360,23 +455,28 @@ template<> inline SettingValue ToSettingValue(const SampleEditorDefaultFormat &v
 	case dfS3I:
 		format = U_("s3i");
 		break;
+	case dfIFF:
+		format = U_("iff");
+		break;
 	}
 	return SettingValue(format);
 }
 template<> inline SampleEditorDefaultFormat FromSettingValue(const SettingValue &val)
 {
-	mpt::ustring format = mpt::ToLowerCase(val.as<mpt::ustring>());
+	mpt::ustring format = mpt::ToLowerCaseLocale(val.as<mpt::ustring>());
 	if(format == U_("wav"))
 		return dfWAV;
 	if(format == U_("raw"))
 		return dfRAW;
 	if(format == U_("s3i"))
 		return dfS3I;
+	if(format == U_("iff"))
+		return dfIFF;
 	else  // if(format == U_("flac"))
 		return dfFLAC;
 }
 
-enum SoundDeviceStopMode
+enum SoundDeviceStopMode : int
 {
 	SoundDeviceStopModeClosed  = 0,
 	SoundDeviceStopModeStopped = 1,
@@ -464,34 +564,14 @@ template<> inline ProcessPriorityClass FromSettingValue(const SettingValue &val)
 }
 
 
-template<> inline SettingValue ToSettingValue(const mpt::Date::Unix &val)
+template<> inline SettingValue ToSettingValue(const mpt::chrono::default_system_clock::time_point &val)
 {
-	time_t t = val;
-	const tm* lastUpdate = gmtime(&t);
-	CString outDate;
-	if(lastUpdate)
-	{
-		outDate.Format(_T("%04d-%02d-%02d %02d:%02d"), lastUpdate->tm_year + 1900, lastUpdate->tm_mon + 1, lastUpdate->tm_mday, lastUpdate->tm_hour, lastUpdate->tm_min);
-	}
-	return SettingValue(mpt::ToUnicode(outDate), "UTC");
+	return SettingValue(mpt::ufmt::val(mpt::chrono::default_system_clock::to_unix_seconds(val)), "UnixTime");
 }
-template<> inline mpt::Date::Unix FromSettingValue(const SettingValue &val)
+template<> inline mpt::chrono::default_system_clock::time_point FromSettingValue(const SettingValue &val)
 {
-	MPT_ASSERT(val.GetTypeTag() == "UTC");
-	std::string s = mpt::ToCharset(mpt::Charset::Locale, val.as<mpt::ustring>());
-	tm lastUpdate;
-	MemsetZero(lastUpdate);
-	if(sscanf(s.c_str(), "%04d-%02d-%02d %02d:%02d", &lastUpdate.tm_year, &lastUpdate.tm_mon, &lastUpdate.tm_mday, &lastUpdate.tm_hour, &lastUpdate.tm_min) == 5)
-	{
-		lastUpdate.tm_year -= 1900;
-		lastUpdate.tm_mon--;
-	}
-	time_t outTime = mpt::Date::Unix::FromUTC(lastUpdate);
-	if(outTime < 0)
-	{
-		outTime = 0;
-	}
-	return mpt::Date::Unix(outTime);
+	MPT_ASSERT(val.GetTypeTag() == "UnixTime");
+	return mpt::chrono::default_system_clock::from_unix_seconds(mpt::parse<int64>(val.as<mpt::ustring>()));
 }
 
 struct FontSetting
@@ -532,14 +612,14 @@ template<> inline FontSetting FromSettingValue(const SettingValue &val)
 	std::size_t sizeStart = setting.name.rfind(UC_(','));
 	if(sizeStart != std::string::npos)
 	{
-		const std::vector<mpt::ustring> fields = mpt::String::Split<mpt::ustring>(setting.name.substr(sizeStart + 1), U_("|"));
+		const std::vector<mpt::ustring> fields = mpt::split(setting.name.substr(sizeStart + 1), U_("|"));
 		if(fields.size() >= 1)
 		{
-			setting.size = ConvertStrTo<int32>(fields[0]);
+			setting.size = mpt::parse<int32>(fields[0]);
 		}
 		if(fields.size() >= 2)
 		{
-			setting.flags = static_cast<FontSetting::FontFlags>(ConvertStrTo<int32>(fields[1]));
+			setting.flags = static_cast<FontSetting::FontFlags>(mpt::parse<int32>(fields[1]));
 		}
 		setting.name.resize(sizeStart);
 	}
@@ -608,7 +688,7 @@ private:
 
 public:
 
-	DebugSettings(SettingsContainer &conf);
+	DebugSettings(SettingsContainer &conf_);
 
 	~DebugSettings();
 
@@ -619,7 +699,7 @@ namespace SoundDevice
 {
 namespace Legacy
 {
-typedef uint16 ID;
+using ID = uint16;
 inline constexpr SoundDevice::Legacy::ID MaskType = 0xff00;
 inline constexpr SoundDevice::Legacy::ID MaskIndex = 0x00ff;
 inline constexpr int ShiftType = 8;
@@ -654,7 +734,7 @@ public:
 
 	Setting<bool> m_ShowSplashScreen;
 	Setting<bool> gbMdiMaximize;
-	Setting<bool> highResUI;
+	Setting<DPIAwarenessMode> dpiAwareness;
 	Setting<LONG> glTreeSplitRatio;
 	Setting<LONG> glTreeWindowWidth;
 	Setting<LONG> glGeneralWindowHeight;
@@ -668,7 +748,7 @@ public:
 	Setting<int32> gnPlugWindowY;
 	Setting<int32> gnPlugWindowWidth;
 	Setting<int32> gnPlugWindowHeight;
-	Setting<int32> gnPlugWindowLast;	// Last selected plugin ID
+	Setting<LastPluginID> lastSelectedPlugin;
 
 	Setting<uint32> gnMsgBoxVisiblityFlags;
 	Setting<uint32> GUIUpdateInterval;
@@ -679,9 +759,14 @@ public:
 	CachedSetting<bool> accidentalFlats;
 	Setting<bool> rememberSongWindows;
 	Setting<bool> showDirsInSampleBrowser;
+	Setting<bool> useOldStyleFolderBrowser;
 	Setting<DefaultChannelColors> defaultRainbowChannelColors;
 
 	Setting<FontSetting> commentsFont;
+
+	CachedSetting<MainToolBarItem> mainToolBarVisibleItems;
+	Setting<bool> treeViewOnLeft;
+	Setting<uint8> quickStartGroupsCollapsed;
 
 	// Misc
 
@@ -695,8 +780,8 @@ public:
 	CachedSetting<bool> MiscAllowMultipleCommandsPerKey;
 	CachedSetting<bool> MiscDistinguishModifiers;
 	Setting<ProcessPriorityClass> MiscProcessPriorityClass;
-	Setting<bool> MiscFlushFileBuffersOnSave;
-	Setting<bool> MiscCacheCompleteFileBeforeLoading;
+	CachedSetting<bool> MiscFlushFileBuffersOnSave;
+	CachedSetting<bool> MiscCacheCompleteFileBeforeLoading;
 	Setting<bool> MiscUseSingleInstance;
 
 	// Sound Settings
@@ -757,8 +842,9 @@ public:
 	// FIXME: MIDI recording is currently done in its own callback/thread and
 	// accesses settings framework from in there. Work-around the ASSERTs for
 	// now by using cached settings.
-	CachedSetting<uint32> m_dwMidiSetup;
-	CachedSetting<RecordAftertouchOptions> aftertouchBehaviour;
+	CachedSetting<FlagSet<MidiSetup>> midiSetup;
+	CachedSetting<RecordAftertouch> aftertouchBehaviour;
+	CachedSetting<RecordPitchBend> pitchBendBehaviour;
 	CachedSetting<uint16> midiVelocityAmp;
 	CachedSetting<std::bitset<128> > midiIgnoreCCs;
 
@@ -775,9 +861,11 @@ public:
 	CachedSetting<bool> gbPatternRecord;
 	CachedSetting<bool> patternNoEditPopup;
 	CachedSetting<bool> patternStepCommands;
-	CachedSetting<uint32> m_dwPatternSetup;
+	CachedSetting<bool> patternVolColHex;
+	CachedSetting<FlagSet<PatternSetup>> patternSetup;
 	CachedSetting<uint32> m_nRowHighlightMeasures; // primary (measures) and secondary (beats) highlight
 	CachedSetting<uint32> m_nRowHighlightBeats;	// primary (measures) and secondary (beats) highlight
+	CachedSetting<bool> patternIgnoreSongTimeSignature;
 	CachedSetting<ROWINDEX> recordQuantizeRows;
 	CachedSetting<UINT> gnAutoChordWaitTime;
 	CachedSetting<int32> orderlistMargins;
@@ -786,19 +874,28 @@ public:
 	Setting<mpt::ustring> patternFontDot;
 	Setting<int32> effectVisWidth;
 	Setting<int32> effectVisHeight;
+	Setting<int32> effectVisX;
+	Setting<int32> effectVisY;
 	Setting<CString> patternAccessibilityFormat;
 	CachedSetting<bool> patternAlwaysDrawWholePatternOnScrollSlow;
 	CachedSetting<bool> orderListOldDropBehaviour;
+	Setting<bool> autoHideVolumeColumnForMOD;
+	Setting<bool> metronomeEnabled;
+	Setting<float> metronomeVolume;
+	Setting<mpt::PathString> metronomeSampleMeasure;
+	Setting<mpt::PathString> metronomeSampleBeat;
 
 	// Sample Editor
 
 	Setting<SampleUndoBufferSize> m_SampleUndoBufferSize;
 	Setting<SampleEditorKeyBehaviour> sampleEditorKeyBehaviour;
 	Setting<SampleEditorDefaultFormat> m_defaultSampleFormat;
+	CachedSetting<FollowSamplePlayCursor> m_followSamplePlayCursor;
 	Setting<TimelineFormat> sampleEditorTimelineFormat;
 	Setting<ResamplingMode> sampleEditorDefaultResampler;
 	Setting<int32> m_nFinetuneStep;	// Increment finetune by x cents when using spin control.
 	Setting<int32> m_FLACCompressionLevel;	// FLAC compression level for saving (0...8)
+	Setting<bool> m_FLACMultithreading;
 	Setting<bool> compressITI;
 	Setting<bool> m_MayNormalizeSamplesOnLoad;
 	Setting<bool> previewInFileDialogs;
@@ -808,6 +905,8 @@ public:
 
 	Setting<bool> ExportDefaultToSoundcardSamplerate;
 	StreamEncoderSettingsConf ExportStreamEncoderSettings;
+	Setting<bool> ExportNormalize;
+	Setting<bool> ExportClearPluginBuffers;
 
 	// Components
 
@@ -843,7 +942,9 @@ public:
 	CachedSetting<bool> AutosaveEnabled;
 	CachedSetting<uint32> AutosaveIntervalMinutes;
 	CachedSetting<uint32> AutosaveHistoryDepth;
+	CachedSetting<uint32> AutosaveRetentionTimeDays;
 	CachedSetting<bool> AutosaveUseOriginalPath;
+	CachedSetting<bool> AutosaveDeletePermanently;
 	ConfigurableDirectory AutosavePath;
 	
 	// Paths
@@ -855,7 +956,6 @@ public:
 	ConfigurableDirectory PathPluginPresets;
 	ConfigurableDirectory PathExport;
 	DefaultAndWorkingDirectory PathTunings;
-	DefaultAndWorkingDirectory PathUserTemplates;
 	mpt::PathString m_szKbdFile;
 
 	// Default template
@@ -886,6 +986,7 @@ public:
 
 	// Broken Plugins Workarounds
 
+	Setting<bool> BrokenPluginsWorkaroundSyncStartupCrashRecovery;
 	Setting<bool> BrokenPluginsWorkaroundVSTMaskAllCrashes;
 	Setting<bool> BrokenPluginsWorkaroundVSTNeverUnloadAnyPlugin;
 
@@ -895,27 +996,20 @@ public:
 
 	Setting<bool> UpdateEnabled;
 	Setting<bool> UpdateInstallAutomatically;
-	Setting<mpt::Date::Unix> UpdateLastUpdateCheck;
+	Setting<mpt::chrono::default_system_clock::time_point> UpdateLastUpdateCheck;
 	Setting<int32> UpdateUpdateCheckPeriod_DEPRECATED;
 	Setting<int32> UpdateIntervalDays;
 	Setting<uint32> UpdateChannel;
 	Setting<mpt::ustring> UpdateUpdateURL_DEPRECATED;
-#if MPT_UPDATE_LEGACY
-	Setting<mpt::ustring> UpdateChannelReleaseURL;
-	Setting<mpt::ustring> UpdateChannelNextURL;
-	Setting<mpt::ustring> UpdateChannelDevelopmentURL;
-#endif // MPT_UPDATE_LEGACY
 	Setting<mpt::ustring> UpdateAPIURL;
 	Setting<bool> UpdateStatisticsConsentAsked;
 	Setting<bool> UpdateStatistics;
 	Setting<bool> UpdateSendGUID_DEPRECATED;
 	Setting<bool> UpdateShowUpdateHint;
 	Setting<CString> UpdateIgnoreVersion;
-#if MPT_UPDATE_LEGACY
-	Setting<bool> UpdateLegacyMethod;
-#endif // MPT_UPDATE_LEGACY
 	Setting<bool> UpdateSkipSignatureVerificationUNSECURE;
 	Setting<std::vector<mpt::ustring>> UpdateSigningKeysRootAnchors;
+	Setting<int32> UpdatePortableBackend;
 
 #endif // MPT_ENABLE_UPDATE
 
@@ -958,11 +1052,19 @@ public:
 	void SetMIDIDevice(UINT id);
 	UINT GetCurrentMIDIDevice();
 
+	static mpt::PathString GetDefaultAutosavePath();
+
+	static mpt::PathString GetDefaultMetronomeSample() { return P_("*sine"); }
+
 protected:
 
 	static std::vector<uint32> GetDefaultSampleRates();
 
+#ifndef NO_EQ
+
 	void FixupEQ(EQPreset &eqSettings);
+
+#endif // !NO_EQ
 
 	void LoadChords(MPTChords &chords);
 	void SaveChords(MPTChords &chords);

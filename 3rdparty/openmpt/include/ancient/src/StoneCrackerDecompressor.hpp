@@ -5,6 +5,8 @@
 
 #include "Decompressor.hpp"
 
+#include <array>
+
 namespace ancient::internal
 {
 
@@ -12,19 +14,18 @@ class StoneCrackerDecompressor : public Decompressor
 {
 public:
 	StoneCrackerDecompressor(const Buffer &packedData,bool exactSizeKnown,bool verify);
+	~StoneCrackerDecompressor() noexcept=default;
 
-	virtual ~StoneCrackerDecompressor();
+	const std::string &getName() const noexcept final;
 
-	virtual const std::string &getName() const noexcept override final;
+	size_t getPackedSize() const noexcept final;
+	size_t getRawSize() const noexcept final;
 
-	virtual size_t getPackedSize() const noexcept override final;
-	virtual size_t getRawSize() const noexcept override final;
+	void decompressImpl(Buffer &rawData,bool verify) final;
 
-	virtual void decompressImpl(Buffer &rawData,bool verify) override final;
+	static bool detectHeader(uint32_t hdr,uint32_t footer) noexcept;
 
-	static bool detectHeader(uint32_t hdr) noexcept;
-
-	static std::unique_ptr<Decompressor> create(const Buffer &packedData,bool exactSizeKnown,bool verify);
+	static std::shared_ptr<Decompressor> create(const Buffer &packedData,bool exactSizeKnown,bool verify);
 
 private:
 	static bool detectHeaderAndGeneration(uint32_t hdr,uint32_t &generation) noexcept;
@@ -38,13 +39,13 @@ private:
 
 	const Buffer	&_packedData;
 
-	uint32_t	_rawSize=0;
-	uint32_t	_packedSize=0;
-	uint32_t	_rleSize=0;
-	uint8_t		_modes[4];
-	uint8_t		_rle[3];
-	uint32_t	_generation;
-	uint32_t	_dataOffset;
+	uint32_t		_rawSize{0};
+	uint32_t		_packedSize{0};
+	uint32_t		_rleSize{0};
+	std::array<uint8_t,4>	_modes;
+	std::array<uint8_t,3>	_rle;
+	uint32_t		_generation;
+	uint32_t		_dataOffset;
 };
 
 }

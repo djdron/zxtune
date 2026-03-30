@@ -1,82 +1,137 @@
 
-if charset == "Unicode" then
-if stringmode == "WCHAR" then
+include_dependency "../../build/premake/sys-dmo.lua"
+include_dependency "../../build/premake/sys-mfc.lua"
+include_dependency "../../build/premake/ext-ancient.lua"
+if MPT_MSVC_AT_LEAST(2019) then
+include_dependency "../../build/premake/ext-asiomodern.lua"
+end
+if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+include_dependency "../../build/premake/ext-cryptopp.lua"
+end
+include_dependency "../../build/premake/ext-flac.lua"
+include_dependency "../../build/premake/ext-lame.lua"
+include_dependency "../../build/premake/ext-lhasa.lua"
+include_dependency "../../build/premake/ext-minizip.lua"
+include_dependency "../../build/premake/ext-mpg123.lua"
+include_dependency "../../build/premake/ext-nlohmann-json.lua"
+include_dependency "../../build/premake/ext-ogg.lua"
+include_dependency "../../build/premake/ext-opus.lua"
+include_dependency "../../build/premake/ext-opusenc.lua"
+include_dependency "../../build/premake/ext-opusfile.lua"
+include_dependency "../../build/premake/ext-portaudio.lua"
+if MPT_MSVC_BEFORE(2022) then
+include_dependency "../../build/premake/ext-pthread-win32.lua"
+end
+include_dependency "../../build/premake/ext-r8brain.lua"
+include_dependency "../../build/premake/ext-rtaudio.lua"
+include_dependency "../../build/premake/ext-rtmidi.lua"
+include_dependency "../../build/premake/ext-SignalsmithStretch.lua"
+include_dependency "../../build/premake/ext-UnRAR.lua"
+include_dependency "../../build/premake/ext-vorbis.lua"
+include_dependency "../../build/premake/ext-vst.lua"
+include_dependency "../../build/premake/ext-zlib.lua"
+
+if not charset or charset == "Unicode" then
+if not stringmode or stringmode == "WCHAR" then
   project "OpenMPT"
-  mpt_projectname = "OpenMPT"
 	uuid "37FC32A4-8DDC-4A9C-A30C-62989DD8ACE9"
 else
   project "OpenMPT-UTF8"
-  mpt_projectname = "OpenMPT-UTF8"
 	uuid "e89507fa-a251-457e-9957-f6b453c77daf"
 end
 else
 	project "OpenMPT-ANSI"
-	mpt_projectname = "OpenMPT-ANSI"
 	uuid "ba66db50-e2f0-4c9e-b650-0cca6c66e1c1"
 end
   language "C++"
-  location ( "../../build/" .. mpt_projectpathname )
   vpaths { ["*"] = "../../" }
-  dofile "../../build/premake/premake-defaults-EXEGUI.lua"
-  dofile "../../build/premake/premake-defaults.lua"
-if stringmode == "UTF8" then
+  mpt_kind "GUI"
+	mpt_locale "Legacy"
+if stringmode and stringmode == "UTF8" then
    targetname "OpenMPT-UTF8"
-elseif charset == "MBCS" then
+elseif charset and charset == "MBCS" then
    targetname "OpenMPT-ANSI"
 else
    targetname "OpenMPT"
 end
   filter {}
-  local extincludedirs = {
-   "../../include",
-   "../../include/ancient/api",
-   "../../include/asiomodern/include",
-   "../../include/ASIOSDK2/common",
-   "../../include/flac/include",
-   "../../include/lame/include",
-   "../../include/lhasa/lib/public",
-   "../../include/mpg123/ports/MSVC++",
-   "../../include/mpg123/src/libmpg123",
-   "../../include/nlohmann-json/include",
-   "../../include/ogg/include",
-   "../../include/opus/include",
-   "../../include/opusenc/include",
-   "../../include/opusfile/include",
-   "../../include/portaudio/include",
-   "../../include/rtaudio",
-   "../../include/vorbis/include",
-   "../../include/zlib",
-  }
-	filter { "action:vs*" }
-		includedirs ( extincludedirs )
-	filter { "not action:vs*" }
-		sysincludedirs ( extincludedirs )
-	filter {}
+	
+	if _OPTIONS["windows-charset"] == "Unicode" then
+		mpt_use_mfc(charset or "Unicode")
+	else
+		mpt_use_mfc(_OPTIONS["windows-charset"])
+	end
+	defines { "MPT_WITH_MFC" }
+	if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+		defines { "MPT_WITH_DIRECTSOUND" }
+	end
+
+	mpt_use_ancient()
+	defines { "MPT_WITH_ANCIENT" }
+	if MPT_MSVC_AT_LEAST(2019) then
+		-- disabled for VS2017 because of multiple initialization of inline variables
+		-- https://developercommunity.visualstudio.com/t/static-inline-variable-gets-destroyed-multiple-tim/297876
+		mpt_use_asiomodern()
+		defines { "MPT_WITH_ASIO" }
+	end
+	if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+		mpt_use_cryptopp()
+		defines { "MPT_WITH_CRYPTOPP" }
+	end
+	mpt_use_dmo()
+	defines { "MPT_WITH_DMO" }
+	mpt_use_flac()
+	defines { "MPT_WITH_FLAC" }
+	mpt_use_lame()
+	defines { "MPT_WITH_LAME" }
+	mpt_use_lhasa()
+	defines { "MPT_WITH_LHASA" }
+	mpt_use_minizip()
+	defines { "MPT_WITH_MINIZIP" }
+	mpt_use_mpg123()
+	defines { "MPT_WITH_MPG123" }
+	mpt_use_nlohmannjson()
+	defines { "MPT_WITH_NLOHMANNJSON" }
+	mpt_use_ogg()
+	defines { "MPT_WITH_OGG" }
+	mpt_use_opus()
+	defines { "MPT_WITH_OPUS" }
+	mpt_use_opusenc()
+	defines { "MPT_WITH_OPUSENC" }
+	mpt_use_opusfile()
+	defines { "MPT_WITH_OPUSFILE" }
+	mpt_use_portaudio()
+	defines { "MPT_WITH_PORTAUDIO" }
+	if MPT_MSVC_BEFORE(2022) then
+		mpt_use_pthread_win32()
+		defines { "MPT_WITH_PTHREAD" }
+	end
+	mpt_use_r8brain()
+	defines { "MPT_WITH_R8BRAIN" }
+	mpt_use_rtaudio()
+	defines { "MPT_WITH_RTAUDIO" }
+	mpt_use_rtmidi()
+	defines { "MPT_WITH_RTMIDI" }
+	mpt_use_signalsmith_stretch()
+	defines { "MPT_WITH_SIGNALSMITH_STRETCH" }
+	mpt_use_unrar()
+	defines { "MPT_WITH_UNRAR" }
+	mpt_use_vorbis()
+	defines { "MPT_WITH_VORBIS", "MPT_WITH_VORBISENC", "MPT_WITH_VORBISFILE" }
+	mpt_use_vst()
+	defines { "MPT_WITH_VST" }
+	mpt_use_zlib()
+	defines { "MPT_WITH_ZLIB" }
+	
   includedirs {
    "../../src",
    "../../common",
    "../../soundlib",
    "$(IntDir)/svn_version",
-   "../../build/svn_version",
   }
-	if _OPTIONS["win10"] then
-		files {
-			"../../mptrack/res/OpenMPT-win10.manifest",
-		}
-	elseif  _OPTIONS["win81"] then
-		files {
-			"../../mptrack/res/OpenMPT-win81.manifest",
-		}
-	elseif  _OPTIONS["win7"] then
-		files {
-			"../../mptrack/res/OpenMPT-win7.manifest",
-		}
-	end
-	if not _OPTIONS["winxp"] then
-		files {
-			"../../include/asiomodern/include/ASIOModern/*.hpp",
-		}
-	end
+	files {
+		"../../mptrack/res/OpenMPT.manifest",
+	}
   files {
    "../../src/mpt/**.cpp",
    "../../src/mpt/**.hpp",
@@ -108,26 +163,18 @@ end
    "../../pluginBridge/BridgeWrapper.cpp",
    "../../pluginBridge/BridgeWrapper.h",
   }
+	excludes {
+		"../../src/mpt/filemode/**.cpp",
+		"../../src/mpt/filemode/**.hpp",
+		"../../src/mpt/main/**.cpp",
+		"../../src/mpt/main/**.hpp",
+		"../../src/mpt/terminal/**.cpp",
+		"../../src/mpt/terminal/**.hpp",
+	}
   files {
    "../../mptrack/mptrack.rc",
    "../../mptrack/res/*.*", -- resource data files
   }
-	if _OPTIONS["win10"] then
-		excludes {
-			"../../mptrack/res/OpenMPT-win7.manifest",
-			"../../mptrack/res/OpenMPT-win81.manifest",
-		}
-	elseif  _OPTIONS["win81"] then
-		excludes {
-			"../../mptrack/res/OpenMPT-win7.manifest",
-			"../../mptrack/res/OpenMPT-win10.manifest",
-		}
-	elseif  _OPTIONS["win7"] then
-		excludes {
-			"../../mptrack/res/OpenMPT-win81.manifest",
-			"../../mptrack/res/OpenMPT-win10.manifest",
-		}
-	end
 
 	defines { "MPT_BUILD_ENABLE_PCH" }
 	pchsource "../../build/pch/PCH.cpp"
@@ -145,40 +192,22 @@ end
 
   defines { "MODPLUG_TRACKER" }
   dpiawareness "None"
-  largeaddressaware ( true )
-  characterset(charset)
-if charset == "Unicode" then
-else
-	defines { "NO_WARN_MBCS_MFC_DEPRECATION" }
-end
-if stringmode == "UTF8" then
-	defines { "MPT_USTRING_MODE_UTF8_FORCE" }
-end
-  flags { "MFC" }
+	if _OPTIONS["windows-charset"] ~= "Unicode" then
+		defines { "MPT_CHECK_WINDOWS_IGNORE_WARNING_NO_UNICODE" }
+	else
+		characterset(charset)
+		if charset and charset ~= "Unicode" then
+			defines { "NO_WARN_MBCS_MFC_DEPRECATION" }
+			defines { "MPT_CHECK_WINDOWS_IGNORE_WARNING_NO_UNICODE" }
+		end
+	end
+	if stringmode and stringmode == "UTF8" then
+		defines { "MPT_USTRING_MODE_UTF8_FORCE" }
+	end
+
   warnings "Extra"
-  links {
-   "ancient",
-   "UnRAR",
-   "zlib",
-   "minizip",
-   "smbPitchShift",
-   "lame",
-   "lhasa",
-   "flac",
-   "mpg123",
-   "ogg",
-   "opus",
-   "opusenc",
-   "opusfile",
-   "portaudio",
-   "r8brain",
-   "rtaudio",
-   "rtmidi",
-   "soundtouch",
-   "vorbis",
-  }
   filter {}
-	if not _OPTIONS["winxp"] then
+	if MPT_WIN_AT_LEAST(MPT_WIN["7"]) then
   linkoptions {
    "/DELAYLOAD:mf.dll",
    "/DELAYLOAD:mfplat.dll",
@@ -193,78 +222,3 @@ end
     }
   filter {}
   prebuildcommands { "..\\..\\build\\svn_version\\update_svn_version_vs_premake.cmd $(IntDir)" }
-
- project "OpenMPT-NativeSupport"
-  uuid "563a631d-fe07-47bc-a98f-9fe5b3ebabfa"
-  language "C++"
-  location ( "../../build/" .. mpt_projectpathname )
-  vpaths { ["*"] = "../../" }
-  mpt_projectname = "OpenMPT-NativeSupport"
-  dofile "../../build/premake/premake-defaults-DLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
-  includedirs {
-   "../../src",
-   "../../common",
-   "../../include",
-   "../../include/asiomodern/include",
-   "../../include/ASIOSDK2/common",
-   "../../include/nlohmann-json/include",
-   "../../include/portaudio/include",
-   "../../include/rtaudio",
-   "$(IntDir)/svn_version",
-   "../../build/svn_version",
-  }
-  files {
-   "../../include/asiomodern/include/ASIOModern/*.hpp",
-   "../../src/mpt/**.cpp",
-   "../../src/mpt/**.hpp",
-   "../../src/openmpt/**.cpp",
-   "../../src/openmpt/**.hpp",
-   "../../common/*.cpp",
-   "../../common/*.h",
-   "../../misc/*.cpp",
-   "../../misc/*.h",
-   "../../mptrack/wine/*.cpp",
-   "../../mptrack/wine/*.h",
-  }
-  excludes {
-   "../../mptrack/wine/WineWrapper.cpp",
-  }
-  defines { "MODPLUG_TRACKER", "MPT_BUILD_WINESUPPORT" }
-  largeaddressaware ( true )
-  characterset "Unicode"
-  warnings "Extra"
-  links {
-   "portaudio",
-   "rtaudio",
-  }
-  filter {}
-  prebuildcommands { "..\\..\\build\\svn_version\\update_svn_version_vs_premake.cmd $(IntDir)" }
-
- project "OpenMPT-WineWrapper"
-  uuid "f3da2bf5-e84a-4f71-80ab-884594863d3a"
-  language "C"
-  location ( "../../build/" .. mpt_projectpathname )
-  vpaths { ["*"] = "../../" }
-  mpt_projectname = "OpenMPT-WineWrapper"
-  dofile "../../build/premake/premake-defaults-DLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
-  includedirs {
-   "../../src",
-   "../../common",
-   "../../include",
-   "$(IntDir)/svn_version",
-   "../../build/svn_version",
-  }
-  files {
-   "../../mptrack/wine/WineWrapper.c",
-  }
-  defines { "MODPLUG_TRACKER", "MPT_BUILD_WINESUPPORT_WRAPPER" }
-  largeaddressaware ( true )
-  characterset "Unicode"
-  warnings "Extra"
-  links {
-   "OpenMPT-NativeSupport",
-  }
-  filter {}
-  postbuildcommands { "..\\..\\build\\wine\\build_wine_support.cmd $(IntDir) $(OutDir)" }

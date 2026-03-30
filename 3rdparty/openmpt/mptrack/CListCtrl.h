@@ -12,7 +12,7 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#include "MPTrackUtil.h"
+#include "HighDPISupport.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -25,14 +25,24 @@ public:
 		int width = 0;
 		UINT mask = 0;
 	};
+
 	void SetHeaders(const mpt::span<const Header> &header)
 	{
 		for(int i = 0; i < static_cast<int>(header.size()); i++)
 		{
 			int width = header[i].width;
-			InsertColumn(i, header[i].text, header[i].mask, width >= 0 ? Util::ScalePixels(width, m_hWnd) : 16);
+			InsertColumn(i, header[i].text, header[i].mask, width >= 0 ? HighDPISupport::ScalePixels(width, m_hWnd) : 16);
 			if(width < 0)
 				SetColumnWidth(i, width);
+		}
+	}
+
+	void SetColumnWidths(const mpt::span<const Header> &header)
+	{
+		for(int i = 0; i < static_cast<int>(header.size()); i++)
+		{
+			if(int width = header[i].width; width > 0)
+				SetColumnWidth(i, HighDPISupport::ScalePixels(width, m_hWnd));
 		}
 	}
 
@@ -45,6 +55,31 @@ public:
 	{
 		return reinterpret_cast<void *>(GetItemData(item));
 	}
+
+	static bool EnableGroupView(CListCtrl &listCtrl)
+	{
+		ListView_EnableGroupView(listCtrl.m_hWnd, FALSE);  // try to set known state
+		int enableGroupsResult1 = static_cast<int>(ListView_EnableGroupView(listCtrl.m_hWnd, TRUE));
+		int enableGroupsResult2 = static_cast<int>(ListView_EnableGroupView(listCtrl.m_hWnd, TRUE));
+		// Looks like we have to check enabling and check that a second enabling does
+		// not change anything.
+		// Just checking if enabling fails with -1 does not work for older control
+		// versions because they just do not know the window message at all and return
+		// 0, always. At least Wine does behave this way.
+		if(enableGroupsResult1 == 1 && enableGroupsResult2 == 0)
+		{
+			return true;
+		} else
+		{
+			// Did not behave as documented or expected, the actual state of the
+			// control is unknown by now.
+			// Play safe and set and assume the traditional ungrouped mode again.
+			ListView_EnableGroupView(listCtrl.m_hWnd, FALSE);
+			return false;
+		}
+	}
+
+	bool EnableGroupView() { return EnableGroupView(*this); }
 
 	// Unicode strings in ANSI builds
 #ifndef UNICODE
@@ -63,7 +98,7 @@ public:
 };
 
 
-#ifdef MPT_MFC_FULL
+#ifndef _AFX_NO_MFC_CONTROLS_IN_DIALOGS
 
 class CMFCListCtrlEx : public CMFCListCtrl
 {
@@ -78,9 +113,11 @@ public:
 	{
 		for(int i = 0; i < static_cast<int>(header.size()); i++)
 		{
-			InsertColumn(i, header[i].text, header[i].mask, Util::ScalePixels(header[i].width, m_hWnd));
+			InsertColumn(i, header[i].text, header[i].mask, HighDPISupport::ScalePixels(header[i].width, m_hWnd));
 		}
 	}
+
+	bool EnableGroupView() { return CListCtrlEx::EnableGroupView(*this); }
 
 	// Unicode strings in ANSI builds
 #ifndef UNICODE
@@ -98,7 +135,7 @@ public:
 #endif
 };
 
-#endif // MPT_MFC_FULL
+#endif // !_AFX_NO_MFC_CONTROLS_IN_DIALOGS
 
 
 OPENMPT_NAMESPACE_END

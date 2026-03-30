@@ -9,16 +9,18 @@ source_files += $(addprefix libopenmpt/,\
 
 source_files += $(addprefix soundlib/,\
                   modcommand mod_specifications modsmp_ctrl patternContainer pattern tuning tuningCollection \
-                  ModChannel ModInstrument ModSample ModSequence \
+                  ModChannel ModInstrument ModSample ModSequence PlayState \
                   Fastmix UpgradeModule \
-                  ITCompression ITTools S3MTools XMTools InstrumentExtensions \
-                  Message MIDIMacros MIDIEvents MPEGFrame MixerLoops MixerSettings MixFuncTable \
+                  ITCompression ITTools S3MTools XMTools InstrumentExtensions InstrumentSynth \
+                  Message MIDIMacros MIDIMacroParser MIDIEvents MPEGFrame MixerLoops MixerSettings MixFuncTable \
                   OggStream OPL Paula RowVisitor \
                   SampleIO SampleFormats $(addprefix SampleFormat,BRR FLAC MediaFoundation MP3 Opus SFZ Vorbis) \
                   SoundFilePlayConfig Sndfile Sndmix Snd_flt Snd_fx Tables \
-                  $(addprefix Load_,669 amf ams c67 dbm digi dmf dsm dsym dtm far fmt gdm imf it itp mdl med mo3 mod mt2 mtm mus_km okt plm psm ptm s3m sfx stm stp symmod ult xm) \
-                  load_j2b \
-                  TinyFFT WindowedFIR WAVTools Tagging \
+                  $(addprefix Load_,\
+                    667 669 amf ams c67 cba dbm digi dmf dsm dsym dtm etx far fc fmt ftm gdm gmc gt2 ice imf ims it itp kris \
+                    mdl med mo3 mod mt2 mtm mus_km nru okt plm psm pt36 ptm puma rtm s3m sfx ss stm stk stp symmod tcb ult unic xm xmf \
+                  ) load_j2b \
+                  MODTools TinyFFT WindowedFIR WAVTools Tagging \
                   )
 
 source_files += $(addprefix soundlib/plugins/,\
@@ -33,14 +35,10 @@ source_files += $(addprefix soundlib/plugins/dmo/,\
 source_files += $(addprefix sounddsp/,Reverb)
 
 source_files += $(addprefix common/,\
-                  Logging mptPathString mptRandom mptString mptStringBuffer mptStringFormat mptStringParse mptTime \
+                  Logging mptPathString mptRandom mptStringBuffer mptTime \
                   serialization_utils version)
 
 source_files := $(addsuffix .cpp,$(source_files))
-
-defines += LIBOPENMPT_BUILD NO_LOGGING NO_MPG123 NO_CONTAINERS_SUPPORT OPENMPT_VERSION_REVISION=0
-
-defines += MPT_WITH_MINIMP3 MPT_WITH_VORBISFILE MPT_WITH_OPUSFILE
 
 opusfile_includes = $(dirs.root)/3rdparty/openmpt/include/opusfile/include $(dirs.root)/3rdparty/opus/include $(dirs.root)/3rdparty
 
@@ -58,8 +56,6 @@ includes.dirs.info.c = $(opusfile_includes)
 includes.dirs.internal.c = $(opusfile_includes)
 source_files += $(addprefix include/opusfile/src/,opusfile.c stream.c info.c internal.c)
 
-# declare ASSERT macro as Require to avoid AssertHandler
-defines += MPT_FRAMEWORK_ASSERT_IS_DEFINED MPT_ASSERT_USE_FRAMEWORK=1 MPT_FRAMEWORK_ASSERT_IS_ACTIVE=1 "ASSERT(p)=(void)(p)" MPT_LOG_IS_DISABLED \
-           MPT_DETERMINISTIC_RANDOM
+includes.files = defines.h
 
 include $(dirs.root)/makefile.mak

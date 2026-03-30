@@ -9,11 +9,15 @@
 
 
 #include "stdafx.h"
-#include <mmsystem.h>
-#include "Mainfrm.h"
-#include "InputHandler.h"
 #include "Dlsbank.h"
+#include "InputHandler.h"
+#include "Mainfrm.h"
+#include "resource.h"
+#include "TrackerSettings.h"
+#include "WindowMessages.h"
 #include "../soundlib/MIDIEvents.h"
+
+#include <mmsystem.h>
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -29,21 +33,21 @@ HMIDIIN CMainFrame::shMidiIn = nullptr;
 
 //Get Midi message(dwParam1), apply MIDI settings having effect on volume, and return
 //the volume value [0, 256]. In addition value -1 is used as 'use default value'-indicator.
-int CMainFrame::ApplyVolumeRelatedSettings(const DWORD &dwParam1, const BYTE midivolume)
+int CMainFrame::ApplyVolumeRelatedSettings(const DWORD &dwParam1, uint8 midiChannelVolume)
 {
 	int nVol = MIDIEvents::GetDataByte2FromEvent(dwParam1);
-	if(TrackerSettings::Instance().m_dwMidiSetup & MIDISETUP_RECORDVELOCITY)
+	const FlagSet<MidiSetup> midiSetup = TrackerSettings::Instance().midiSetup;
+	if(midiSetup[MidiSetup::RecordVelocity])
 	{
-		nVol = (CDLSBank::DLSMidiVolumeToLinear(nVol)+255) >> 8;
-		nVol *= TrackerSettings::Instance().midiVelocityAmp / 100;
+		if(!midiSetup[MidiSetup::ApplyChannelVolumeToVelocity])
+			midiChannelVolume = 127;
+		nVol = Util::muldivr_unsigned(CDLSBank::DLSMidiVolumeToLinear(nVol), TrackerSettings::Instance().midiVelocityAmp * midiChannelVolume, 100 * 127 * 256);
 		Limit(nVol, 1, 256);
-		if(TrackerSettings::Instance().m_dwMidiSetup & MIDISETUP_MIDIVOL_TO_NOTEVOL)
-			nVol = static_cast<int>((midivolume / 127.0) * nVol);
 	} else
 	{
 		// Case: No velocity record.
-		if(TrackerSettings::Instance().m_dwMidiSetup & MIDISETUP_MIDIVOL_TO_NOTEVOL)
-			nVol = 4*((midivolume+1)/2);
+		if(midiSetup[MidiSetup::ApplyChannelVolumeToVelocity])
+			nVol = (midiChannelVolume + 1) * 2;
 		else //Use default volume
 			nVol = -1;
 	}
@@ -54,8 +58,9 @@ int CMainFrame::ApplyVolumeRelatedSettings(const DWORD &dwParam1, const BYTE mid
 
 void ApplyTransposeKeyboardSetting(CMainFrame &rMainFrm, uint32 &dwParam1)
 {
-	if ( (TrackerSettings::Instance().m_dwMidiSetup & MIDISETUP_TRANSPOSEKEYBOARD)
-		&& (MIDIEvents::GetChannelFromEvent(dwParam1) != 9) )
+	const FlagSet<MidiSetup> midiSetup = TrackerSettings::Instance().midiSetup;
+	if(midiSetup[MidiSetup::TransposeKeyboard]
+		&& (MIDIEvents::GetChannelFromEvent(dwParam1) != 9))
 	{
 		int nTranspose = rMainFrm.GetBaseOctave() - 4;
 		if (nTranspose)

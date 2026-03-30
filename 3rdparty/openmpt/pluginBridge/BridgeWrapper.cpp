@@ -10,7 +10,7 @@
 
 #include "stdafx.h"
 
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
 #include "BridgeWrapper.h"
 #include "../soundlib/plugins/PluginManager.h"
 #include "../mptrack/Mainfrm.h"
@@ -18,6 +18,8 @@
 #include "../mptrack/Vstplug.h"
 #include "../mptrack/ExceptionHandler.h"
 #include "../common/mptFileIO.h"
+#include "mpt/fs/fs.hpp"
+#include "mpt/io_file/fstream.hpp"
 #include "../common/mptStringBuffer.h"
 #include "../common/misc_util.h"
 
@@ -108,13 +110,12 @@ bool ComponentPluginBridge::DoInitialize()
 	const mpt::PathString generationSuffix = (generation == Generation::Legacy) ? P_("Legacy") : P_("");
 	const mpt::PathString exeNames[] =
 	{
-		theApp.GetInstallPath() + P_("PluginBridge") + generationSuffix + P_("-") + archName + P_(".exe"),                          // Local
-		theApp.GetInstallBinPath() + archName + P_("\\") + P_("PluginBridge") + generationSuffix + P_(".exe"),                      // Multi-arch
-		theApp.GetInstallBinPath() + archName + P_("\\") + P_("PluginBridge") + generationSuffix + P_("-") + archName + P_(".exe")  // Multi-arch transitional
+		theApp.GetInstallBinPath() + archName + P_("\\") + P_("PluginBridge") + generationSuffix + P_("-") + archName + P_(".exe"),  // Multi-arch
+		theApp.GetInstallPath() + P_("PluginBridge") + generationSuffix + P_("-") + archName + P_(".exe")                            // Local
 	};
 	for(const auto &candidate : exeNames)
 	{
-		if(candidate.IsFile())
+		if(mpt::native_fs{}.is_file(candidate))
 		{
 			exeName = candidate;
 			break;
@@ -171,7 +172,7 @@ PluginArch BridgeWrapper::GetNativePluginBinaryType()
 PluginArch BridgeWrapper::GetPluginBinaryType(const mpt::PathString &pluginPath)
 {
 	PluginArch type = PluginArch_unknown;
-	mpt::ifstream file(pluginPath, std::ios::in | std::ios::binary);
+	mpt::IO::ifstream file(pluginPath, std::ios::in | std::ios::binary);
 	if(file.is_open())
 	{
 		IMAGE_DOS_HEADER dosHeader;
@@ -179,7 +180,7 @@ PluginArch BridgeWrapper::GetPluginBinaryType(const mpt::PathString &pluginPath)
 		file.read(reinterpret_cast<char *>(&dosHeader), sizeof(dosHeader));
 		if(dosHeader.e_magic == IMAGE_DOS_SIGNATURE)
 		{
-			file.seekg(dosHeader.e_lfanew);
+			file.seekg(dosHeader.e_lfanew, std::ios::beg);
 			file.read(reinterpret_cast<char *>(&ntHeader), sizeof(ntHeader));
 
 			MPT_ASSERT((ntHeader.FileHeader.Characteristics & IMAGE_FILE_DLL) != 0);
@@ -215,10 +216,19 @@ uint64 BridgeWrapper::GetFileVersion(const WCHAR *exePath)
 	DWORD verSize = GetFileVersionInfoSizeW(exePath, &verHandle);
 	uint64 result = 0;
 	if(verSize == 0)
+	{
 		return result;
+	}
 
 	char *verData = new(std::nothrow) char[verSize];
+#if MPT_COMPILER_MSVC
+#pragma warning(push)
+#pragma warning(disable:6388) // 'verHandle' might not be '0'.
+#endif // MPT_COMPILER_MSVC
 	if(verData && GetFileVersionInfoW(exePath, verHandle, verSize, verData))
+#if MPT_COMPILER_MSVC
+#pragma warning(pop)
+#endif // MPT_COMPILER_MSVC
 	{
 		UINT size = 0;
 		void *lpBuffer = nullptr;
@@ -312,7 +322,7 @@ bool BridgeWrapper::Init(const mpt::PathString &pluginPath, Generation bridgeGen
 	if(!m_queueMem.Create(mapName.c_str(), sizeof(SharedMemLayout))
 	   || !CreateSignals(mapName.c_str()))
 	{
-		throw BridgeException("Could not initialize plugin bridge memory.");
+		throw BridgeException(U_("Could not initialize plugin bridge memory."));
 	}
 	m_sharedMem = m_queueMem.Data<SharedMemLayout>();
 
@@ -358,7 +368,7 @@ bool BridgeWrapper::Init(const mpt::PathString &pluginPath, Generation bridgeGen
 				throw BridgeNotFoundException();
 				break;
 			case ComponentPluginBridge::AvailabilityWrongVersion:
-				throw BridgeException("The plugin bridge version does not match your OpenMPT version.");
+				throw BridgeException(U_("The plugin bridge version does not match your OpenMPT version."));
 				break;
 			default:
 				throw BridgeNotFoundException();
@@ -377,6 +387,10 @@ bool BridgeWrapper::Init(const mpt::PathString &pluginPath, Generation bridgeGen
 				(arch == PluginArch_arm64 && bridgeGeneration == Generation::Legacy) ? static_cast<const ComponentPluginBridge *>(pluginBridgeLegacy_arm64.get()) :
 #endif  // MPT_WITH_WINDOWS10
 		    nullptr;
+		if(!pluginBridge)
+		{
+			return false;
+		}
 		m_Generation = bridgeGeneration;
 		const mpt::PathString exeName = pluginBridge->GetFileName();
 
@@ -392,7 +406,7 @@ bool BridgeWrapper::Init(const mpt::PathString &pluginPath, Generation bridgeGen
 
 		if(!CreateProcessW(exeName.ToWide().c_str(), cmdLine.data(), NULL, NULL, FALSE, 0, NULL, NULL, &info, &processInfo))
 		{
-			throw BridgeException("Failed to launch plugin bridge.");
+			throw BridgeException(U_("Failed to launch plugin bridge."));
 		}
 		CloseHandle(processInfo.hThread);
 		m_otherProcess = processInfo.hProcess;
@@ -426,7 +440,7 @@ bool BridgeWrapper::Init(const mpt::PathString &pluginPath, Generation bridgeGen
 	const HANDLE objects[] = {m_sigBridgeReady, m_otherProcess};
 	if(WaitForMultipleObjects(mpt::saturate_cast<DWORD>(std::size(objects)), objects, FALSE, 10000) != WAIT_OBJECT_0)
 	{
-		throw BridgeException("Could not connect to plugin bridge, it probably crashed.");
+		throw BridgeException(U_("Could not connect to plugin bridge, it probably crashed."));
 	}
 	m_otherPluginID = m_sharedMem->bridgePluginID;
 
@@ -435,10 +449,10 @@ bool BridgeWrapper::Init(const mpt::PathString &pluginPath, Generation bridgeGen
 
 	if(!SendToBridge(initMsg))
 	{
-		throw BridgeException("Could not initialize plugin bridge, it probably crashed.");
+		throw BridgeException(U_("Could not initialize plugin bridge, it probably crashed."));
 	} else if(initMsg.init.result != 1)
 	{
-		throw BridgeException(mpt::ToCharset(mpt::Charset::UTF8, initMsg.init.str).c_str());
+		throw BridgeException(mpt::ToUnicode(initMsg.init.str));
 	}
 
 	if(m_sharedMem->effect.flags & effFlagsCanReplacing)
@@ -548,24 +562,24 @@ void BridgeWrapper::DispatchToHost(DispatchMsg &msg)
 		}
 		[[fallthrough]];
 	case audioMasterIOChanged:
-	{
-		// If the song is playing, the rendering thread might be active at the moment,
-		// so we should keep the current processing memory alive until it is done for sure.
-		const CVstPlugin *plug = static_cast<CVstPlugin *>(m_sharedMem->effect.reservedForHost1);
-		const bool isPlaying = plug != nullptr && plug->IsResumed();
-		if(isPlaying)
 		{
-			m_oldProcessMem.CopyFrom(m_processMem);
+			// If the song is playing, the rendering thread might be active at the moment,
+			// so we should keep the current processing memory alive until it is done for sure.
+			const CVstPlugin *plug = static_cast<CVstPlugin *>(m_sharedMem->effect.reservedForHost1);
+			const bool isPlaying = plug != nullptr && plug->IsResumed();
+			if(isPlaying)
+			{
+				m_oldProcessMem.CopyFrom(m_processMem);
+			}
+			// Set up new processing file
+			m_processMem.Open(static_cast<wchar_t *>(ptr));
+			if(isPlaying)
+			{
+				msg.result = 1;
+				return;
+			}
 		}
-		// Set up new processing file
-		m_processMem.Open(static_cast<wchar_t *>(ptr));
-		if(isPlaying)
-		{
-			msg.result = 1;
-			return;
-		}
-	}
-	break;
+		break;
 
 	case audioMasterUpdateDisplay:
 		m_cachedProgNames.clear();
@@ -606,8 +620,22 @@ void BridgeWrapper::DispatchToHost(DispatchMsg &msg)
 		if(msg.result != 0)
 		{
 			std::vector<char> fileSelect;
+#if MPT_COMPILER_MSVC
+#pragma warning(push)
+#pragma warning(disable:6011) // Dereferencing NULL pointer 'ptr'.
+#endif
 			TranslateVstFileSelectToBridge(fileSelect, *static_cast<const VstFileSelect *>(ptr), m_otherPtrSize);
+#if MPT_COMPILER_MSVC
+#pragma warning(pop)
+#endif
+#if MPT_COMPILER_MSVC
+#pragma warning(push)
+#pragma warning(disable:6387) // 'origPtr' could be '0':  this does not adhere to the specification for the function 'memcpy'.
+#endif
 			std::memcpy(origPtr, fileSelect.data(), std::min(fileSelect.size(), static_cast<size_t>(msg.ptr)));
+#if MPT_COMPILER_MSVC
+#pragma warning(pop)
+#endif
 			// Directly free memory on host side, we don't need it anymore
 			CVstPlugin::MasterCallBack(&m_sharedMem->effect, audioMasterCloseFileSelector, msg.index, static_cast<intptr_t>(msg.value), ptr, msg.opt);
 		}
@@ -941,6 +969,8 @@ intptr_t BridgeWrapper::DispatchToPlugin(VstOpcodeToPlugin opcode, int32 index, 
 
 	const DispatchMsg &resultMsg = msg.dispatch;
 
+	// cppcheck false-positive
+	// cppcheck-suppress nullPointer
 	const void *extraData = useAuxMem ? auxMem->memory.Data<const char>() : reinterpret_cast<const char *>(&resultMsg + 1);
 	// Post-fix some opcodes
 	switch(opcode)
@@ -1277,7 +1307,7 @@ LRESULT CALLBACK BridgeWrapper::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-#endif  // NO_VST
+#endif  // MPT_WITH_VST
 
 
 OPENMPT_NAMESPACE_END

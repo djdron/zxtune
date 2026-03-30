@@ -12,8 +12,6 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#ifndef NO_PLUGINS
-
 #include "Mptrack.h"
 #include "AbstractVstEditor.h"
 
@@ -25,7 +23,7 @@ enum
 	NUM_PLUGINEDITOR_PARAMETERS = 8,	// Parameters on screen
 };
 
-struct Measurements;
+struct PluginEditorMeasurements;
 
 class ParamControlSet
 {
@@ -37,7 +35,7 @@ protected:
 	CStatic perMilLabel;
 
 public:
-	ParamControlSet(CWnd *parent, const CRect &rect, int setID, const Measurements &m);
+	ParamControlSet(CWnd *parent, const CRect &rect, int setID, const PluginEditorMeasurements &m);
 	~ParamControlSet();
 
 	void EnableControls(bool enable = true);
@@ -67,19 +65,19 @@ protected:
 public:
 
 	CDefaultVstEditor(IMixPlugin &plugin);
-	virtual ~CDefaultVstEditor();
+	~CDefaultVstEditor() override;
 
-	virtual void UpdateParamDisplays() { CAbstractVstEditor::UpdateParamDisplays(); UpdateControls(false); };
+	void UpdateParamDisplays() override { CAbstractVstEditor::UpdateParamDisplays(); UpdateControls(false); };
 
-	virtual bool OpenEditor(CWnd *parent);
+	bool OpenEditor(CWnd *parent) override;
 
 	// Plugins may not request to change the GUI size, since we use our own GUI.
-	virtual bool IsResizable() const { return false; };
-	virtual bool SetSize(int, int) { return false; };
+	bool IsResizable() const override { return false; };
+	bool SetSize(int, int) override { return false; };
 
 protected:
 
-	virtual void DoDataExchange(CDataExchange* pDX);
+	void DoDataExchange(CDataExchange *pDX) override;
 	
 	DECLARE_MESSAGE_MAP()
 
@@ -100,5 +98,3 @@ protected:
 };
 
 OPENMPT_NAMESPACE_END
-
-#endif // NO_PLUGINS

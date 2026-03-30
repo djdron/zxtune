@@ -24,6 +24,8 @@
 
 #include "mpg123lib_intern.h"
 
+#if defined(OPT_I486)  /* OpenMPT */
+
 #define FIR16_1(pos,c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15) \
 {\
   int sum;\
@@ -105,7 +107,7 @@
   b0+=FIR_BUFFER_SIZE;\
 }
 
-int absynth_1to1_i486(real *bandPtr, int channel, mpg123_handle *fr, int nb_blocks)
+int INT123_absynth_1to1_i486(real *bandPtr, int channel, mpg123_handle *fr, int nb_blocks)
 {
   short *samples = (short *) (fr->buffer.data+fr->buffer.fill);
   int *b0,**buf;
@@ -142,9 +144,9 @@ int absynth_1to1_i486(real *bandPtr, int channel, mpg123_handle *fr, int nb_bloc
     }
     
     if(b & 1) {
-      dct64_i486(buf[1]+b,buf[0]+b,bandPtr);
+      INT123_dct64_i486(buf[1]+b,buf[0]+b,bandPtr);
     } else {
-      dct64_i486(buf[0]+b,buf[1]+b,bandPtr);
+      INT123_dct64_i486(buf[0]+b,buf[1]+b,bandPtr);
     }
     bandPtr+=32;
   }
@@ -250,3 +252,4 @@ int absynth_1to1_i486(real *bandPtr, int channel, mpg123_handle *fr, int nb_bloc
   return clip;
 }
 
+#endif  /* OpenMPT */

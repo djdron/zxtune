@@ -6,12 +6,16 @@ return {
 	"dotnet2005/test_nuget_framework_folders.lua",
 
 	-- Visual Studio 2005+ C# projects
+	"cs2005/test_additional_props.lua",
 	"cs2005/test_assembly_refs.lua",
 	"cs2005/test_build_events.lua",
 	"cs2005/test_common_props.lua",
 	"cs2005/test_compiler_props.lua",
 	"cs2005/test_no_warn.lua",
 	"cs2005/test_debug_props.lua",
+	"cs2005/test_debug_props_2019.lua",
+	"cs2005/test_documentation_file.lua",
+	"cs2005/test_dotnetsdk.lua",
 	"cs2005/test_files.lua",
 	"cs2005/test_icon.lua",
 	"cs2005/test_netcore.lua",
@@ -42,6 +46,7 @@ return {
 	"vc200x/test_debug_settings.lua",
 	"vc200x/test_excluded_configs.lua",
 	"vc200x/test_files.lua",
+	"vc200x/test_incrementallink.lua",
 	"vc200x/test_linker_block.lua",
 	"vc200x/test_manifest_block.lua",
 	"vc200x/test_nmake_settings.lua",
@@ -72,6 +77,7 @@ return {
 	"vc2010/test_files.lua",
 	"vc2010/test_filter_ids.lua",
 	"vc2010/test_filters.lua",
+	"vc2010/test_incrementallink.lua",
 	"vc2010/test_item_def_group.lua",
 	"vc2010/test_link.lua",
 	"vc2010/test_manifest.lua",
@@ -96,4 +102,30 @@ return {
 
 	-- Visual Studio 2013+ C/C++ Shared Items projects
 	"vc2013/test_vcxitems.lua",
+
+	-- Visual Studio 2019+ C/C++ Projects
+	"vc2019/test_compile_settings.lua",
+	"vc2019/test_link.lua",
+	"vc2019/test_output_props.lua",
+	"vc2019/test_toolset_settings.lua",
+
+	-- Visual Studio 2022+ C/C++ Projects
+	"vc2022/test_compile_settings.lua",
+	"vc2022/test_link.lua",
+	"vc2022/test_output_props.lua",
+	"vc2022/test_toolset_settings.lua",
+	
+	-- Android projects
+	"android/test_android_build_settings.lua",
+	"android/test_android_files.lua",
+	"android/test_android_project.lua",
+	"android/test_android_toolset.lua",
+
+	-- Linux projects
+	"linux/test_linux_files.lua",
+	"linux/test_linux_toolchains.lua",
+
+	-- Visual Studio 2026+ Solutions
+	"sln2026/test_configurations.lua",
+	"sln2026/test_projects.lua",
 }

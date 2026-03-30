@@ -4,6 +4,7 @@
 
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "openmpt/all/PlatformFixes.hpp"
 
 #include "SoundDeviceBase.hpp"
 
@@ -306,9 +307,6 @@ void Base::CallbackLockedAudioProcessVoid(void *buffer, const void *inputBuffer,
 			break;
 		case SampleFormat::Float64:
 			CallbackLockedAudioProcess(static_cast<double *>(buffer), static_cast<const double *>(inputBuffer), numFrames);
-			break;
-		case SampleFormat::Invalid:
-			// nothing
 			break;
 	}
 }

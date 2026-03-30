@@ -14,7 +14,7 @@
 
 #include <vector>
 
-#if (_WIN32_WINNT < _WIN32_WINNT_VISTA)
+#if MPT_WIN_BEFORE(MPT_WIN_VISTA)
 #include <intrin.h>
 #endif
 
@@ -23,14 +23,14 @@ OPENMPT_NAMESPACE_BEGIN
 
 // Insert some object at the end of a char vector.
 template <typename T>
-static void PushToVector(std::vector<char> &data, const T &obj, size_t writeSize = sizeof(T))
+inline void PushToVector(std::vector<char> &data, const T &obj, size_t writeSize = sizeof(T))
 {
 	static_assert(!std::is_pointer<T>::value, "Won't push pointers to data vectors.");
 	const char *objC = reinterpret_cast<const char *>(&obj);
 	data.insert(data.end(), objC, objC + writeSize);
 }
 
-static void PushZStringToVector(std::vector<char> &data, const char *str)
+inline void PushZStringToVector(std::vector<char> &data, const char *str)
 {
 	if(str != nullptr)
 		data.insert(data.end(), str, str + strlen(str));
@@ -108,9 +108,10 @@ public:
 	// Create signal from name (for inter-process communication)
 	bool Create(const wchar_t *name, const wchar_t *addendum)
 	{
-		wchar_t fullName[64];
+		wchar_t fullName[64 + 1];
 		wcscpy(fullName, name);
 		wcscat(fullName, addendum);
+		fullName[std::size(fullName) - 1] = L'\0';
 		size_t nameLen = wcslen(fullName);
 		wcscpy(fullName + nameLen, L"-s");
 
@@ -160,7 +161,15 @@ public:
 		Close();
 
 		mapFile = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, size + sizeof(Header), name);
+		if(!mapFile)
+		{
+			return false;
+		}
 		view = static_cast<Header *>(MapViewOfFile(mapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+		if(!view)
+		{
+			return false;
+		}
 		view->size = size;
 		return Good();
 	}
@@ -171,7 +180,15 @@ public:
 		Close();
 
 		mapFile = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, name);
+		if(!mapFile)
+		{
+			return false;
+		}
 		view = static_cast<Header *>(MapViewOfFile(mapFile, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+		if(!view)
+		{
+			return false;
+		}
 		return Good();
 	}
 
@@ -235,7 +252,7 @@ public:
 	{
 		static_assert(sizeof(m_value) >= sizeof(T));
 		MPT_ASSERT((intptr_t(&m_value) & 3) == 0);
-#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		InterlockedExchange(&m_value, static_cast<LONG>(value));
 #else
 		_InterlockedExchange(&m_value, static_cast<LONG>(value));
@@ -244,7 +261,7 @@ public:
 	}
 	operator T() const
 	{
-#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		return static_cast<T>(InterlockedAdd(&m_value, 0));
 #else
 		return static_cast<T>(_InterlockedExchangeAdd(&m_value, 0));
@@ -253,7 +270,7 @@ public:
 
 	T exchange(T desired)
 	{
-#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		return static_cast<T>(InterlockedExchange(&m_value, static_cast<LONG>(desired)));
 #else
 		return static_cast<T>(_InterlockedExchange(&m_value, static_cast<LONG>(desired)));
@@ -262,7 +279,7 @@ public:
 
 	T fetch_add(T arg)
 	{
-#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		return static_cast<T>(InterlockedExchangeAdd(&m_value, static_cast<LONG>(arg)));
 #else
 		return static_cast<T>(_InterlockedExchangeAdd(&m_value, static_cast<LONG>(arg)));
@@ -271,7 +288,7 @@ public:
 
 	bool compare_exchange_strong(T &expected, T desired)
 	{
-#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		return InterlockedCompareExchange(&m_value, static_cast<LONG>(desired), static_cast<LONG>(expected)) == static_cast<LONG>(expected);
 #else
 		return _InterlockedCompareExchange(&m_value, static_cast<LONG>(desired), static_cast<LONG>(expected)) == static_cast<LONG>(expected);

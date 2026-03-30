@@ -46,7 +46,7 @@ int http_download(lua_State* L)
 
 	if (curl)
 	{
-		curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+		curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_file_cb);
 
@@ -68,7 +68,7 @@ int http_download(lua_State* L)
 		lua_pushstring(L, "OK");
 	}
 
-	buffer_destroy(&state.S);
+	premake_buffer_destroy(&state.S);
 	lua_pushnumber(L, (lua_Number)responseCode);
 	return 2;
 }

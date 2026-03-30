@@ -12,7 +12,7 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#include "../mptrack/plugins/VstDefinitions.h"
+#include <VstDefinitions.h>
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -35,6 +35,8 @@ enum VendorSpecificOpCodes : int32
 	kBeginGetProgram,
 	// Stop using parameter value cache
 	kEndGetProgram,
+	// Call the VSTPluginMain entry point again (for shell plugins)
+	kCallVSTPluginMain,
 
 	// Constant for identifying our vendor-specific opcodes
 	kVendorOpenMPT = Vst::FourCC("OMPT"),

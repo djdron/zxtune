@@ -10,20 +10,25 @@
 
 #include "stdafx.h"
 #include "WelcomeDialog.h"
-#include "resource.h"
-#include "Mainfrm.h"
-#include "../common/mptStringBuffer.h"
-#include "InputHandler.h"
 #include "CommandSet.h"
+#include "InputHandler.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
+#include "resource.h"
 #include "SelectPluginDialog.h"
+#include "TrackerSettings.h"
 #include "UpdateCheck.h"
+#include "WindowMessages.h"
+#include "../common/mptStringBuffer.h"
+#include "mpt/fs/fs.hpp"
+#include "mpt/string/utility.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
-BEGIN_MESSAGE_MAP(WelcomeDlg, CDialog)
-	ON_COMMAND(IDC_BUTTON1,	&WelcomeDlg::OnOptions)
-	ON_COMMAND(IDC_BUTTON2,	&WelcomeDlg::OnScanPlugins)
+BEGIN_MESSAGE_MAP(WelcomeDlg, DialogBase)
+	ON_COMMAND(IDC_BUTTON1, &WelcomeDlg::OnOptions)
+	ON_COMMAND(IDC_BUTTON2, &WelcomeDlg::OnScanPlugins)
 END_MESSAGE_MAP()
 
 
@@ -42,25 +47,26 @@ static mpt::PathString GetFullKeyPath(const char *keyFile)
 
 BOOL WelcomeDlg::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+	DialogBase::OnInitDialog();
 
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
 	HKEY hkEnum = NULL;
 	TCHAR str[MAX_PATH];
 	DWORD datasize = sizeof(str);
 	DWORD datatype = REG_SZ;
 	if(RegOpenKey(HKEY_LOCAL_MACHINE, _T("Software\\VST"), &hkEnum) == ERROR_SUCCESS
-		&& RegQueryValueEx(hkEnum, _T("VSTPluginsPath"), 0, &datatype, (LPBYTE)str, &datasize) == ERROR_SUCCESS)
+		&& RegQueryValueEx(hkEnum, _T("VSTPluginsPath"), 0, &datatype, mpt::void_cast<LPBYTE>(static_cast<void*>(str)), &datasize) == ERROR_SUCCESS)
 	{
 		m_vstPath = mpt::PathString::FromNative(ParseMaybeNullTerminatedStringFromBufferWithSizeInBytes<mpt::winstring>(str, datasize));
 	} else if(SHGetSpecialFolderPath(0, str, CSIDL_PROGRAM_FILES, FALSE))
 	{
 		m_vstPath = mpt::PathString::FromNative(ParseMaybeNullTerminatedStringFromBufferWithSizeInBytes<mpt::winstring>(str, datasize)) + P_("\\Steinberg\\VstPlugins\\");
-		if(!m_vstPath.IsDirectory())
+		if(!mpt::native_fs{}.is_directory(m_vstPath))
 		{
 			m_vstPath = mpt::PathString();
 		}
 	}
+	SetDlgItemText(IDC_EDIT2, mpt::ToCString(TrackerSettings::Instance().defaultArtist.Get()));
 	if(!m_vstPath.empty())
 	{
 		SetDlgItemText(IDC_EDIT1, m_vstPath.AsNative().c_str());
@@ -69,7 +75,7 @@ BOOL WelcomeDlg::OnInitDialog()
 			TrackerSettings::Instance().PathPlugins.SetDefaultDir(m_vstPath);
 		}
 	} else
-#endif
+#endif // MPT_WITH_VST
 	{
 		SetDlgItemText(IDC_EDIT1, _T("No plugin path found!"));
 		GetDlgItem(IDC_BUTTON2)->EnableWindow(FALSE);
@@ -106,7 +112,7 @@ BOOL WelcomeDlg::OnInitDialog()
 	}
 	if(keyFile != nullptr)
 	{
-		if(GetFullKeyPath(keyFile).IsFile())
+		if(mpt::native_fs{}.is_file(GetFullKeyPath(keyFile)))
 		{
 			int i = combo->AddString(_T("OpenMPT / Chromatic (") + CString(keyFileName) + _T(")"));
 			combo->SetItemDataPtr(i, (void *)keyFile);
@@ -115,7 +121,7 @@ BOOL WelcomeDlg::OnInitDialog()
 			// As this is presented as the default, load it right now, even if the user closes the dialog through the close button
 			auto cmdSet = std::make_unique<CCommandSet>();
 			cmdSet->LoadFile(GetFullKeyPath(keyFile));
-			CMainFrame::GetInputHandler()->SetNewCommandSet(cmdSet.get());
+			CMainFrame::GetInputHandler()->SetNewCommandSet(*cmdSet);
 		}
 	}
 	combo->SetItemDataPtr(combo->AddString(_T("Impulse Tracker")), (void*)("US_mpt-it2_classic"));
@@ -124,7 +130,7 @@ BOOL WelcomeDlg::OnInitDialog()
 	CheckDlgButton(IDC_CHECK1, BST_CHECKED);
 	CheckDlgButton(IDC_CHECK3, BST_CHECKED);
 #if defined(MPT_ENABLE_UPDATE)
-	GetDlgItem(IDC_STATIC_WELCOME_STATISTICS)->SetWindowText(mpt::ToCString(mpt::String::Replace(CUpdateCheck::GetStatisticsUserInformation(false), U_("\n"), U_(" "))));
+	GetDlgItem(IDC_STATIC_WELCOME_STATISTICS)->SetWindowText(mpt::ToCString(mpt::replace(CUpdateCheck::GetStatisticsUserInformation(false), U_("\n"), U_(" "))));
 #endif // MPT_ENABLE_UPDATE
 	CheckDlgButton(IDC_CHECK2, (TrackerSettings::Instance().patternFont.Get().name == PATTERNFONT_LARGE) ? BST_CHECKED : BST_UNCHECKED);
 
@@ -143,15 +149,15 @@ void WelcomeDlg::OnOptions()
 
 void WelcomeDlg::OnScanPlugins()
 {
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
 	CSelectPluginDlg::ScanPlugins(m_vstPath, this);
-#endif
+#endif // MPT_WITH_VST
 }
 
 
 void WelcomeDlg::OnOK()
 {
-	CDialog::OnOK();
+	DialogBase::OnOK();
 
 #if defined(MPT_ENABLE_UPDATE)
 	bool runUpdates = IsDlgButtonChecked(IDC_CHECK1) != BST_UNCHECKED;
@@ -159,6 +165,11 @@ void WelcomeDlg::OnOK()
 	TrackerSettings::Instance().UpdateStatistics = (IsDlgButtonChecked(IDC_CHECK3) != BST_UNCHECKED);
 	TrackerSettings::Instance().UpdateShowUpdateHint = false;
 	TrackerSettings::Instance().UpdateStatisticsConsentAsked = true;
+
+	CString artistName;
+	GetDlgItemText(IDC_EDIT2, artistName);
+	TrackerSettings::Instance().defaultArtist = mpt::ToUnicode(artistName);
+
 #endif // MPT_ENABLE_UPDATE
 	if(IsDlgButtonChecked(IDC_CHECK2) != BST_UNCHECKED)
 	{
@@ -174,7 +185,7 @@ void WelcomeDlg::OnOK()
 		cmdSet->LoadFile(GetFullKeyPath(keyFile));
 	else
 		cmdSet->LoadDefaultKeymap();
-	CMainFrame::GetInputHandler()->SetNewCommandSet(cmdSet.get());
+	CMainFrame::GetInputHandler()->SetNewCommandSet(*cmdSet);
 
 #if defined(MPT_ENABLE_UPDATE)
 	if(runUpdates)
@@ -182,6 +193,9 @@ void WelcomeDlg::OnOK()
 		CUpdateCheck::DoAutoUpdateCheck();
 	}
 #endif // MPT_ENABLE_UPDATE
+
+	theApp.GetSettings().Flush();
+
 	CMainFrame::GetMainFrame()->PostMessage(WM_MOD_INVALIDATEPATTERNS, HINT_MPTOPTIONS);
 
 	DestroyWindow();
@@ -189,7 +203,7 @@ void WelcomeDlg::OnOK()
 
 void WelcomeDlg::OnCancel()
 {
-	CDialog::OnCancel();
+	DialogBase::OnCancel();
 	DestroyWindow();
 }
 

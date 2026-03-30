@@ -11,7 +11,7 @@ source_files += $(addprefix src/,\
 
 source_files += $(addprefix src/loaders/,\
  common iff sample mmd_common \
- dtt_load emod_load fnk_load gtk_load ims_load liq_load med2_load med3_load med4_load no_load rtm_load stim_load stx_load tcb_load\
+ dtt_load emod_load fnk_load liq_load med2_load med3_load med4_load no_load stim_load stx_load\
  )
 
 source_files := $(addsuffix .c,$(source_files))

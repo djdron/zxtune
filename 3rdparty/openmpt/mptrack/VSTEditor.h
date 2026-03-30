@@ -16,7 +16,9 @@
 
 OPENMPT_NAMESPACE_BEGIN
 
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
+
+class CVstPlugin;
 
 class COwnerVstEditor : public CAbstractVstEditor
 {
@@ -25,8 +27,8 @@ protected:
 	int m_width = 0, m_height = 0;
 
 public:
-	COwnerVstEditor(CVstPlugin &plugin) : CAbstractVstEditor(plugin) { }
-	~COwnerVstEditor() override { }
+	COwnerVstEditor(CVstPlugin &plugin);
+	~COwnerVstEditor() override = default;
 
 	// Plugins may request to change the GUI size.
 	bool IsResizable() const override { return true; }
@@ -48,12 +50,12 @@ protected:
 	LRESULT HandlePreTranslateMessage(UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		MSG msg = {m_plugWindow, message, wParam, lParam, 0, {}};
-		return HandleKeyMessage(msg);
+		return HandleKeyMessage(msg, true);
 	}
 
 	DECLARE_MESSAGE_MAP()
 };
 
-#endif // NO_VST
+#endif // MPT_WITH_VST
 
 OPENMPT_NAMESPACE_END

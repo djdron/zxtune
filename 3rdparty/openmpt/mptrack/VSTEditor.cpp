@@ -9,15 +9,15 @@
 
 
 #include "stdafx.h"
+#include "VSTEditor.h"
 #include "resource.h"
 #include "Vstplug.h"
-#include "VSTEditor.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
 
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
 
 BEGIN_MESSAGE_MAP(COwnerVstEditor, CAbstractVstEditor)
 	ON_WM_ERASEBKGND()
@@ -29,6 +29,9 @@ BEGIN_MESSAGE_MAP(COwnerVstEditor, CAbstractVstEditor)
 	ON_MESSAGE(WM_USER + 4000 + WM_SYSKEYDOWN - WM_KEYFIRST, &COwnerVstEditor::OnPreTranslateSysKeyDown)
 	ON_MESSAGE(WM_USER + 4000 + WM_SYSKEYUP - WM_KEYFIRST, &COwnerVstEditor::OnPreTranslateSysKeyUp)
 END_MESSAGE_MAP()
+
+
+COwnerVstEditor::COwnerVstEditor(CVstPlugin &plugin) : CAbstractVstEditor{plugin} {}
 
 
 void COwnerVstEditor::OnPaint()
@@ -140,7 +143,7 @@ bool COwnerVstEditor::SetSize(int contentWidth, int contentHeight)
 }
 
 
-#endif // NO_VST
+#endif // MPT_WITH_VST
 
 
 OPENMPT_NAMESPACE_END

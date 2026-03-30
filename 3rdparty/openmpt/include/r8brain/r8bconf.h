@@ -9,36 +9,12 @@
  * This is the "configuration" inclusion file for the "r8brain-free-src"
  * sample rate converter. You may redefine the macros here as you see fit.
  *
- * r8brain-free-src Copyright (c) 2013-2021 Aleksey Vaneev
+ * r8brain-free-src Copyright (c) 2013-2022 Aleksey Vaneev
  * See the "LICENSE" file for license.
  */
 
 #ifndef R8BCONF_INCLUDED
 #define R8BCONF_INCLUDED
-
-#if defined( _WIN32 ) || defined( _WIN64 )
-	#define R8B_WIN 1
-#elif defined( __APPLE__ )
-	#define R8B_MAC 1
-#else // defined( __APPLE__ )
-	#define R8B_LNX 1 // Assume Linux (Unix) platform by default.
-#endif // defined( __APPLE__ )
-
-#if !defined( R8B_IPP )
-	/**
-	 * Set the R8B_IPP macro definition to 1 to enable the use of Intel IPP's
-	 * fast Fourier transform functions. Also uncomment and correct the IPP
-	 * header inclusion macros.
-	 *
-	 * Do not forget to call the ippInit() function at the start of the
-	 * application, before using this library's functions.
-	 */
-
-	#define R8B_IPP 0
-
-//	#include <ippcore.h>
-//	#include <ipps.h>
-#endif // !defined( R8B_IPP )
 
 #if !defined( R8BASSERT )
 	/**
@@ -56,7 +32,7 @@
 	 * Console output macro, used to output various resampler status strings,
 	 * including filter design parameters, convolver parameters.
 	 *
-	 * @param e Expression to send to the console, usually consists of a
+	 * @param ... Expression to send to the console, usually consists of a
 	 * standard "printf" format string followed by several parameters
 	 * (__VA_ARGS__).
 	 */
@@ -112,7 +88,7 @@
 #if !defined( R8B_FLTTEST )
 	/**
 	 * This macro, when equal to 1, enables fractional delay filter bank
-	 * testing: in this mode the filter bank becomes dynamic member of the
+	 * testing: in this mode the filter bank becomes a dynamic member of the
 	 * CDSPFracInterpolator object instead of being a global static object.
 	 */
 
@@ -121,13 +97,13 @@
 
 #if !defined( R8B_FASTTIMING )
 	/**
-	 * This macro, when equal to 1, enables fast approach to interpolation
-	 * sample timing. This approach improves interpolation performance
-	 * (by around 15%) at the expense of a minor sample timing drift which is
+	 * This macro, when equal to 1, enables a fast interpolation sample
+	 * timing technique. This technique improves interpolation performance
+	 * (by around 10%) at the expense of a minor sample-timing drift which is
 	 * on the order of 1e-6 samples per 10 billion output samples. This
-	 * setting does not apply to whole-number stepping if it is in use as this
-	 * stepping provides zero timing error without performance impact. Also
-	 * does not apply to the cases when whole-numbered (2X, 3X, etc.)
+	 * setting does not apply to whole-number stepping, if it is in use, as
+	 * such stepping provides zero timing error without performance impact.
+	 * Also does not apply to the cases when a whole-numbered (2X, 3X, etc.)
 	 * resampling is in the actual use.
 	 */
 
@@ -137,7 +113,7 @@
 #if !defined( R8B_EXTFFT )
 	/**
 	 * This macro, when equal to 1, extends length of low-pass filters' FFT
-	 * block by a factor of 2 by zero-padding it. This usually improves the
+	 * block by a factor of 2, by zero-padding it. This usually improves the
 	 * overall time performance of the resampler at the expense of a higher
 	 * overall latency (initial processing delay). If such delay is not an
 	 * issue, setting this macro to 1 is preferrable. This macro can only have
@@ -147,18 +123,21 @@
 	#define R8B_EXTFFT 0
 #endif // !defined( R8B_EXTFFT )
 
-#if !defined( R8B_PFFFT )
+#if !defined( R8B_IPP )
 	/**
-	 * When defined as 1, enables PFFFT routines which are fast, but which
-	 * are limited to 24-bit precision.
+	 * Set the R8B_IPP macro definition to 1 to enable the use of Intel IPP's
+	 * fast Fourier transform functions. Also uncomment and correct the IPP
+	 * header inclusion macros.
+	 *
+	 * Do not forget to call the ippInit() function at the start of the
+	 * application, before using this library's functions.
 	 */
 
-	#define R8B_PFFFT 0
-#endif // !defined( R8B_PFFFT )
+	#define R8B_IPP 0
 
-#if R8B_PFFFT
-	#define R8B_FLOATFFT 1
-#endif // R8B_PFFFT
+//	#include <ippcore.h>
+//	#include <ipps.h>
+#endif // !defined( R8B_IPP )
 
 #if !defined( R8B_PFFFT_DOUBLE )
 	/**
@@ -169,10 +148,34 @@
 	#define R8B_PFFFT_DOUBLE 0
 #endif // !defined( R8B_PFFFT_DOUBLE )
 
+#if !defined( R8B_PFFFT )
+	/**
+	 * When defined as 1, enables PFFFT routines which are fast, but which
+	 * are limited to 24-bit precision. May be a good choice for time-series
+	 * interpolation, when stop-band attenuation higher than 120 dB is not
+	 * required.
+	 */
+
+	#define R8B_PFFFT 0
+#else // !defined( R8B_PFFFT )
+	/**
+	 * Handle the case when both R8B_PFFFT and R8B_PFFFT_DOUBLE were enabled
+	 * together by mistake.
+	 */
+
+	#if R8B_PFFFT && R8B_PFFFT_DOUBLE
+		#error r8brain-free-src: R8B_PFFFT and R8B_PFFFT_DOUBLE collision.
+	#endif // R8B_PFFFT && R8B_PFFFT_DOUBLE
+#endif // !defined( R8B_PFFFT )
+
+#if R8B_PFFFT
+	#define R8B_FLOATFFT 1
+#endif // R8B_PFFFT
+
 #if !defined( R8B_FLOATFFT )
 	/**
-	 * The R8B_FLOATFFT definition enables double-to-float buffer conversion
-	 * for FFT operations for algorithms that work with "float" values. This
+	 * The R8B_FLOATFFT definition enables double-to-float buffer conversions
+	 * for FFT operations, for algorithms that work with "float" values. This
 	 * macro should not be changed from the default "0" here.
 	 */
 

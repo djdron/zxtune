@@ -1,11 +1,16 @@
+667="gf"
+
 669="if"
 669="JN"
 
 amf="ASYLUM Music Format V1.0\x00"
 amf="AMF\x0A"
+amf="DMF\x0E"
 
 ams="Extreme"
-ams="AMShdr\x1A\x02\x02"
+ams="AMShdr\x1A\x00\x02\x02"
+
+cba="CBA\xF9"
 
 #dbm="DBM0"
 dbm="NAME"
@@ -34,6 +39,8 @@ dmf="SMPD"
 dsm="RIFF"
 dsm="DSMF"
 
+dsm="DSm\x1A "
+
 dsym="\x02\x01\x13\x13\x14\x12\x01\x0B\x01"
 
 dtm="D.T."
@@ -43,13 +50,40 @@ dtm="S.Q."
 dtm="DAPT"
 dtm="DAIT"
 
+etx="EASYTRAX 1.0\x01\x00z\x01\x20\x00\x00\x00\x20\x04\x00\x00"
+
 far="FAR\xFE"
 far="\x0D\x0A\x1A"
 
+fc="SMOD"
+fc="FC14"
+
 fmt="FMTracker\x01\x01"
 
+ftm="FTMN\x03\x03\x00\x08\x20\x20\x00\xFF\x3F\x03\x06\x10"
+
 gdm="GDM\xFE"
-gdm="GMFS"
+gdm="\x0D\x0A\x1AGMFS\x01\x00"
+
+gtk="GTK\x04"
+
+gt2="GT2\x05"
+gt2="XCOM"
+gt2="TCN1"
+gt2="TCN2"
+gt2="TVOL"
+gt2="MIXP"
+#gt2="SONG"
+gt2="PATS"
+gt2="PATD"
+gt2="TNAM"
+#gt2="INST"
+#gt2="VENV"
+gt2="TENV"
+#gt2="PENV"
+#gt2="SAMP"
+gt2="SAM2"
+gt2="ENDC"
 
 imf="IM10"
 imf="IS10"
@@ -101,6 +135,8 @@ j2b="ORDR"
 j2b="AI  "
 j2b="AS  "
 
+kris="KRIS"
+
 MDL="DMDL"
 # Most chunk IDs are commented out as they are substrings of other dictionary entries
 #mdl="IN"
@@ -121,9 +157,7 @@ mo3="MO3\x05"
 # A couple of magic bytes are commented out because they do not modify the loader's behaviour, apart from setting a "made with" string.
 mod="M.K."
 #mod="M!K!"
-mod="M&K!"
 mod="N.T."
-#mod="FEST"
 #mod="NSMS"
 #mod="LARD"
 mod="OKTA"
@@ -144,6 +178,10 @@ sfx="SO31"
 # External Startrekker instrument files.
 stam="ST1.3 ModuleINFO"
 stam="AudioSculpture10"
+
+hmn="M&K!"
+#hmn="FEST"
+hmn="Mupp"
 
 mptm="->MPT_ORIGINAL_IT<-"
 mptm=".tpm"
@@ -202,7 +240,7 @@ psm16="PSAH"
 psm16="PPAT"
 
 ptm="PTMF"
-ptm="\x1A\x03\x02"
+ptm="\x1A\x03\x02\x00"
 
 s3m="SCRM"
 #s3m="SCRS"
@@ -214,7 +252,13 @@ stp="STP3\x02"
 
 symmod="SymM\x00\x00\x00\x01\xFF\xFF\xFF\xFF\x00\x00\x00"
 
+tcb="AN COOL.\x01\x00\x00\x00\x0D\x00"
+#tcb="AN COOL!"
+
 ult="MAS_UTrack_V004"
+
+#unic="UNIC"
+#unic="\x00\x00\x00\x00"
 
 umx="\xC1\x83\x2A\x9E"
 umx="music"
@@ -323,3 +367,17 @@ iff="CHAN"
 iff="MHDR"
 iff="MDAT"
 iff="NAME"
+
+puma="patt"
+puma="inst"
+puma="insf"
+
+rtm="RTMM "
+
+# SoundSmith / MegaTracker
+ss="SONGOK"
+ss="IAN9OK"
+ss="IAN92a"
+ss="ASIF"
+#ss="INST"
+ss="WAVE"

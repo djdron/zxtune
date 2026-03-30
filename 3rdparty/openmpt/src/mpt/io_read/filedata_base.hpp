@@ -63,13 +63,15 @@ private:
 
 public:
 	FileDataWindow(std::shared_ptr<const IFileData> src, pos_type off, pos_type len)
-		: data(src), dataOffset(off), dataLength(len) { }
+		: data(src)
+		, dataOffset(off)
+		, dataLength(len) { }
 
 	bool IsValid() const override {
 		return data->IsValid();
 	}
 	bool HasFastGetLength() const override {
-		return data->HasFastGetLength();
+		return true;
 	}
 	bool HasPinnedView() const override {
 		return data->HasPinnedView();
@@ -84,9 +86,9 @@ public:
 		if (pos >= dataLength) {
 			return dst.first(0);
 		}
-		return data->Read(dataOffset + pos, dst.first(std::min(dst.size(), dataLength - pos)));
+		return data->Read(dataOffset + pos, dst.first(static_cast<std::size_t>(std::min(static_cast<pos_type>(dst.size()), dataLength - pos))));
 	}
-	bool CanRead(pos_type pos, std::size_t length) const override {
+	bool CanRead(pos_type pos, pos_type length) const override {
 		if ((pos == dataLength) && (length == 0)) {
 			return true;
 		}
@@ -95,7 +97,7 @@ public:
 		}
 		return (length <= dataLength - pos);
 	}
-	pos_type GetReadableLength(pos_type pos, std::size_t length) const override {
+	pos_type GetReadableLength(pos_type pos, pos_type length) const override {
 		if (pos >= dataLength) {
 			return 0;
 		}

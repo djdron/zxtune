@@ -14,6 +14,7 @@
 #include "openmpt/all/BuildSettings.hpp"
 #include "ResizableDialog.h"
 #include "../common/ComponentManager.h"
+#include "../soundlib/Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -41,7 +42,7 @@ protected:
 	CButton m_chkShare;
 	CButton m_chkLegacyBridge;
 	mpt::ustring m_nameFilter;
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
 	ComponentHandle<ComponentPluginBridge_x86> pluginBridge_x86;
 	ComponentHandle<ComponentPluginBridgeLegacy_x86> pluginBridgeLegacy_x86;
 	ComponentHandle<ComponentPluginBridge_amd64> pluginBridge_amd64;
@@ -52,7 +53,7 @@ protected:
 	ComponentHandle<ComponentPluginBridge_arm64> pluginBridge_arm64;
 	ComponentHandle<ComponentPluginBridgeLegacy_arm64> pluginBridgeLegacy_arm64;
 #endif  // MPT_WITH_WINDOWS10
-#endif
+#endif  // !MPT_WITH_VST
 	PLUGINDEX m_nPlugSlot = 0;
 
 public:
@@ -68,12 +69,13 @@ protected:
 	VSTPluginLib *GetSelectedPlugin();
 	void SaveWindowPos() const;
 
-	void ReloadMissingPlugins(const VSTPluginLib *lib) const;
+	void ReloadMissingPlugins(const VSTPluginLib &lib) const;
 
 	void UpdatePluginsList(const VSTPluginLib *forceSelect = nullptr);
 
 	void DoDataExchange(CDataExchange *pDX) override;
 	BOOL OnInitDialog() override;
+	void OnDPIChanged() override;
 	void OnOK() override;
 	void OnCancel() override;
 	BOOL PreTranslateMessage(MSG *pMsg) override;

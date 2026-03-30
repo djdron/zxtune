@@ -9,27 +9,29 @@
 
 
 
-#if (__cplusplus > 202000L)
+#if (ASIO_CXX_VERSION >= 202002L)
 #include <bit>
 namespace ASIO {
+inline namespace ASIO_VERSION_NAMESPACE {
 namespace stdcxx20 {
 using std::bit_cast;
 using std::endian;
 } // namespace stdcxx20
+} // namespace ASIO_VERSION_NAMESPACE
 } // namespace ASIO
 #else // !C++20
 #include <type_traits>
 #include <cstring>
 namespace ASIO {
+inline namespace ASIO_VERSION_NAMESPACE {
 namespace stdcxx20 {
 template <class To, class From>
-typename std::enable_if<(sizeof(To) == sizeof(From)) && std::is_trivially_copyable<From>::value && std::is_trivial<To>::value, To>::type inline bit_cast(const From & src) noexcept {
+typename inline std::enable_if<(sizeof(To) == sizeof(From)) && std::is_trivially_copyable<From>::value && std::is_trivially_copyable<To>::value, To>::type bit_cast(const From & src) noexcept {
 	To dst;
 	std::memcpy(&dst, &src, sizeof(To));
 	return dst;
 }
-enum class endian
-{
+enum class endian {
 #if ASIO_SYSTEM_WINDOWS
 	little = 0,
 	big    = 1,
@@ -41,6 +43,7 @@ enum class endian
 #endif
 };
 } // namespace stdcxx20
+} // namespace ASIO_VERSION_NAMESPACE
 } // namespace ASIO
 #endif // C++20
 

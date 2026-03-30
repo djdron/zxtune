@@ -28,7 +28,7 @@
 
 #pragma comment(lib, "ksuser.lib")
 
-#if defined(_MSC_VER) && !defined(__clang__)
+#if defined(_MSC_VER)
 #pragma comment( linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df'\"" )
 #endif
 
@@ -37,7 +37,7 @@
 OPENMPT_NAMESPACE_BEGIN
 
 #if defined(MPT_ASSERT_HANDLER_NEEDED) && defined(MPT_BUILD_WINESUPPORT)
-MPT_NOINLINE void AssertHandler(const mpt::source_location &loc, const char *expr, const char *msg)
+MPT_ATTR_NOINLINE MPT_DECL_NOINLINE void AssertHandler(const mpt::source_location &loc, const char *expr, const char *msg)
 {
 	if(msg)
 	{

@@ -5,15 +5,28 @@
 
 
 
+#include "mpt/base/detect.hpp"
 #include "mpt/base/namespace.hpp"
 
+#if MPT_CXX_BEFORE(26)
+#include <algorithm>
 #include <limits>
+#endif
+#if MPT_CXX_AT_LEAST(26)
+#include <numeric>
+#endif
 
 
 
 namespace mpt {
 inline namespace MPT_INLINE_NS {
 
+
+#if MPT_CXX_AT_LEAST(26)
+
+using std::saturate_cast;
+
+#else
 
 // Saturate the value of src to the domain of Tdst
 template <typename Tdst, typename Tsrc>
@@ -50,27 +63,7 @@ constexpr Tdst saturate_cast(Tsrc src) noexcept {
 	}
 }
 
-template <typename Tdst>
-constexpr Tdst saturate_cast(double src) {
-	if (src >= static_cast<double>(std::numeric_limits<Tdst>::max())) {
-		return std::numeric_limits<Tdst>::max();
-	}
-	if (src <= static_cast<double>(std::numeric_limits<Tdst>::min())) {
-		return std::numeric_limits<Tdst>::min();
-	}
-	return static_cast<Tdst>(src);
-}
-
-template <typename Tdst>
-constexpr Tdst saturate_cast(float src) {
-	if (src >= static_cast<float>(std::numeric_limits<Tdst>::max())) {
-		return std::numeric_limits<Tdst>::max();
-	}
-	if (src <= static_cast<float>(std::numeric_limits<Tdst>::min())) {
-		return std::numeric_limits<Tdst>::min();
-	}
-	return static_cast<Tdst>(src);
-}
+#endif
 
 
 } // namespace MPT_INLINE_NS

@@ -10,11 +10,9 @@
 
 #include "stdafx.h"
 
-#if MPT_COMPILER_MSVC
-#pragma warning(disable:4800) // 'T' : forcing value to bool 'true' or 'false' (performance warning)
-#endif // MPT_COMPILER_MSVC
-
 #include "WineSoundDeviceStub.h"
+
+#include "mpt/out_of_memory/out_of_memory.hpp"
 
 #include "openmpt/sounddevice/SoundDevice.hpp"
 
@@ -99,7 +97,10 @@ void SoundDeviceStub::SetMessageReceiver(SoundDevice::IMessageReceiver *receiver
 	OpenMPT_Wine_Wrapper_SoundDevice_IMessageReceiver messageReceiver = {};
 	messageReceiver.inst = receiver;
 	messageReceiver.SoundDeviceMessageFunc = &SoundDevice_MessageReceiver_SoundDeviceMessage;
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_SetMessageReceiver(impl, &messageReceiver);
+	if(w->OpenMPT_Wine_Wrapper_SoundDevice_SetMessageReceiver(impl, &messageReceiver) == 0)
+	{
+		mpt::throw_out_of_memory();
+	}
 }
 
 static void __cdecl SoundCallbackGetReferenceClockNowNanosecondsFunc( void * inst, uint64_t * result ) {
@@ -262,7 +263,10 @@ void SoundDeviceStub::SetCallback(SoundDevice::ICallback *icallback) {
 	callback.SoundCallbackLockedProcessDoubleFunc = &SoundCallbackLockedProcessDoubleFunc;
 	callback.SoundCallbackLockedProcessDoneFunc = &SoundCallbackLockedProcessDoneFunc;
 	callback.SoundCallbackUnlockFunc = &SoundCallbackUnlockFunc;
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_SetCallback(impl, &callback);
+	if(w->OpenMPT_Wine_Wrapper_SoundDevice_SetCallback(impl, &callback) == 0)
+	{
+		mpt::throw_out_of_memory();
+	}
 }
 
 SoundDevice::Info SoundDeviceStub::GetDeviceInfo() const {
@@ -280,19 +284,19 @@ SoundDevice::DynamicCaps SoundDeviceStub::GetDeviceDynamicCaps(const std::vector
 }
 
 bool SoundDeviceStub::Init(const SoundDevice::AppInfo &appInfo) {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_Init(impl, json_cast<std::string>(appInfo).c_str());
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_Init(impl, json_cast<std::string>(appInfo).c_str()) != 0;
 }
 
 bool SoundDeviceStub::Open(const SoundDevice::Settings &settings) {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_Open(impl, json_cast<std::string>(settings).c_str());
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_Open(impl, json_cast<std::string>(settings).c_str()) != 0;
 }
 
 bool SoundDeviceStub::Close() {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_Close(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_Close(impl) != 0;
 }
 
 bool SoundDeviceStub::Start() {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_Start(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_Start(impl) != 0;
 }
 
 void SoundDeviceStub::Stop() {
@@ -306,23 +310,23 @@ FlagSet<RequestFlags> SoundDeviceStub::GetRequestFlags() const {
 }
 
 bool SoundDeviceStub::IsInited() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsInited(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsInited(impl) != 0;
 }
 
 bool SoundDeviceStub::IsOpen() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsOpen(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsOpen(impl) != 0;
 }
 
 bool SoundDeviceStub::IsAvailable() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsAvailable(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsAvailable(impl) != 0;
 }
 
 bool SoundDeviceStub::IsPlaying() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsPlaying(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsPlaying(impl) != 0;
 }
 
 bool SoundDeviceStub::IsPlayingSilence() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsPlayingSilence(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_IsPlayingSilence(impl) != 0;
 }
 
 void SoundDeviceStub::StopAndAvoidPlayingSilence() {
@@ -334,7 +338,7 @@ void SoundDeviceStub::EndPlayingSilence() {
 }
 
 bool SoundDeviceStub::OnIdle() {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_OnIdle(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_OnIdle(impl) != 0;
 }
 
 SoundDevice::Settings SoundDeviceStub::GetSettings() const {
@@ -366,11 +370,11 @@ SoundDevice::StreamPosition SoundDeviceStub::GetStreamPosition() const {
 }
 
 bool SoundDeviceStub::DebugIsFragileDevice() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_DebugIsFragileDevice(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_DebugIsFragileDevice(impl) != 0;
 }
 
 bool SoundDeviceStub::DebugInRealtimeCallback() const {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_DebugInRealtimeCallback(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_DebugInRealtimeCallback(impl) != 0;
 }
 
 SoundDevice::Statistics SoundDeviceStub::GetStatistics() const {
@@ -378,7 +382,7 @@ SoundDevice::Statistics SoundDeviceStub::GetStatistics() const {
 }
 
 bool SoundDeviceStub::OpenDriverSettings() {
-	return w->OpenMPT_Wine_Wrapper_SoundDevice_OpenDriverSettings(impl);
+	return w->OpenMPT_Wine_Wrapper_SoundDevice_OpenDriverSettings(impl) != 0;
 }
 
 

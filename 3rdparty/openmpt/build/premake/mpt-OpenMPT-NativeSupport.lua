@@ -1,0 +1,68 @@
+
+if MPT_MSVC_AT_LEAST(2019) then
+include_dependency "ext-asiomodern.lua"
+end
+include_dependency "ext-nlohmann-json.lua"
+include_dependency "ext-portaudio.lua"
+include_dependency "ext-rtaudio.lua"
+
+ project "OpenMPT-NativeSupport"
+  uuid "563a631d-fe07-47bc-a98f-9fe5b3ebabfa"
+  language "C++"
+  vpaths { ["*"] = "../../" }
+  mpt_kind "shared"
+	
+	if MPT_MSVC_AT_LEAST(2019) then
+		-- disabled for VS2017 because of multiple initialization of inline variables
+		-- https://developercommunity.visualstudio.com/t/static-inline-variable-gets-destroyed-multiple-tim/297876
+		mpt_use_asiomodern()
+		defines { "MPT_WITH_ASIO" }
+	end
+	mpt_use_nlohmannjson()
+	defines { "MPT_WITH_NLOHMANNJSON" }
+	mpt_use_portaudio()
+	defines { "MPT_WITH_PORTAUDIO" }
+	mpt_use_rtaudio()
+	defines { "MPT_WITH_RTAUDIO" }
+	
+  includedirs {
+   "../../src",
+   "../../common",
+   "$(IntDir)/svn_version",
+  }
+  files {
+   "../../src/mpt/**.cpp",
+   "../../src/mpt/**.hpp",
+   "../../src/openmpt/**.cpp",
+   "../../src/openmpt/**.hpp",
+   "../../common/*.cpp",
+   "../../common/*.h",
+   "../../misc/*.cpp",
+   "../../misc/*.h",
+   "../../mptrack/wine/*.cpp",
+   "../../mptrack/wine/*.h",
+  }
+  excludes {
+   "../../mptrack/wine/WineWrapper.cpp",
+		"../../src/mpt/filemode/**.cpp",
+		"../../src/mpt/filemode/**.hpp",
+		"../../src/mpt/main/**.cpp",
+		"../../src/mpt/main/**.hpp",
+		"../../src/mpt/terminal/**.cpp",
+		"../../src/mpt/terminal/**.hpp",
+		"../../src/openmpt/fileformat_base/**.cpp",
+		"../../src/openmpt/fileformat_base/**.hpp",
+		"../../src/openmpt/soundfile_data/**.cpp",
+		"../../src/openmpt/soundfile_data/**.hpp",
+		"../../src/openmpt/soundfile_write/**.cpp",
+		"../../src/openmpt/soundfile_write/**.hpp",
+		"../../src/openmpt/streamencoder/**.cpp",
+		"../../src/openmpt/streamencoder/**.hpp",
+  }
+  defines { "MODPLUG_TRACKER", "MPT_BUILD_WINESUPPORT" }
+	if _OPTIONS["windows-charset"] ~= "Unicode" then
+		defines { "MPT_CHECK_WINDOWS_IGNORE_WARNING_NO_UNICODE" }
+	end
+  warnings "Extra"
+  filter {}
+  prebuildcommands { "..\\..\\build\\svn_version\\update_svn_version_vs_premake.cmd $(IntDir)" }

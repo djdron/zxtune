@@ -1,9 +1,14 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
-# test standard configurations:
-# - build
-# - run test suite
-# - run compat.sh
+# test-ref-configs.pl
+#
+# Copyright The Mbed TLS Contributors
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
+#
+# Purpose
+#
+# For each reference configuration file in the configs directory, build the
+# configuration, run the test suites and compat.sh
 #
 # Usage: tests/scripts/test-ref-configs.pl [config-name [...]]
 
@@ -11,16 +16,24 @@ use warnings;
 use strict;
 
 my %configs = (
-    'config-mini-tls1_1.h' => {
-        'compat' => '-m tls1_1 -f \'^DES-CBC3-SHA$\|^TLS-RSA-WITH-3DES-EDE-CBC-SHA$\'',
+    'config-ccm-psk-tls1_2.h' => {
+        'compat' => '-m tls12 -f \'^TLS_PSK_WITH_AES_..._CCM_8\'',
+    },
+    'config-ccm-psk-dtls1_2.h' => {
+        'compat' => '-m dtls12 -f \'^TLS_PSK_WITH_AES_..._CCM_8\'',
+        'opt' => ' ',
+        'opt_needs_debug' => 1,
+    },
+    'config-no-entropy.h' => {
     },
     'config-suite-b.h' => {
-        'compat' => "-m tls1_2 -f 'ECDHE-ECDSA.*AES.*GCM' -p mbedTLS",
+        'compat' => "-m tls12 -f 'ECDHE_ECDSA.*AES.*GCM' -p mbedTLS",
+        'opt' => ' ',
+        'opt_needs_debug' => 1,
     },
-    'config-picocoin.h' => {
+    'config-symmetric-only.h' => {
     },
-    'config-ccm-psk-tls1_2.h' => {
-        'compat' => '-m tls1_2 -f \'^TLS-PSK-WITH-AES-...-CCM-8\'',
+    'config-tfm.h' => {
     },
     'config-thread.h' => {
         'opt' => '-f ECJPAKE.*nolog',
@@ -29,66 +42,115 @@ my %configs = (
 
 # If no config-name is provided, use all known configs.
 # Otherwise, use the provided names only.
+my @configs_to_test = sort keys %configs;
 if ($#ARGV >= 0) {
-    my %configs_ori = ( %configs );
-    %configs = ();
-
-    foreach my $conf_name (@ARGV) {
-        if( ! exists $configs_ori{$conf_name} ) {
+    foreach my $conf_name ( @ARGV ) {
+        if( ! exists $configs{$conf_name} ) {
             die "Unknown configuration: $conf_name\n";
-        } else {
-            $configs{$conf_name} = $configs_ori{$conf_name};
         }
     }
+    @configs_to_test = @ARGV;
 }
 
 -d 'library' && -d 'include' && -d 'tests' or die "Must be run from root\n";
 
-my $config_h = 'include/mbedtls/config.h';
+my $config_h = 'include/mbedtls/mbedtls_config.h';
 
 system( "cp $config_h $config_h.bak" ) and die;
 sub abort {
     system( "mv $config_h.bak $config_h" ) and warn "$config_h not restored\n";
-    die $_[0];
+    # use an exit code between 1 and 124 for git bisect (die returns 255)
+    warn $_[0];
+    exit 1;
 }
 
-while( my ($conf, $data) = each %configs ) {
+# Create a seedfile for configurations that enable MBEDTLS_ENTROPY_NV_SEED.
+# For test purposes, this doesn't have to be cryptographically random.
+if (!-e "tests/seedfile" || -s "tests/seedfile" < 64) {
+    local *SEEDFILE;
+    open SEEDFILE, ">tests/seedfile" or die;
+    print SEEDFILE "*" x 64 or die;
+    close SEEDFILE or die;
+}
+
+sub perform_test {
+    my $conf_file = $_[0];
+    my $data = $_[1];
+    my $test_with_psa = $_[2];
+
+    my $conf_name = $conf_file;
+    if ( $test_with_psa )
+    {
+        $conf_name .= "+PSA";
+    }
+
     system( "cp $config_h.bak $config_h" ) and die;
     system( "make clean" ) and die;
 
     print "\n******************************************\n";
-    print "* Testing configuration: $conf\n";
+    print "* Testing configuration: $conf_name\n";
     print "******************************************\n";
 
-    system( "cp configs/$conf $config_h" )
-        and abort "Failed to activate $conf\n";
+    $ENV{MBEDTLS_TEST_CONFIGURATION} = $conf_name;
 
-    system( "make CFLAGS='-Os -Werror'" ) and abort "Failed to build: $conf\n";
-    system( "make test" ) and abort "Failed test suite: $conf\n";
+    system( "cp configs/$conf_file $config_h" )
+        and abort "Failed to activate $conf_file\n";
+
+    if ( $test_with_psa )
+    {
+        system( "scripts/config.py set MBEDTLS_PSA_CRYPTO_C" );
+        system( "scripts/config.py set MBEDTLS_USE_PSA_CRYPTO" );
+    }
+
+    system( "CFLAGS='-Os -Werror -Wall -Wextra' make" ) and abort "Failed to build: $conf_name\n";
+    system( "make test" ) and abort "Failed test suite: $conf_name\n";
 
     my $compat = $data->{'compat'};
     if( $compat )
     {
-        print "\nrunning compat.sh $compat\n";
+        print "\nrunning compat.sh $compat ($conf_name)\n";
         system( "tests/compat.sh $compat" )
-            and abort "Failed compat.sh: $conf\n";
+            and abort "Failed compat.sh: $conf_name\n";
     }
     else
     {
-        print "\nskipping compat.sh\n";
+        print "\nskipping compat.sh ($conf_name)\n";
     }
 
     my $opt = $data->{'opt'};
     if( $opt )
     {
-        print "\nrunning ssl-opt.sh $opt\n";
+        if( $data->{'opt_needs_debug'} )
+        {
+            print "\nrebuilding with debug traces for ssl-opt ($conf_name)\n";
+            $conf_name .= '+DEBUG';
+            $ENV{MBEDTLS_TEST_CONFIGURATION} = $conf_name;
+            system( "make clean" );
+            system( "scripts/config.py set MBEDTLS_DEBUG_C" );
+            system( "scripts/config.py set MBEDTLS_ERROR_C" );
+            system( "CFLAGS='-Os -Werror -Wall -Wextra' make" ) and abort "Failed to build: $conf_name\n";
+        }
+
+        print "\nrunning ssl-opt.sh $opt ($conf_name)\n";
         system( "tests/ssl-opt.sh $opt" )
-            and abort "Failed ssl-opt.sh: $conf\n";
+            and abort "Failed ssl-opt.sh: $conf_name\n";
     }
     else
     {
-        print "\nskipping ssl-opt.sh\n";
+        print "\nskipping ssl-opt.sh ($conf_name)\n";
     }
+}
+
+foreach my $conf ( @configs_to_test ) {
+    system("grep '//#define MBEDTLS_USE_PSA_CRYPTO' configs/$conf > /dev/null");
+    die "grep ... configs/$conf: $!" if $? != 0 && $? != 0x100;
+    my $test_with_psa = $? == 0;
+
+    if ( $test_with_psa )
+    {
+        perform_test( $conf, $configs{$conf}, $test_with_psa );
+    }
+    perform_test( $conf, $configs{$conf}, 0 );
 }
 
 system( "mv $config_h.bak $config_h" ) and warn "$config_h not restored\n";

@@ -20,10 +20,27 @@
 #pragma warning(push)
 #pragma warning(disable : 4244)  // conversion from 'int' to 'unsigned char', possible loss of data
 #endif
+#if MPT_COMPILER_GCC
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#endif
 #include <RtAudio.h>
+#if MPT_COMPILER_GCC
+#pragma GCC diagnostic pop
+#endif
 #if MPT_COMPILER_MSVC
 #pragma warning(pop)
 #endif
+#if defined(RTAUDIO_VERSION_MAJOR)
+#if(RTAUDIO_VERSION_MAJOR >= 6)
+#define MPT_RTAUDIO_VER 6
+#endif
+#endif
+#ifndef MPT_RTAUDIO_VER
+#define MPT_RTAUDIO_VER 5
+#endif
+#define MPT_RTAUDIO_AT_LEAST(v) (MPT_RTAUDIO_VER >= (v))
+#define MPT_RTAUDIO_BEFORE(v)   (MPT_RTAUDIO_VER < (v))
 #endif  // MPT_WITH_RTAUDIO
 
 OPENMPT_NAMESPACE_BEGIN
@@ -73,7 +90,14 @@ public:
 	SoundDevice::DynamicCaps GetDeviceDynamicCaps(const std::vector<uint32> &baseSampleRates);
 
 private:
+#if MPT_RTAUDIO_AT_LEAST(6)
+	static bool IsError(const RtAudioErrorType &e);
+#endif
+#if MPT_RTAUDIO_AT_LEAST(6)
+	void SendError(const RtAudioErrorType &e, const std::string &errorText);
+#else
 	void SendError(const RtAudioError &e);
+#endif
 
 	void AudioCallback(void *outputBuffer, void *inputBuffer, unsigned int nFrames, double streamTime, RtAudioStreamStatus status);
 
@@ -83,7 +107,10 @@ private:
 	static unsigned int GetDevice(SoundDevice::Info info);
 
 public:
-	static std::unique_ptr<SoundDevice::BackendInitializer> BackendInitializer() { return std::make_unique<SoundDevice::BackendInitializer>(); }
+	static std::unique_ptr<SoundDevice::BackendInitializer> BackendInitializer()
+	{
+		return std::make_unique<SoundDevice::BackendInitializer>();
+	}
 	static std::vector<SoundDevice::Info> EnumerateDevices(ILogger &logger, SoundDevice::SysInfo sysInfo);
 };
 

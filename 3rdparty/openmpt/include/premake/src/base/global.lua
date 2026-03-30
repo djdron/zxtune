@@ -1,7 +1,7 @@
 ---
 -- global.lua
 -- The global container holds workspaces and rules.
--- Copyright (c) 2014-2015 Jason Perkins and the Premake project
+-- Copyright (c) 2014-2015 Jess Perkins and the Premake project
 ---
 
 	local p = premake
@@ -16,14 +16,6 @@
 	function global.new(name)
 		return p.container.new(p.global, name)
 	end
-
----
--- Bakes the global scope.
----
-	function global.bake(self)
-		p.container.bakeChildren(self)
-	end
-
 
 ---
 -- Iterate over the collection of rules in a session.

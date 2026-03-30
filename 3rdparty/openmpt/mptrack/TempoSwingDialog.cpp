@@ -10,7 +10,9 @@
 
 #include "stdafx.h"
 #include "TempoSwingDialog.h"
+#include "HighDPISupport.h"
 #include "Mainfrm.h"
+#include "resource.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -28,12 +30,72 @@ TempoSwing::value_type CTempoSwingDlg::RowCtls::GetValue() const
 }
 
 
-BEGIN_MESSAGE_MAP(CTempoSwingDlg, CDialog)
+struct TempoSwingMeasurements
+{
+	enum
+	{
+		edRowLabelWidth = 64,                       // Label "Row 999:"
+		edSliderWidth = 220,                        // Setting slider
+		edSliderHeight = 20,                        // Setting slider
+		edValueLabelWidth = 64,                     // Label "100%"
+		edPaddingX = 8,                             // Spacing between elements
+		edPaddingY = 4,                             // Spacing between elements
+		edPaddingTop = 64,                          // Spacing from top of dialog
+		edRowHeight = edSliderHeight + edPaddingY,  // Height of one set of controls
+		edFooterHeight = 32,                        // Buttons
+		edScrollbarWidth = 16,                      // Width of optional scrollbar
+	};
+
+	const int rowLabelWidth;
+	const int sliderWidth;
+	const int sliderHeight;
+	const int valueLabelWidth;
+	const int paddingX;
+	const int paddingY;
+	const int paddingTop;
+	const int rowHeight;
+	const int footerHeight;
+	const int scrollbarWidth;
+
+	TempoSwingMeasurements(HWND hWnd)
+		: rowLabelWidth(HighDPISupport::ScalePixels(edRowLabelWidth, hWnd))
+		, sliderWidth(HighDPISupport::ScalePixels(edSliderWidth, hWnd))
+		, sliderHeight(HighDPISupport::ScalePixels(edSliderHeight, hWnd))
+		, valueLabelWidth(HighDPISupport::ScalePixels(edValueLabelWidth, hWnd))
+		, paddingX(HighDPISupport::ScalePixels(edPaddingX, hWnd))
+		, paddingY(HighDPISupport::ScalePixels(edPaddingY, hWnd))
+		, paddingTop(HighDPISupport::ScalePixels(edPaddingTop, hWnd))
+		, rowHeight(HighDPISupport::ScalePixels(edRowHeight, hWnd))
+		, footerHeight(HighDPISupport::ScalePixels(edFooterHeight, hWnd))
+		, scrollbarWidth(HighDPISupport::ScalePixels(edScrollbarWidth, hWnd))
+	{
+	}
+
+
+	CRect RowLabelRect(const CRect rect) const noexcept
+	{
+		return CRect{rect.left, rect.top, rect.right, rect.top + rowHeight};
+	}
+
+	CRect ValueLabelRect(const CRect rect) const noexcept
+	{
+		return CRect{rect.right - valueLabelWidth, rect.top, rect.right, rect.top + sliderHeight};
+	}
+
+	CRect ValueSliderRect(const CRect rect) const noexcept
+	{
+		return CRect{rect.left + rowLabelWidth, rect.top, rect.right - valueLabelWidth, rect.top + sliderHeight};
+	}
+};
+
+
+
+BEGIN_MESSAGE_MAP(CTempoSwingDlg, DialogBase)
 	//{{AFX_MSG_MAP(CTempoSwingDlg)
 	ON_WM_VSCROLL()
-	ON_COMMAND(IDC_BUTTON1,	&CTempoSwingDlg::OnReset)
-	ON_COMMAND(IDC_BUTTON2,	&CTempoSwingDlg::OnUseGlobal)
-	ON_COMMAND(IDC_CHECK1,	&CTempoSwingDlg::OnToggleGroup)
+	ON_COMMAND(IDC_BUTTON1, &CTempoSwingDlg::OnReset)
+	ON_COMMAND(IDC_BUTTON2, &CTempoSwingDlg::OnUseGlobal)
+	ON_COMMAND(IDC_CHECK1,  &CTempoSwingDlg::OnToggleGroup)
 	ON_EN_CHANGE(IDC_EDIT1, &CTempoSwingDlg::OnGroupChanged)
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
@@ -41,7 +103,7 @@ END_MESSAGE_MAP()
 int CTempoSwingDlg::m_groupSize = 1;
 
 CTempoSwingDlg::CTempoSwingDlg(CWnd *parent, const TempoSwing &currentTempoSwing, CSoundFile &sndFile, PATTERNINDEX pattern)
-	: CDialog(IDD_TEMPO_SWING, parent)
+	: DialogBase(IDD_TEMPO_SWING, parent)
 	, m_container(*this)
 	, m_scrollPos(0)
 	, m_tempoSwing(currentTempoSwing)
@@ -55,7 +117,7 @@ CTempoSwingDlg::CTempoSwingDlg(CWnd *parent, const TempoSwing &currentTempoSwing
 
 void CTempoSwingDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	DialogBase::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_CHECK1, m_checkGroup);
 	DDX_Control(pDX, IDC_SCROLLBAR1, m_scrollBar);
 	DDX_Control(pDX, IDC_CONTAINER, m_container);
@@ -64,49 +126,9 @@ void CTempoSwingDlg::DoDataExchange(CDataExchange* pDX)
 
 BOOL CTempoSwingDlg::OnInitDialog()
 {
-	struct Measurements
-	{
-		enum
-		{
-			edRowLabelWidth = 64,	// Label "Row 999:"
-			edSliderWidth = 220,	// Setting slider
-			edSliderHeight = 20,	// Setting slider
-			edValueLabelWidth = 64,	// Label "100%"
-			edPaddingX = 8,			// Spacing between elements
-			edPaddingY = 4,			// Spacing between elements
-			edPaddingTop = 64,		// Spacing from top of dialog
-			edRowHeight = edSliderHeight + edPaddingY, // Height of one set of controls
-			edFooterHeight = 32,	// Buttons
-			edScrollbarWidth = 16,	// Width of optional scrollbar
-		};
-
-		const int rowLabelWidth;
-		const int sliderWidth;
-		const int sliderHeight;
-		const int valueLabelWidth;
-		const int paddingX;
-		const int paddingY;
-		const int paddingTop;
-		const int rowHeight;
-		const int footerHeight;
-		const int scrollbarWidth;
-
-		Measurements(HWND hWnd)
-			: rowLabelWidth(Util::ScalePixels(edRowLabelWidth, hWnd))
-			, sliderWidth(Util::ScalePixels(edSliderWidth, hWnd))
-			, sliderHeight(Util::ScalePixels(edSliderHeight, hWnd))
-			, valueLabelWidth(Util::ScalePixels(edValueLabelWidth, hWnd))
-			, paddingX(Util::ScalePixels(edPaddingX, hWnd))
-			, paddingY(Util::ScalePixels(edPaddingY, hWnd))
-			, paddingTop(Util::ScalePixels(edPaddingTop, hWnd))
-			, rowHeight(Util::ScalePixels(edRowHeight, hWnd))
-			, footerHeight(Util::ScalePixels(edFooterHeight, hWnd))
-			, scrollbarWidth(Util::ScalePixels(edScrollbarWidth, hWnd))
-		{ }
-	};
-
-	CDialog::OnInitDialog();
-	Measurements m(m_hWnd);
+	DialogBase::OnInitDialog();
+	
+	TempoSwingMeasurements m{m_hWnd};
 	CRect windowRect, rect;
 	GetWindowRect(windowRect);
 	GetClientRect(rect);
@@ -144,37 +166,37 @@ BOOL CTempoSwingDlg::OnInitDialog()
 		m_scrollBar.ShowWindow(SW_HIDE);
 	}
 
-	rect.DeflateRect(m.paddingX, 0/* m.paddingTop*/, m.paddingX + m.scrollbarWidth, 0);
+	rect.DeflateRect(m.paddingX, 0, m.paddingX + m.scrollbarWidth, 0);
 
 	GetDlgItem(IDC_BUTTON2)->ShowWindow((m_pattern != PATTERNINDEX_INVALID) ? SW_SHOW : SW_HIDE);
 
 	m_controls.resize(m_tempoSwing.size());
+	CFont *font = GetFont();
 	for(size_t i = 0; i < m_controls.size(); i++)
 	{
 		m_controls[i] = std::make_unique<RowCtls>();
 		auto &r = m_controls[i];
 		// Row label
-		TCHAR s[16];
-		wsprintf(s, _T("Row %u:"), i + 1);
-		r->rowLabel.Create(s, WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, CRect(rect.left, rect.top, rect.right, rect.top + m.rowHeight), &m_container);
-		r->rowLabel.SetFont(GetFont());
+		r->rowLabel.Create(MPT_CFORMAT("Row {}:")(i + 1), WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, m.RowLabelRect(rect), &m_container);
+		r->rowLabel.SetFont(font);
 
 		// Value label
-		r->valueLabel.Create(_T("100%"), WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, CRect(rect.right - m.valueLabelWidth, rect.top, rect.right, rect.top + m.sliderHeight), &m_container);
-		r->valueLabel.SetFont(GetFont());
+		r->valueLabel.Create(_T("100%"), WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, m.ValueLabelRect(rect), &m_container);
+		r->valueLabel.SetFont(font);
 
 		// Value slider
-		r->valueSlider.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_TOOLTIPS | TBS_AUTOTICKS, CRect(rect.left + m.rowLabelWidth, rect.top, rect.right - m.valueLabelWidth, rect.top + m.sliderHeight), &m_container, 0xFFFF);
-		r->valueSlider.SetFont(GetFont());
+		r->valueSlider.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_TOOLTIPS | TBS_AUTOTICKS, m.ValueSliderRect(rect), &m_container, 0xFFFF);
+		r->valueSlider.SetFont(font);
 		r->valueSlider.SetRange(-SliderResolution / 2, SliderResolution / 2);
 		r->valueSlider.SetTicFreq(SliderResolution / 8);
 		r->valueSlider.SetPageSize(SliderResolution / 8);
 		r->valueSlider.SetPos(1);	// Work around https://bugs.winehq.org/show_bug.cgi?id=41909
+		SetWindowLongPtr(r->valueSlider, GWLP_USERDATA, i);
 		r->SetValue(m_tempoSwing[i]);
 		rect.MoveToY(rect.top + m.rowHeight);
 	}
 
-	((CSpinButtonCtrl *)GetDlgItem(IDC_SPIN1))->SetRange32(1, static_cast<int>(m_tempoSwing.size()));
+	static_cast<CSpinButtonCtrl *>(GetDlgItem(IDC_SPIN1))->SetRange32(1, static_cast<int>(m_tempoSwing.size()));
 	SetDlgItemInt(IDC_EDIT1, m_groupSize);
 	OnToggleGroup();
 
@@ -182,26 +204,55 @@ BOOL CTempoSwingDlg::OnInitDialog()
 	rect.MoveToY(m.paddingTop + containerRect.bottom + m.paddingY);
 	{
 		// Buttons at dialog bottom
+		const int cxEdge = HighDPISupport::GetSystemMetrics(SM_CYHSCROLL, GetDPI());
 		CRect buttonRect;
 		for(auto i : { IDOK, IDCANCEL, IDC_BUTTON2 })
 		{
 			auto wnd = GetDlgItem(i);
 			wnd->GetWindowRect(buttonRect);
-			wnd->SetWindowPos(nullptr, buttonRect.left - windowRect.left - GetSystemMetrics(SM_CXEDGE), rect.top, 0, 0, SWP_NOSIZE | SWP_NOOWNERZORDER);
+			wnd->SetWindowPos(nullptr, buttonRect.left - windowRect.left - cxEdge, rect.top, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
 		}
 	}
 
 	windowRect.bottom += displayHeight + m.paddingTop + m.footerHeight;
-	SetWindowPos(nullptr, 0, 0, windowRect.Width(), windowRect.Height(), SWP_NOMOVE | SWP_NOOWNERZORDER);
-	EnableToolTips();
+	SetWindowPos(nullptr, 0, 0, windowRect.Width(), windowRect.Height(), SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER);
 
 	return TRUE;
 }
 
 
+void CTempoSwingDlg::OnDPIChanged()
+{
+	DialogBase::OnDPIChanged();
+
+	// For some reason, these controls are not sized automatically and lose their intended font because they are parented in the static text field...
+	TempoSwingMeasurements m{m_hWnd};
+	CFont *font = GetFont();
+	auto dwp = ::BeginDeferWindowPos(static_cast<int>(m_controls.size() * 3));
+	CRect rect;
+	m_container.GetClientRect(rect);
+	rect.DeflateRect(m.paddingX, 0, m.paddingX + m.scrollbarWidth, 0);
+	for(auto &r: m_controls)
+	{
+		r->rowLabel.SetFont(font);
+		r->valueLabel.SetFont(font);
+		r->valueSlider.SetFont(font);
+
+		const CRect rowLabelRect = m.RowLabelRect(rect);
+		const CRect valueLabelRect = m.ValueLabelRect(rect);
+		const CRect valueSliderRect = m.ValueSliderRect(rect);
+		::DeferWindowPos(dwp, r->rowLabel, nullptr, rowLabelRect.left, rowLabelRect.top, rowLabelRect.Width(), rowLabelRect.Height(), SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS);
+		::DeferWindowPos(dwp, r->valueLabel, nullptr, valueLabelRect.left, valueLabelRect.top, valueLabelRect.Width(), valueLabelRect.Height(), SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS);
+		::DeferWindowPos(dwp, r->valueSlider, nullptr, valueSliderRect.left, valueSliderRect.top, valueSliderRect.Width(), valueSliderRect.Height(), SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS);
+		rect.MoveToY(rect.top + m.rowHeight);
+	}
+	::EndDeferWindowPos(dwp);
+}
+
+
 void CTempoSwingDlg::OnOK()
 {
-	CDialog::OnOK();
+	DialogBase::OnOK();
 	// If this is the default setup, just clear the vector.
 	if(m_pattern == PATTERNINDEX_INVALID)
 	{
@@ -222,7 +273,7 @@ void CTempoSwingDlg::OnOK()
 
 void CTempoSwingDlg::OnCancel()
 {
-	CDialog::OnCancel();
+	DialogBase::OnCancel();
 	OnClose();
 }
 
@@ -242,9 +293,9 @@ void CTempoSwingDlg::OnClose()
 
 void CTempoSwingDlg::OnReset()
 {
-	for(size_t i = 0; i < m_controls.size(); i++)
+	for(auto &control : m_controls)
 	{
-		m_controls[i]->valueSlider.SetPos(0);
+		control->valueSlider.SetPos(0);
 	}
 	m_container.OnHScroll(0, 0, reinterpret_cast<CScrollBar *>(&(m_controls[0]->valueSlider)));
 }
@@ -257,7 +308,7 @@ void CTempoSwingDlg::OnUseGlobal()
 		OnReset();
 		return;
 	}
-	for(size_t i = 0; i < m_tempoSwing.size(); i++)
+	for(size_t i = 0; i < m_controls.size(); i++)
 	{
 		m_controls[i]->SetValue(m_sndFile.m_tempoSwing[i % m_sndFile.m_tempoSwing.size()]);
 	}
@@ -350,12 +401,12 @@ void CTempoSwingDlg::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar)
 		m_scrollPos = curpos;
 	}
 
-	CDialog::OnVScroll(nSBCode, nPos, pScrollBar);
+	DialogBase::OnVScroll(nSBCode, nPos, pScrollBar);
 }
 
 
 // Scrollable container for the sliders
-BEGIN_MESSAGE_MAP(CTempoSwingDlg::SliderContainer, CDialog)
+BEGIN_MESSAGE_MAP(CTempoSwingDlg::SliderContainer, CStatic)
 	//{{AFX_MSG_MAP(CTempoSwingDlg::SliderContainer)
 	ON_WM_HSCROLL()
 	ON_NOTIFY_EX(TTN_NEEDTEXT, 0, &CTempoSwingDlg::SliderContainer::OnToolTipNotify)
@@ -414,15 +465,15 @@ void CTempoSwingDlg::SliderContainer::OnHScroll(UINT nSBCode, UINT nPos, CScroll
 
 BOOL CTempoSwingDlg::SliderContainer::OnToolTipNotify(UINT, NMHDR *pNMHDR, LRESULT *)
 {
-	TOOLTIPTEXT *pTTT = (TOOLTIPTEXT*)pNMHDR;
-	for(size_t i = 0; i < m_parent.m_controls.size(); i++)
+	TOOLTIPTEXT *pTTT = reinterpret_cast<TOOLTIPTEXT *>(pNMHDR);
+	if(!(pTTT->uFlags & TTF_IDISHWND))
+		return FALSE;
+	CSliderCtrl *slider = dynamic_cast<CSliderCtrl *>(CWnd::FromHandlePermanent(reinterpret_cast<HWND>(pNMHDR->idFrom)));
+	if(slider != nullptr)
 	{
-		if((HWND)pNMHDR->idFrom == m_parent.m_controls[i]->valueSlider.m_hWnd)
-		{
-			int32 val = Util::muldivr(m_parent.m_tempoSwing[i], 100, TempoSwing::Unity) - 100;
-			wsprintf(pTTT->szText, _T("%s%d"), val > 0 ? _T("+") : _T(""), val);
-			return TRUE;
-		}
+		int32 val = Util::muldivr(m_parent.m_tempoSwing[GetWindowLongPtr(*slider, GWLP_USERDATA)], 100, TempoSwing::Unity) - 100;
+		wsprintf(pTTT->szText, _T("%s%d"), val > 0 ? _T("+") : _T(""), val);
+		return TRUE;
 	}
 	return FALSE;
 }

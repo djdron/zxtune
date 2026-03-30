@@ -12,12 +12,14 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-class CSoundFile;
+#include "DialogBase.h"
 #include "../soundlib/Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-class CTempoSwingDlg: public CDialog
+class CSoundFile;
+
+class CTempoSwingDlg : public DialogBase
 {
 protected:
 	// Scrollable container for the sliders
@@ -30,6 +32,7 @@ protected:
 
 		afx_msg void OnHScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar);
 		afx_msg BOOL OnToolTipNotify(UINT, NMHDR *pNMHDR, LRESULT *);
+
 		DECLARE_MESSAGE_MAP()
 	};
 
@@ -61,16 +64,18 @@ public:
 	CTempoSwingDlg(CWnd *parent, const TempoSwing &currentTempoSwing, CSoundFile &sndFile, PATTERNINDEX pattern = PATTERNINDEX_INVALID);
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
-	virtual void OnCancel();
+	void DoDataExchange(CDataExchange* pDX) override;
+	BOOL OnInitDialog() override;
+	void OnDPIChanged() override;
+	void OnOK() override;
+	void OnCancel() override;
 	void OnClose();
 	afx_msg void OnReset();
 	afx_msg void OnUseGlobal();
 	afx_msg void OnToggleGroup();
 	afx_msg void OnGroupChanged();
 	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar);
+
 	DECLARE_MESSAGE_MAP()
 };
 

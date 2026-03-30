@@ -9,11 +9,15 @@
 
 
 #include "stdafx.h"
-#include "CommandSet.h"
 #include "InputHandler.h"
-#include "resource.h"
+#include "CommandSet.h"
 #include "Mainfrm.h"
+#include "Mptrack.h"
+#include "resource.h"
+#include "TrackerSettings.h"
+#include "WindowMessages.h"
 #include "../soundlib/MIDIEvents.h"
+#include "mpt/fs/fs.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -30,9 +34,9 @@ CInputHandler::CInputHandler(CWnd *mainframe)
 	m_activeCommandSet = std::make_unique<CCommandSet>();
 	m_lastCommands.fill(kcNull);
 
-	mpt::PathString sDefaultPath = theApp.GetConfigPath() + P_("Keybindings.mkb");
+	mpt::PathString defaultPath = theApp.GetConfigPath() + P_("Keybindings.mkb");
 
-	const bool bNoExistingKbdFileSetting = TrackerSettings::Instance().m_szKbdFile.empty();
+	const bool noExistingKbdFileSetting = TrackerSettings::Instance().m_szKbdFile.empty();
 
 	// 1. Try to load keybindings from the path saved in the settings.
 	// 2. If the setting doesn't exist or the loading fails, try to load from default location.
@@ -40,28 +44,19 @@ CInputHandler::CInputHandler(CWnd *mainframe)
 	// 4. If there were no keybinding setting already, create a keybinding file to default location
 	//    and set its path to settings.
 
-	if (bNoExistingKbdFileSetting || !(m_activeCommandSet->LoadFile(TrackerSettings::Instance().m_szKbdFile)))
+	if(noExistingKbdFileSetting || !m_activeCommandSet->LoadFile(TrackerSettings::Instance().m_szKbdFile))
 	{
-		if (bNoExistingKbdFileSetting)
-			TrackerSettings::Instance().m_szKbdFile = sDefaultPath;
-		bool bSuccess = false;
-		if (sDefaultPath.IsFile())
-			bSuccess = m_activeCommandSet->LoadFile(sDefaultPath);
-		if (!bSuccess)
+		if(!mpt::native_fs{}.is_file(defaultPath) || !m_activeCommandSet->LoadFile(defaultPath))
 		{
 			// Load keybindings from resources.
 			MPT_LOG_GLOBAL(LogDebug, "InputHandler", U_("Loading keybindings from resources\n"));
-			bSuccess = m_activeCommandSet->LoadDefaultKeymap();
-			if (bSuccess && bNoExistingKbdFileSetting)
-			{
-				m_activeCommandSet->SaveFile(TrackerSettings::Instance().m_szKbdFile);
-			}
+			m_activeCommandSet->LoadDefaultKeymap();
+			if (noExistingKbdFileSetting)
+				m_activeCommandSet->SaveFile(defaultPath);
 		}
-		if (!bSuccess)
-			ErrorBox(IDS_UNABLE_TO_LOAD_KEYBINDINGS);
 	}
 	// We will only overwrite the default Keybindings.mkb file from now on.
-	TrackerSettings::Instance().m_szKbdFile = sDefaultPath;
+	TrackerSettings::Instance().m_szKbdFile = defaultPath;
 
 	//Get Keymap
 	m_activeCommandSet->GenKeyMap(m_keyMap);
@@ -97,55 +92,14 @@ CommandID CInputHandler::SendCommands(CWnd *wnd, const KeyMapRange &cmd)
 }
 
 
-CommandID CInputHandler::GeneralKeyEvent(InputTargetContext context, int code, WPARAM wParam, LPARAM lParam)
+CommandID CInputHandler::KeyEvent(const InputTargetContext context, const KeyboardEvent &event, CWnd *pSourceWnd)
 {
-	KeyMapRange cmd = { m_keyMap.end(), m_keyMap.end() };
-	KeyEventType keyEventType;
-
-	if(code == HC_ACTION)
-	{
-		//Get the KeyEventType (key up, key down, key repeat)
-		DWORD scancode = static_cast<LONG>(lParam) >> 16;
-		if((scancode & 0xC000) == 0xC000)
-		{
-			keyEventType = kKeyEventUp;
-		} else if((scancode & 0xC000) == 0x0000)
-		{
-			keyEventType = kKeyEventDown;
-		} else
-		{
-			keyEventType = kKeyEventRepeat;
-		}
-
-		// Catch modifier change (ctrl, alt, shift) - Only check on keyDown or keyUp.
-		// NB: we want to catch modifiers even when the input handler is locked
-		if(keyEventType == kKeyEventUp || keyEventType == kKeyEventDown)
-		{
-			scancode = (static_cast<LONG>(lParam) >> 16) & 0x1FF;
-			CatchModifierChange(wParam, keyEventType, scancode);
-		}
-
-		if(!InterceptSpecialKeys(static_cast<UINT>(wParam), static_cast<LONG>(lParam), true) && !IsBypassed())
-		{
-			// only execute command when the input handler is not locked
-			// and the input is not a consequence of special key interception.
-			cmd = m_keyMap.equal_range(KeyCombination(context, m_modifierMask, static_cast<UINT>(wParam), keyEventType));
-		}
-	}
-	if(code == HC_MIDI)
-	{
-		cmd = m_keyMap.equal_range(KeyCombination(context, ModMidi, static_cast<UINT>(wParam), kKeyEventDown));
-	}
-
-	return SendCommands(m_pMainFrm, cmd);
-}
-
-
-CommandID CInputHandler::KeyEvent(InputTargetContext context, UINT &nChar, UINT &/*nRepCnt*/, UINT &nFlags, KeyEventType keyEventType, CWnd *pSourceWnd)
-{
-	if(InterceptSpecialKeys(nChar, nFlags, false))
+	if(IsKeyPressHandledByTextBox(event.key, ::GetFocus()))
 		return kcNull;
-	KeyMapRange cmd = m_keyMap.equal_range(KeyCombination(context, m_modifierMask, nChar, keyEventType));
+
+	KeyMapRange cmd = m_keyMap.equal_range(KeyCombination(context, GetModifierMask(), event.key, event.keyEventType));
+	if(cmd.first != cmd.second && InterceptSpecialKeys(event))
+		return kcDummyShortcut;
 
 	if(pSourceWnd == nullptr)
 		pSourceWnd = m_pMainFrm;	// By default, send command message to main frame.
@@ -154,17 +108,16 @@ CommandID CInputHandler::KeyEvent(InputTargetContext context, UINT &nChar, UINT 
 
 
 // Feature: use Windows keys as modifier keys, intercept special keys
-bool CInputHandler::InterceptSpecialKeys(UINT nChar, UINT nFlags, bool generateMsg)
+bool CInputHandler::InterceptSpecialKeys(const KeyboardEvent &event)
 {
-	KeyEventType keyEventType = GetKeyEventType(HIWORD(nFlags));
 	enum { VK_NonExistentKey = VK_F24+1 };
 
-	if(nChar == VK_NonExistentKey)
+	if(event.key == VK_NonExistentKey)
 	{
 		return true;
-	} else if(m_bInterceptWindowsKeys && (nChar == VK_LWIN || nChar == VK_RWIN))
+	} else if(m_bInterceptWindowsKeys && (event.key == VK_LWIN || event.key == VK_RWIN))
 	{
-		if(keyEventType == kKeyEventDown)
+		if(event.keyEventType == kKeyEventDown)
 		{
 			INPUT inp[2];
 			inp[0].type = inp[1].type = INPUT_KEYBOARD;
@@ -178,22 +131,22 @@ bool CInputHandler::InterceptSpecialKeys(UINT nChar, UINT nFlags, bool generateM
 		}
 	}
 
-	if((nChar == VK_NUMLOCK && m_bInterceptNumLock)
-		|| (nChar == VK_CAPITAL && m_bInterceptCapsLock)
-		|| (nChar == VK_SCROLL && m_bInterceptScrollLock))
+	if((event.key == VK_NUMLOCK && m_bInterceptNumLock)
+		|| (event.key == VK_CAPITAL && m_bInterceptCapsLock)
+		|| (event.key == VK_SCROLL && m_bInterceptScrollLock))
 	{
 		if(GetMessageExtraInfo() == 0xC0FFEE)
 		{
 			SetMessageExtraInfo(0);
 			return true;
-		} else if(keyEventType == kKeyEventDown && generateMsg)
+		} else if(event.keyEventType == kKeyEventDown)
 		{
 			// Prevent keys from lighting up by simulating a second press.
 			INPUT inp[2];
 			inp[0].type = inp[1].type = INPUT_KEYBOARD;
 			inp[0].ki.time = inp[1].ki.time = 0;
 			inp[0].ki.dwExtraInfo = inp[1].ki.dwExtraInfo = 0xC0FFEE;
-			inp[0].ki.wVk = inp[1].ki.wVk = static_cast<WORD>(nChar);
+			inp[0].ki.wVk = inp[1].ki.wVk = static_cast<WORD>(event.key);
 			inp[0].ki.wScan = inp[1].ki.wScan = 0;
 			inp[0].ki.dwFlags = KEYEVENTF_KEYUP;
 			inp[1].ki.dwFlags = 0;
@@ -222,54 +175,11 @@ void CInputHandler::SetupSpecialKeyInterception()
 };
 
 
-//Deal with Modifier keypresses. Private surouting used above.
-bool CInputHandler::CatchModifierChange(WPARAM wParam, KeyEventType keyEventType, int scancode)
-{
-	FlagSet<Modifiers> modifierMask = ModNone;
-	// Scancode for right modifier keys should have bit 8 set, but Right Shift is actually 0x36.
-	const bool isRight = ((scancode & 0x100) || scancode == 0x36) && TrackerSettings::Instance().MiscDistinguishModifiers;
-	switch(wParam)
-	{
-		case VK_CONTROL:
-			modifierMask.set(isRight ? ModRCtrl : ModCtrl);
-			break;
-		case VK_SHIFT:
-			modifierMask.set(isRight ? ModRShift : ModShift);
-			break;
-		case VK_MENU:
-			modifierMask.set(isRight ? ModRAlt : ModAlt);
-			break;
-		case VK_LWIN: case VK_RWIN: // Feature: use Windows keys as modifier keys
-			modifierMask.set(ModWin);
-			break;
-	}
-
-	if (modifierMask)	// This keypress just changed the modifier mask
-	{
-		if (keyEventType == kKeyEventDown)
-		{
-			m_modifierMask.set(modifierMask);
-			// Right Alt is registered as Ctrl+Alt.
-			// Left Ctrl + Right Alt seems like a pretty difficult to use key combination anyway, so just ignore Ctrl.
-			if(scancode == 0x138)
-				m_modifierMask.reset(ModCtrl);
-#ifdef _DEBUG
-			LogModifiers();
-#endif
-		} else if (keyEventType == kKeyEventUp)
-			m_modifierMask.reset(modifierMask);
-
-		return true;
-	}
-
-	return false;
-}
-
-
 // Translate MIDI messages to shortcut commands
 CommandID CInputHandler::HandleMIDIMessage(InputTargetContext context, uint32 message)
 {
-	const auto byte1 = MIDIEvents::GetDataByte1FromEvent(message), byte2 = MIDIEvents::GetDataByte2FromEvent(message);
+	KeyMapRange cmd = { m_keyMap.end(), m_keyMap.end() };
+	auto byte1 = MIDIEvents::GetDataByte1FromEvent(message), byte2 = MIDIEvents::GetDataByte2FromEvent(message);
 	switch(MIDIEvents::GetTypeFromEvent(message))
 	{
 	case MIDIEvents::evControllerChange:
@@ -277,13 +187,29 @@ CommandID CInputHandler::HandleMIDIMessage(InputTargetContext context, uint32 me
 		{
 			// Only capture MIDI CCs for now. Some controllers constantly send some MIDI CCs with value 0
 			// (e.g. the Roland D-50 sends CC123 whenenver all notes have been released), so we will ignore those.
-			return GeneralKeyEvent(context, HC_MIDI, byte1, 0);
+			cmd = m_keyMap.equal_range(KeyCombination(context, ModMidi, byte1, kKeyEventDown));
+			return SendCommands(m_pMainFrm, cmd);
 		}
 		break;
 
-	case MIDIEvents::evNoteOn:
 	case MIDIEvents::evNoteOff:
-		return GeneralKeyEvent(context, HC_MIDI, byte1 | 0x80, 0);
+		byte2 = 0;
+		[[fallthrough]];
+	case MIDIEvents::evNoteOn:
+		if(byte2 != 0)
+		{
+			cmd = m_keyMap.equal_range(KeyCombination(context, ModMidi, byte1 | 0x80, kKeyEventDown));
+			return SendCommands(m_pMainFrm, cmd);
+		} else
+		{
+			cmd = m_keyMap.equal_range(KeyCombination(context, ModMidi, byte1 | 0x80, kKeyEventUp));
+			// If the key-down triggered a note, we still want that note to be stopped. So we always pretend that no key was assigned to this event
+			SendCommands(m_pMainFrm, cmd);
+		}
+		break;
+
+	default:
+		break;
 	}
 
 	return kcNull;
@@ -296,16 +222,38 @@ int CInputHandler::GetKeyListSize(CommandID cmd) const
 }
 
 
-//----------------------- Misc
-
-
-void CInputHandler::LogModifiers()
+CInputHandler::KeyboardEvent CInputHandler::Translate(const MSG &msg)
 {
-	MPT_LOG_GLOBAL(LogDebug, "InputHandler", U_("----------------------------------\n"));
-	MPT_LOG_GLOBAL(LogDebug, "InputHandler", m_modifierMask[ModCtrl] ? U_("Ctrl On") : U_("Ctrl --"));
-	MPT_LOG_GLOBAL(LogDebug, "InputHandler", m_modifierMask[ModShift] ? U_("\tShft On") : U_("\tShft --"));
-	MPT_LOG_GLOBAL(LogDebug, "InputHandler", m_modifierMask[ModAlt] ? U_("\tAlt  On") : U_("\tAlt  --"));
-	MPT_LOG_GLOBAL(LogDebug, "InputHandler", m_modifierMask[ModWin] ? U_("\tWin  On\n") : U_("\tWin  --\n"));
+	MPT_ASSERT(msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN || msg.message == WM_KEYUP || msg.message == WM_SYSKEYUP);
+
+	uint32 key = static_cast<uint32>(msg.wParam);
+	if(key == VK_PACKET)
+	{
+		// This message was sent by something other than a physical keyboard.
+		// This behaviour can be observed when using Microsoft's RDP client for iOS.
+
+		// VK_PACKET is not the real virtual key code, and the message does not contain a real scancode.
+		// To get at the virtual key code, we must first force the WM_CHAR message to get posted to the queue.
+		::TranslateMessage(&msg);
+
+		// Now remove that WM_CHAR message to get the virtual key code.  (The WM_CHAR message will get
+		// re-posted by the main message pump after this call stack unwinds to it.)
+		MSG msgChar{};
+		if(::PeekMessage(&msgChar, msgChar.hwnd, WM_CHAR, WM_CHAR, PM_REMOVE | PM_QS_POSTMESSAGE))
+		{
+			key = VkKeyScanW(static_cast<WCHAR>(msgChar.wParam & 0xffffu));
+		}
+	}
+
+	const auto repCnt = LOWORD(msg.lParam);
+	const auto flags = HIWORD(msg.lParam);
+	return {key, repCnt, flags, GetKeyEventType(flags)};
+}
+
+
+KeyEventType CInputHandler::GetKeyEventType(const MSG &msg)
+{
+	return GetKeyEventType(HIWORD(msg.lParam));
 }
 
 
@@ -332,33 +280,47 @@ bool CInputHandler::SelectionPressed() const
 	int nSelectionKeys = m_activeCommandSet->GetKeyListSize(kcSelect);
 	KeyCombination key;
 
+	const auto modifierMask = GetModifierMask();
 	for (int k=0; k<nSelectionKeys; k++)
 	{
 		key = m_activeCommandSet->GetKey(kcSelect, k);
-		if (m_modifierMask & key.Modifier())
-		{
+		if(modifierMask & key.Modifier())
 			return true;
-		}
 	}
 	return false;
 }
 
 
-bool CInputHandler::ShiftPressed() const
+bool CInputHandler::ShiftPressed()
 {
-	return m_modifierMask[ModShift | ModRShift];
+	return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 }
 
 
-bool CInputHandler::CtrlPressed() const
+bool CInputHandler::CtrlPressed()
 {
-	return m_modifierMask[ModCtrl | ModRCtrl];
+	return (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 }
 
 
-bool CInputHandler::AltPressed() const
+bool CInputHandler::AltPressed()
 {
-	return m_modifierMask[ModAlt | ModRAlt];
+	return (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+}
+
+
+OrderTransitionMode CInputHandler::ModifierKeysToTransitionMode()
+{
+	const bool shift = ShiftPressed();
+	const bool alt = AltPressed();
+	if(shift && alt)
+		return OrderTransitionMode::AtRowEnd;
+	else if(!shift && alt)
+		return OrderTransitionMode::AtBeatEnd;
+	else if(shift && !alt)
+		return OrderTransitionMode::AtMeasureEnd;
+	else
+		return OrderTransitionMode::AtPatternEnd;
 }
 
 
@@ -368,7 +330,7 @@ void CInputHandler::Bypass(bool b)
 		m_bypassCount++;
 	else
 		m_bypassCount--;
-	ASSERT(m_bypassCount >= 0);
+	MPT_ASSERT(m_bypassCount >= 0);
 }
 
 
@@ -378,15 +340,33 @@ bool CInputHandler::IsBypassed() const
 }
 
 
-FlagSet<Modifiers> CInputHandler::GetModifierMask() const
+FlagSet<Modifiers> CInputHandler::GetModifierMask()
 {
-	return m_modifierMask;
-}
+	BYTE keyStates[256];
+	FlagSet<Modifiers> modifierMask = ModNone;
+	if(GetActiveWindow() == nullptr)
+		return modifierMask;
+	if(!GetKeyboardState(keyStates))
+		return modifierMask;
 
-
-void CInputHandler::SetModifierMask(FlagSet<Modifiers> mask)
-{
-	m_modifierMask = mask;
+	const bool distinguishModifiers = TrackerSettings::Instance().MiscDistinguishModifiers;
+	if(keyStates[VK_LCONTROL] & 0x80)
+		modifierMask.set(ModCtrl);
+	if(keyStates[VK_RCONTROL] & 0x80)
+		modifierMask.set(distinguishModifiers ? ModRCtrl : ModCtrl);
+	if(keyStates[VK_LSHIFT] & 0x80)
+		modifierMask.set(ModShift);
+	if(keyStates[VK_RSHIFT] & 0x80)
+		modifierMask.set(distinguishModifiers ? ModRShift : ModShift);
+	if(keyStates[VK_LMENU] & 0x80)
+		modifierMask.set(ModAlt);
+	if(keyStates[VK_RMENU] & 0x80)
+		modifierMask.set(distinguishModifiers ? ModRAlt : ModAlt);
+	if(keyStates[VK_LWIN] & 0x80)
+		modifierMask.set(ModWin);
+	if(keyStates[VK_RWIN] & 0x80)
+		modifierMask.set(ModWin);
+	return modifierMask;
 }
 
 
@@ -407,21 +387,23 @@ CString CInputHandler::GetMenuText(UINT id) const
 {
 	static constexpr std::tuple<UINT, CommandID, const TCHAR *> MenuItems[] =
 	{
-		{ ID_FILE_NEW,            kcFileNew,           _T("&New") },
-		{ ID_FILE_OPEN,           kcFileOpen,          _T("&Open...") },
-		{ ID_FILE_OPENTEMPLATE,   kcNull,              _T("Open &Template") },
-		{ ID_FILE_CLOSE,          kcFileClose,         _T("&Close") },
-		{ ID_FILE_CLOSEALL,       kcFileCloseAll,      _T("C&lose All") },
-		{ ID_FILE_APPENDMODULE,   kcFileAppend,        _T("Appen&d Module...") },
-		{ ID_FILE_SAVE,           kcFileSave,          _T("&Save") },
-		{ ID_FILE_SAVE_AS,        kcFileSaveAs,        _T("Save &As...") },
-		{ ID_FILE_SAVE_COPY,      kcFileSaveCopy,      _T("Save Cop&y...") },
-		{ ID_FILE_SAVEASTEMPLATE, kcFileSaveTemplate,  _T("Sa&ve as Template") },
-		{ ID_FILE_SAVEASWAVE,     kcFileSaveAsWave,    _T("Stream Export (&WAV, FLAC, MP3, etc.)...") },
-		{ ID_FILE_SAVEMIDI,       kcFileSaveMidi,      _T("Export as M&IDI...") },
-		{ ID_FILE_SAVECOMPAT,     kcFileExportCompat,  _T("Compatibility &Export...") },
-		{ ID_IMPORT_MIDILIB,      kcFileImportMidiLib, _T("Import &MIDI Library...") },
-		{ ID_ADD_SOUNDBANK,       kcFileAddSoundBank,  _T("Add Sound &Bank...") },
+		{ ID_FILE_NEW,                      kcFileNew,           _T("&New") },
+		{ ID_FILE_OPEN,                     kcFileOpen,          _T("&Open...") },
+		{ ID_FILE_OPENTEMPLATE,             kcNull,              _T("Open &Template") },
+		{ ID_FILE_OPENTEMPLATE_LASTINRANGE, kcFileOpenTemplate,  _T("&Browse...") },
+		{ ID_FILE_CLOSE,                    kcFileClose,         _T("&Close") },
+		{ ID_FILE_CLOSEALL,                 kcFileCloseAll,      _T("C&lose All") },
+		{ ID_FILE_APPENDMODULE,             kcFileAppend,        _T("Appen&d Module...") },
+		{ ID_FILE_SAVE,                     kcFileSave,          _T("&Save") },
+		{ ID_FILE_SAVE_AS,                  kcFileSaveAs,        _T("Save &As...") },
+		{ ID_FILE_SAVE_COPY,                kcFileSaveCopy,      _T("Save Cop&y...") },
+		{ ID_FILE_SAVEASTEMPLATE,           kcFileSaveTemplate,  _T("Sa&ve as Template") },
+		{ ID_FILE_SAVEASWAVE,               kcFileSaveAsWave,    _T("Stream Export (&WAV, FLAC, MP3, etc.)...") },
+		{ ID_FILE_SAVEMIDI,                 kcFileSaveMidi,      _T("Export as M&IDI...") },
+		{ ID_FILE_SAVEOPL,                  kcFileSaveOPL,       _T("Export O&PL Register Dump...") },
+		{ ID_FILE_SAVECOMPAT,               kcFileExportCompat,  _T("Compatibility &Export...") },
+		{ ID_IMPORT_MIDILIB,                kcFileImportMidiLib, _T("Import &MIDI Library...") },
+		{ ID_ADD_SOUNDBANK,                 kcFileAddSoundBank,  _T("Add Sound &Bank...") },
 
 		{ ID_PLAYER_PLAY,          kcPlayPauseSong,      _T("Pause / &Resume") },
 		{ ID_PLAYER_PLAYFROMSTART, kcPlaySongFromStart,  _T("&Play from Start") },
@@ -454,8 +436,8 @@ CString CInputHandler::GetMenuText(UINT id) const
 		{ ID_VIEW_INSTRUMENTS,    kcViewInstruments,        _T("&Instruments") },
 		{ ID_VIEW_COMMENTS,       kcViewComments,           _T("&Comments") },
 		{ ID_VIEW_OPTIONS,        kcViewOptions,            _T("S&etup") },
-		{ ID_VIEW_TOOLBAR,        kcViewMain,               _T("&Main") },
-		{ IDD_TREEVIEW,           kcViewTree,               _T("&Tree") },
+		{ ID_VIEW_TOOLBAR,        kcViewMain,               _T("Show &Main Toolbar") },
+		{ IDD_TREEVIEW,           kcViewTree,               _T("Show &Tree View") },
 		{ ID_PLUGIN_SETUP,        kcViewAddPlugin,          _T("Pl&ugin Manager") },
 		{ ID_CHANNEL_MANAGER,     kcViewChannelManager,     _T("Ch&annel Manager") },
 		{ ID_CLIPBOARD_MANAGER,   kcToggleClipboardManager, _T("C&lipboard Manager") },
@@ -485,15 +467,17 @@ CString CInputHandler::GetMenuText(UINT id) const
 
 void CInputHandler::UpdateMainMenu()
 {
-	CMenu *pMenu = (CMainFrame::GetMainFrame())->GetMenu();
+	CMenu *pMenu = m_pMainFrm->GetMenu();
 	if (!pMenu) return;
 
 	pMenu->GetSubMenu(0)->ModifyMenu(0, MF_BYPOSITION | MF_STRING, 0, GetMenuText(ID_FILE_NEW));
 	static constexpr int MenuItems[] =
 	{
 		ID_FILE_OPEN,
+		ID_FILE_OPENTEMPLATE_LASTINRANGE,
 		ID_FILE_APPENDMODULE,
 		ID_FILE_CLOSE,
+		ID_FILE_CLOSEALL,
 		ID_FILE_SAVE,
 		ID_FILE_SAVE_AS,
 		ID_FILE_SAVEASWAVE,
@@ -549,7 +533,7 @@ void CInputHandler::UpdateMainMenu()
 }
 
 
-void CInputHandler::SetNewCommandSet(const CCommandSet *newSet)
+void CInputHandler::SetNewCommandSet(const CCommandSet &newSet)
 {
 	m_activeCommandSet->Copy(newSet);
 	m_activeCommandSet->GenKeyMap(m_keyMap);
@@ -578,22 +562,34 @@ bool CInputHandler::IsKeyPressHandledByTextBox(DWORD key, HWND hWnd) const
 	if(!textboxHasFocus)
 		return false;
 
-	//Alpha-numerics (only shift or no modifier):
-	if(!GetModifierMask().test_any_except(ModShift)
-		&&  ((key>='A'&&key<='Z') || (key>='0'&&key<='9') ||
-		 key==VK_DIVIDE  || key==VK_MULTIPLY || key==VK_SPACE || key==VK_RETURN ||
-		 key==VK_CAPITAL || (key>=VK_OEM_1 && key<=VK_OEM_3) || (key>=VK_OEM_4 && key<=VK_OEM_8)))
-		return true;
+	// Alpha-numerics (only shift or no modifier):
+	const auto modifierMask = GetModifierMask();
+	if(!modifierMask.test_any_except(ModShift))
+	{
+		if((key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9')
+		   || (key >= VK_MULTIPLY && key <= VK_DIVIDE) || key == VK_SPACE || key == VK_CAPITAL
+		   || (key >= VK_OEM_1 && key <= VK_OEM_3) || (key >= VK_OEM_4 && key <= VK_OEM_8))
+			return true;
+		if((key >= VK_NUMPAD0 && key <= VK_NUMPAD9) && modifierMask == ModNone)
+			return true;
+		if(key == VK_RETURN && (GetWindowLong(hWnd, GWL_STYLE) & ES_MULTILINE))
+			return true;
+	}
 
-	//navigation (any modifier):
-	if(key == VK_LEFT || key == VK_RIGHT || key == VK_UP || key == VK_DOWN ||
-		key == VK_HOME || key == VK_END || key == VK_DELETE || key == VK_INSERT || key == VK_BACK)
-		return true;
+	// Navigation (any modifier except Alt without any other modifiers):
+	if(modifierMask != ModAlt)
+	{
+		if(key == VK_LEFT || key == VK_RIGHT || key == VK_UP || key == VK_DOWN
+		   || key == VK_HOME || key == VK_END || key == VK_DELETE || key == VK_INSERT || key == VK_BACK)
+			return true;
+	}
 
-	//Copy paste etc..
-	if(GetModifierMask() == ModCtrl &&
-		(key == 'Y' || key == 'Z' || key == 'X' ||  key == 'C' || key == 'V' || key == 'A'))
-		return true;
+	// Copy paste etc..
+	if(modifierMask == ModCtrl)
+	{
+		if(key == 'Y' || key == 'Z' || key == 'X' ||  key == 'C' || key == 'V' || key == 'A')
+			return true;
+	}
 
 	return false;
 }

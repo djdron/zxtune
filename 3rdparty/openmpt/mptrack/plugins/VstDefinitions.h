@@ -14,6 +14,8 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "mpt/base/namespace.hpp"
+#include "mpt/base/integer.hpp"
 
 #if MPT_OS_WINDOWS
 #define VSTCALLBACK __cdecl
@@ -23,6 +25,8 @@
 
 namespace Vst
 {
+
+using namespace mpt;
 
 inline constexpr int32 kVstVersion = 2400;
 
@@ -582,13 +586,13 @@ inline constexpr char MPE[] = "MPE";
 
 
 struct AEffect;
-typedef intptr_t(VSTCALLBACK *AudioMasterCallbackFunc)(AEffect *effect, VstOpcodeToHost opcode, int32 index, intptr_t value, void *ptr, float opt);
-typedef intptr_t(VSTCALLBACK *DispatcherFunc)(AEffect *effect, VstOpcodeToPlugin opcode, int32 index, intptr_t value, void *ptr, float opt);
-typedef void(VSTCALLBACK *ProcessProc)(AEffect *effect, float **inputs, float **outputs, int32 sampleFrames);
-typedef void(VSTCALLBACK *ProcessDoubleProc)(AEffect *effect, double **inputs, double **outputs, int32 sampleFrames);
-typedef void(VSTCALLBACK *SetParameterProc)(AEffect *effect, int32 index, float parameter);
-typedef float(VSTCALLBACK *GetParameterFunc)(AEffect *effect, int32 index);
-typedef AEffect *(VSTCALLBACK *MainProc)(AudioMasterCallbackFunc audioMaster);
+using AudioMasterCallbackFunc = intptr_t(VSTCALLBACK *)(AEffect *effect, VstOpcodeToHost opcode, int32 index, intptr_t value, void *ptr, float opt);
+using DispatcherFunc = intptr_t(VSTCALLBACK *)(AEffect *effect, VstOpcodeToPlugin opcode, int32 index, intptr_t value, void *ptr, float opt);
+using ProcessProc = void(VSTCALLBACK *)(AEffect *effect, float **inputs, float **outputs, int32 sampleFrames);
+using ProcessDoubleProc = void(VSTCALLBACK *)(AEffect *effect, double **inputs, double **outputs, int32 sampleFrames);
+using SetParameterProc = void(VSTCALLBACK *)(AEffect *effect, int32 index, float parameter);
+using GetParameterFunc = float(VSTCALLBACK *)(AEffect *effect, int32 index);
+using MainProc = AEffect *(VSTCALLBACK *)(AudioMasterCallbackFunc audioMaster);
 
 #pragma pack(push, 8)
 
@@ -600,7 +604,7 @@ struct AEffect
 	SetParameterProc setParameter;
 	GetParameterFunc getParameter;
 	int32 numPrograms;
-	int32 numParams;
+	uint32 numParams;
 	int32 numInputs;
 	int32 numOutputs;
 	VstFlags flags;
@@ -642,7 +646,7 @@ struct VstEvents
 	intptr_t reserved;
 	VstEvent *events[MAX_EVENTS];
 
-	size_t size() { return numEvents; }
+	size_t size() const { return numEvents; }
 	auto begin() { return std::begin(events); }
 	auto end() { return std::begin(events) + numEvents; }
 	auto begin() const { return std::begin(events); }

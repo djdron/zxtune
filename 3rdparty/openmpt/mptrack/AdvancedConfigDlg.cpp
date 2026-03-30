@@ -9,29 +9,42 @@
 
 
 #include "stdafx.h"
-#include "Mainfrm.h"
 #include "AdvancedConfigDlg.h"
-#include "Settings.h"
 #include "dlg_misc.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
+#include "resource.h"
+#include "Settings.h"
+#include "TrackerSettings.h"
+#include "WindowMessages.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
 BEGIN_MESSAGE_MAP(COptionsAdvanced, CPropertyPage)
-	ON_NOTIFY(NM_DBLCLK,	IDC_LIST1,	&COptionsAdvanced::OnOptionDblClick)
-#ifndef MPT_MFC_FULL
+	ON_NOTIFY(NM_DBLCLK, IDC_LIST1, &COptionsAdvanced::OnOptionDblClick)
+#ifdef _AFX_NO_MFC_CONTROLS_IN_DIALOGS
 	ON_NOTIFY(NM_CUSTOMDRAW, IDC_LIST1, &COptionsAdvanced::OnCustomDrawList)
-#endif
-	ON_EN_CHANGE(IDC_EDIT1,				&COptionsAdvanced::OnFindStringChanged)
+#endif // _AFX_NO_MFC_CONTROLS_IN_DIALOGS
+	ON_EN_CHANGE(IDC_EDIT1, &COptionsAdvanced::OnFindStringChanged)
 	ON_COMMAND(IDC_BUTTON1, &COptionsAdvanced::OnSaveNow)
 END_MESSAGE_MAP()
 
 void COptionsAdvanced::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CModTypeDlg)
-	DDX_Control(pDX, IDC_LIST1,			m_List);
+	CPropertyPage::DoDataExchange(pDX);
+	//{{AFX_DATA_MAP(COptionsAdvanced)
+	DDX_Control(pDX, IDC_LIST1, m_List);
 	//}}AFX_DATA_MAP
 }
+
+
+#ifndef _AFX_NO_MFC_CONTROLS_IN_DIALOGS
+COptionsAdvanced::COptionsAdvanced() : CPropertyPage{IDD_OPTIONS_ADVANCED}, m_List{m_indexToPath} {}
+#else   // _AFX_NO_MFC_CONTROLS_IN_DIALOGS
+COptionsAdvanced::COptionsAdvanced() : CPropertyPage{IDD_OPTIONS_ADVANCED} {}
+#endif  // !_AFX_NO_MFC_CONTROLS_IN_DIALOGS
+
+COptionsAdvanced::~COptionsAdvanced() {}
 
 
 BOOL COptionsAdvanced::PreTranslateMessage(MSG *msg)
@@ -51,44 +64,26 @@ BOOL COptionsAdvanced::OnInitDialog()
 
 	m_List.SetExtendedStyle(m_List.GetExtendedStyle() | LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT);
 
-	ListView_EnableGroupView(m_List.m_hWnd, FALSE); // try to set known state
-	int enableGroupsResult1 = static_cast<int>(ListView_EnableGroupView(m_List.m_hWnd, TRUE));
-	int enableGroupsResult2 = static_cast<int>(ListView_EnableGroupView(m_List.m_hWnd, TRUE));
-	// Looks like we have to check enabling and check that a second enabling does
-	// not change anything.
-	// Just checking if enabling fails with -1 does not work for older control
-	// versions because they just do not know the window message at all and return
-	// 0, always. At least Wine does behave this way.
-	if(enableGroupsResult1 == 1 && enableGroupsResult2 == 0)
-	{
-		m_listGrouped = true;
-	} else
-	{
-		// Did not behave as documented or expected, the actual state of the
-		// control is unknown by now.
-		// Play safe and set and assume the traditional ungrouped mode again.
-		ListView_EnableGroupView(m_List.m_hWnd, FALSE);
-		m_listGrouped = false;
-	}
+	m_listGrouped = m_List.EnableGroupView();
 
 	if(m_listGrouped)
 	{
 		static constexpr ListCtrl::Header headers[] =
 		{
-			{ _T("Setting"), 150, LVCFMT_LEFT },
+			{ _T("Setting"), 170, LVCFMT_LEFT },
 			{ _T("Type"),    40,  LVCFMT_LEFT },
-			{ _T("Value"),   140, LVCFMT_LEFT },
-			{ _T("Default"), 62,  LVCFMT_LEFT },
+			{ _T("Value"),   160, LVCFMT_LEFT },
+			{ _T("Default"), 76,  LVCFMT_LEFT },
 		};
 		m_List.SetHeaders(headers);
 	} else
 	{
 		static constexpr ListCtrl::Header headers[] =
 		{
-			{ _T("Setting"), 200, LVCFMT_LEFT },
+			{ _T("Setting"), 220, LVCFMT_LEFT },
 			{ _T("Type"),    40,  LVCFMT_LEFT },
-			{ _T("Value"),   100, LVCFMT_LEFT },
-			{ _T("Default"), 52,  LVCFMT_LEFT },
+			{ _T("Value"),   120, LVCFMT_LEFT },
+			{ _T("Default"), 66,  LVCFMT_LEFT },
 		};
 		m_List.SetHeaders(headers);
 	}
@@ -105,6 +100,7 @@ void COptionsAdvanced::ReInit()
 	if(m_listGrouped)
 	{
 		ListView_RemoveAllGroups(m_List.m_hWnd);
+		m_List.EnableGroupView();
 	}
 	m_List.SetItemCount(static_cast<int>(theApp.GetSettings().size()));
 
@@ -113,7 +109,7 @@ void COptionsAdvanced::ReInit()
 	m_groups.clear();
 	int numGroups = 0;
 
-	mpt::ustring findStr = mpt::ToLowerCase(GetWindowTextUnicode(*GetDlgItem(IDC_EDIT1)));
+	mpt::ustring findStr = mpt::ToUnicode(mpt::ToLowerCaseLocale(GetWindowTextString(*GetDlgItem(IDC_EDIT1))));
 
 	LVITEMW lvi;
 	lvi.mask = LVIF_TEXT | LVIF_PARAM;
@@ -129,6 +125,10 @@ void COptionsAdvanced::ReInit()
 	int i = 0;
 	for(const auto &[path, state] : theApp.GetSettings())
 	{
+		if(!state.has_value())
+		{
+			continue;
+		}
 		// In MPT_USTRING_MODE_WIDE mode,
 		// this loop is heavily optimized to avoid as much string copies as possible
 		// in order to perform ok-ish in debug builds.
@@ -136,13 +136,13 @@ void COptionsAdvanced::ReInit()
 		// this mode by default.
 		const mpt::ustring &section = path.GetRefSection();
 		const mpt::ustring &key = path.GetRefKey();
-		const SettingValue &value = state.GetRefValue();
-		const SettingValue &defaultValue = state.GetRefDefault();
+		const SettingValue &value = state.value().GetRefValue();
+		const SettingValue &defaultValue = state.value().GetRefDefault();
 
 		if(!findStr.empty())
 		{
 			mpt::ustring str = path.FormatAsString() + U_("=") + value.FormatValueAsString();
-			str = mpt::ToLowerCase(str);
+			str = mpt::ToLowerCaseLocale(str);
 			if(str.find(findStr) == mpt::ustring::npos)
 			{
 				continue;
@@ -159,12 +159,12 @@ void COptionsAdvanced::ReInit()
 			auto gi = m_groups.find(section);
 			if(gi == m_groups.end())
 			{
-				LVGROUP group;
-	#if _WIN32_WINNT >= 0x0600
+				LVGROUP group{};
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 				group.cbSize = LVGROUP_V5_SIZE;
-	#else
+#else
 				group.cbSize = sizeof(group);
-	#endif
+#endif
 				group.mask = LVGF_HEADER | LVGF_GROUPID;
 #if MPT_USTRING_MODE_WIDE
 				group.pszHeader = const_cast<wchar_t *>(section.c_str());
@@ -176,10 +176,11 @@ void COptionsAdvanced::ReInit()
 				group.pszFooter = nullptr;
 				group.cchFooter = 0;
 				group.iGroupId = lvi.iGroupId = numGroups++;
-				group.stateMask = LVGS_COLLAPSIBLE;
-				group.state = LVGS_COLLAPSIBLE;
+				group.stateMask = 0;
+				group.state = 0;
 				group.uAlign = LVGA_HEADER_LEFT;
 				ListView_InsertGroup(m_List.m_hWnd, -1, &group);
+				ListView_SetGroupState(m_List.m_hWnd, group.iGroupId, LVGS_COLLAPSIBLE, LVGS_COLLAPSIBLE);
 				m_groups.insert(std::make_pair(section, lvi.iGroupId));
 			} else
 			{
@@ -243,7 +244,7 @@ BOOL COptionsAdvanced::OnSetActive()
 }
 
 
-#ifdef MPT_MFC_FULL
+#ifndef _AFX_NO_MFC_CONTROLS_IN_DIALOGS
 
 
 COLORREF CAdvancedSettingsList::OnGetCellBkColor(int nRow, int /* nColumn */ )
@@ -262,7 +263,7 @@ COLORREF CAdvancedSettingsList::OnGetCellTextColor(int nRow, int nColumn)
 }
 
 
-#else // !MPT_MFC_FULL
+#else // _AFX_NO_MFC_CONTROLS_IN_DIALOGS
 
 
 void COptionsAdvanced::OnCustomDrawList(NMHDR* pNMHDR, LRESULT* pResult)
@@ -276,18 +277,18 @@ void COptionsAdvanced::OnCustomDrawList(NMHDR* pNMHDR, LRESULT* pResult)
 		break;
 	case CDDS_ITEMPREPAINT:
 		{
-			const bool isDefault = theApp.GetSettings().GetMap().find(m_indexToPath[pLVCD->nmcd.lItemlParam])->second.IsDefault();
+			const bool isDefault = theApp.GetSettings().GetMap().find(m_indexToPath[pLVCD->nmcd.lItemlParam])->second.value().IsDefault();
 			COLORREF defColor = m_List.GetBkColor();
 			COLORREF txtColor = m_List.GetTextColor();
 			COLORREF modColor = RGB(GetRValue(defColor) * 0.9 + GetRValue(txtColor) * 0.1, GetGValue(defColor) * 0.9 + GetGValue(txtColor) * 0.1, GetBValue(defColor) * 0.9 + GetBValue(txtColor) * 0.1);
 			pLVCD->clrTextBk = isDefault ? defColor : modColor;
 		}
 		break;
-	}	
+	}
 }
 
 
-#endif // MPT_MFC_FULL
+#endif // !_AFX_NO_MFC_CONTROLS_IN_DIALOGS
 
 
 void COptionsAdvanced::OnOptionDblClick(NMHDR *, LRESULT *)
@@ -296,7 +297,7 @@ void COptionsAdvanced::OnOptionDblClick(NMHDR *, LRESULT *)
 	if(index < 0)
 		return;
 	const SettingPath path = m_indexToPath[m_List.GetItemData(index)];
-	SettingValue val = theApp.GetSettings().GetMap().find(path)->second;
+	SettingValue val = theApp.GetSettings().GetMap().find(path)->second.value();
 	if(val.GetType() == SettingTypeBool)
 	{
 		val = !val.as<bool>();
@@ -323,7 +324,7 @@ void COptionsAdvanced::OnOptionDblClick(NMHDR *, LRESULT *)
 void COptionsAdvanced::OnSaveNow()
 {
 	TrackerSettings::Instance().SaveSettings();
-	theApp.GetSettings().WriteSettings();
+	theApp.GetSettings().Flush();
 }
 
 

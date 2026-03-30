@@ -1,7 +1,7 @@
 ---
 -- vs2010_rules_targets.lua
 -- Generate a Visual Studio 201x custom rules targets file.
--- Copyright (c) Jason Perkins and the Premake project
+-- Copyright (c) Jess Perkins and the Premake project
 ---
 
 	local p = premake
@@ -294,7 +294,7 @@
 
 
 	function m.inputs(r)
-		p.w('Inputs="%%(%s.Identity)"', r.name)
+		p.w('Inputs="@(%s)"', r.name)
 	end
 
 
@@ -410,7 +410,7 @@
 			end
 		end
 		extra = table.concat(extra)
-		p.w('Inputs="%%(%s.Identity);%%(%s.AdditionalDependencies);%s$(MSBuildProjectFile)"', r.name, r.name, extra)
+		p.w('Inputs="@(%s);%%(%s.AdditionalDependencies);%s$(MSBuildProjectFile)"', r.name, r.name, extra)
 	end
 
 
@@ -422,7 +422,7 @@
 
 
 	function m.targetOutputs(r)
-		p.w('Outputs="%%(%s.Outputs)"', r.name)
+		p.w('Outputs="@(%s->\'%%(Outputs)\')"', r.name)
 	end
 
 

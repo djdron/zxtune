@@ -9,8 +9,13 @@
 #include "premake.h"
 #include <string.h>
 
+#if LIBCURL_VERSION_NUM >= 0x072000
+int curlProgressCallback(void* stateptr, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+#else
 int curlProgressCallback(curl_state* state, double dltotal, double dlnow, double ultotal, double ulnow)
+#endif
 {
+	curl_state* state = ((curl_state*)stateptr);
 	lua_State* L = state->L;
 
 	(void)ultotal;
@@ -24,7 +29,7 @@ int curlProgressCallback(curl_state* state, double dltotal, double dlnow, double
 	lua_pushnumber(L, (lua_Number)dlnow);
 	int ret = premake_pcall(L, 2, LUA_MULTRET);
 	if (ret != LUA_OK) {
-		printLastError(L);
+		premake_handle_lua_error(L);
 		return -1; // abort download
 	}
 
@@ -32,10 +37,10 @@ int curlProgressCallback(curl_state* state, double dltotal, double dlnow, double
 }
 
 
-size_t curlWriteCallback(char *ptr, size_t size, size_t nmemb, curl_state* state)
+size_t curlWriteCallback(char *ptr, size_t size, size_t nmemb, void* state)
 {
 	size_t length = size * nmemb;
-	buffer_puts(&state->S, ptr, length);
+	premake_buffer_puts(&((curl_state*)state)->S, ptr, length);
 	return length;
 }
 
@@ -74,7 +79,7 @@ CURL* curlRequest(lua_State* L, curl_state* state, int optionsIndex, int progres
 	state->RefIndex = 0;
 	state->errorBuffer[0] = '\0';
 	state->headers = NULL;
-	buffer_init(&state->S);
+	premake_buffer_init(&state->S);
 
 	curl_init();
 	curl = curl_easy_init();
@@ -86,9 +91,9 @@ CURL* curlRequest(lua_State* L, curl_state* state, int optionsIndex, int progres
 	strcat(agent, PREMAKE_VERSION);
 
 	curl_easy_setopt(curl, CURLOPT_URL, luaL_checkstring(L, 1));
-	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
-	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1);
-	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
 	curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, state->errorBuffer);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, agent);
 
@@ -98,8 +103,8 @@ CURL* curlRequest(lua_State* L, curl_state* state, int optionsIndex, int progres
 	lua_gettable(L, -2);
 	if (!lua_isnil(L, -1))
 	{
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
 	}
 	lua_pop(L, 2);
 
@@ -180,9 +185,13 @@ CURL* curlRequest(lua_State* L, curl_state* state, int optionsIndex, int progres
 
 	if (state->L != 0)
 	{
-		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 		curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, state);
+#if LIBCURL_VERSION_NUM >= 0x072000
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, curlProgressCallback);
+#else
 		curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, curlProgressCallback);
+#endif
 	}
 
 	// clear error buffer.

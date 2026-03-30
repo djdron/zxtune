@@ -47,7 +47,7 @@ public:
 };
 
 
-typedef void (*ExecutePosixCommandProgress)(void *userdata);
+using ExecutePosixCommandProgress = void (*)(void *userdata);
 
 enum ExecuteProgressResult
 {
@@ -55,7 +55,7 @@ enum ExecuteProgressResult
 	ExecuteProgressAsyncCancel = -1,
 };
 
-typedef ExecuteProgressResult (*ExecutePosixShellScriptProgress)(void *userdata);
+using ExecutePosixShellScriptProgress = ExecuteProgressResult (*)(void *userdata);
 
 
 enum ExecFlags
@@ -91,8 +91,8 @@ protected:
 	mpt::OS::Wine::VersionContext m_VersionContext;
 	std::shared_ptr<std::optional<mpt::library>> m_Kernel32;
 private:
-	LPWSTR (*CDECL wine_get_dos_file_name)(LPCSTR str);
-	LPSTR (*CDECL wine_get_unix_file_name)(LPCWSTR str);
+	LPWSTR (CDECL * wine_get_dos_file_name)(LPCSTR str);
+	LPSTR (CDECL * wine_get_unix_file_name)(LPCWSTR str);
 protected:
 	std::string m_Uname_m;
 	std::string m_HOME;

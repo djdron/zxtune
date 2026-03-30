@@ -112,7 +112,7 @@ namespace Strings
           return false;
         }
       }
-      if (!restBytes || it + restBytes > lim)
+      if (!restBytes || restBytes > lim - it)
       {
         return false;
       }

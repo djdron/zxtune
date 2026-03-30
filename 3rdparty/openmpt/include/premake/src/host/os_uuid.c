@@ -1,13 +1,15 @@
 /**
  * \file   os_uuid.c
  * \brief  Create a new UUID.
- * \author Copyright (c) 2002-2012 Jason Perkins and the Premake project
+ * \author Copyright (c) 2002-2012 Jess Perkins and the Premake project
  */
 
 #include "premake.h"
 
 #if PLATFORM_WINDOWS
-#include <Objbase.h>
+#include <objbase.h>
+#elif PLATFORM_LINUX
+#include <uuid/uuid.h>
 #endif
 
 
@@ -31,7 +33,7 @@ int os_uuid(lua_State* L)
 {
 	char uuid[38];
 	unsigned char bytes[16];
-	
+
 	/* If a name argument is supplied, build the UUID from that. For speed we
 	 * are using a simple DBJ2 hashing function; if this isn't sufficient we
 	 * can switch to a full RFC 4122 §4.3 implementation later. */
@@ -44,11 +46,13 @@ int os_uuid(lua_State* L)
 		add(bytes, 12, do_hash(name, 'a'));
 	}
 
-	/* If no name is supplied, try to build one properly */	
+	/* If no name is supplied, try to build one properly */
 	else
 	{
 #if PLATFORM_WINDOWS
 		CoCreateGuid((GUID*)bytes);
+#elif PLATFORM_LINUX
+		uuid_generate(bytes);
 #else
 		int result;
 

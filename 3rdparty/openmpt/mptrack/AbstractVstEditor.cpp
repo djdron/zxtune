@@ -9,35 +9,37 @@
 
 
 #include "stdafx.h"
-#include "Mptrack.h"
-#include "Mainfrm.h"
+#include "AbstractVstEditor.h"
 #include "Clipboard.h"
+#include "dlg_misc.h"
+#include "Globals.h"
+#include "InputHandler.h"
+#include "MIDIMacros.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
+#include "Reporting.h"
+#include "resource.h"
+#include "VstPresets.h"
+#include "Vstplug.h"
+#include "WindowMessages.h"
+#include "../common/FileReader.h"
+#include "../common/mptStringBuffer.h"
 #include "../soundlib/Sndfile.h"
 #include "../soundlib/mod_specifications.h"
 #include "../soundlib/plugins/PlugInterface.h"
 #include "../soundlib/plugins/PluginManager.h"
-#include "Vstplug.h"
-#include "dlg_misc.h"
-#include "AbstractVstEditor.h"
-#include "../common/mptStringBuffer.h"
-#include "MIDIMacros.h"
-#include "VstPresets.h"
-#include "../common/FileReader.h"
-#include "InputHandler.h"
-#include "dlg_misc.h"
+
 #include <sstream>
-#include "Globals.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
 
-#ifndef NO_PLUGINS
-
 CAbstractVstEditor::WindowSizeAdjuster::WindowSizeAdjuster(CWnd &wnd)
 	: m_wnd(wnd)
 {
-	MENUBARINFO mbi = { sizeof(mbi) };
+	MENUBARINFO mbi{};
+	mbi.cbSize = sizeof(mbi);
 	if(GetMenuBarInfo(m_wnd, OBJID_MENU, 0, &mbi))
 		m_menuHeight = (mbi.rcBar.bottom - mbi.rcBar.top);
 }
@@ -45,7 +47,8 @@ CAbstractVstEditor::WindowSizeAdjuster::WindowSizeAdjuster(CWnd &wnd)
 CAbstractVstEditor::WindowSizeAdjuster::~WindowSizeAdjuster()
 {
 	// Extend window height by the menu size if it changed
-	MENUBARINFO mbi = { sizeof(mbi) };
+	MENUBARINFO mbi{};
+	mbi.cbSize = sizeof(mbi);
 	if(GetMenuBarInfo(m_wnd, OBJID_MENU, 0, &mbi))
 	{
 		CRect windowRect;
@@ -62,7 +65,7 @@ CAbstractVstEditor::WindowSizeAdjuster::~WindowSizeAdjuster()
 
 UINT CAbstractVstEditor::m_clipboardFormat = RegisterClipboardFormat(_T("VST Preset Data"));
 
-BEGIN_MESSAGE_MAP(CAbstractVstEditor, CDialog)
+BEGIN_MESSAGE_MAP(CAbstractVstEditor, ResizableDialog)
 	ON_WM_CLOSE()
 	ON_WM_INITMENU()
 	ON_WM_MENUSELECT()
@@ -91,7 +94,7 @@ BEGIN_MESSAGE_MAP(CAbstractVstEditor, CDialog)
 	ON_MESSAGE(WM_MOD_KEYCOMMAND,	&CAbstractVstEditor::OnCustomKeyMsg) //rewbs.customKeys
 	ON_COMMAND_RANGE(ID_PLUGSELECT, ID_PLUGSELECT + MAX_MIXPLUGINS, &CAbstractVstEditor::OnToggleEditor) //rewbs.patPlugName
 	ON_COMMAND_RANGE(ID_SELECTINST, ID_SELECTINST + MAX_INSTRUMENTS, &CAbstractVstEditor::OnSetInputInstrument) //rewbs.patPlugName
-	ON_COMMAND_RANGE(ID_LEARN_MACRO_FROM_PLUGGUI, ID_LEARN_MACRO_FROM_PLUGGUI + NUM_MACROS, &CAbstractVstEditor::PrepareToLearnMacro)
+	ON_COMMAND_RANGE(ID_LEARN_MACRO_FROM_PLUGGUI, ID_LEARN_MACRO_FROM_PLUGGUI + kSFxMacros, &CAbstractVstEditor::PrepareToLearnMacro)
 END_MESSAGE_MAP()
 
 
@@ -111,14 +114,14 @@ CAbstractVstEditor::~CAbstractVstEditor()
 
 void CAbstractVstEditor::PostNcDestroy()
 {
-	CDialog::PostNcDestroy();
+	ResizableDialog::PostNcDestroy();
 	delete this;
 }
 
 
 void CAbstractVstEditor::OnNcLButtonDblClk(UINT nHitTest, CPoint point)
 {
-	CDialog::OnNcLButtonDblClk(nHitTest, point);
+	ResizableDialog::OnNcLButtonDblClk(nHitTest, point);
 	// Double click on title bar = reduce plugin window to non-client area
 	if(nHitTest == HTCAPTION)
 	{
@@ -134,7 +137,8 @@ void CAbstractVstEditor::OnNcLButtonDblClk(UINT nHitTest, CPoint point)
 		m_clientHeight = -m_clientHeight;
 		int rcHeight = rcWnd.Height() + m_clientHeight;
 
-		SetWindowPos(NULL, 0, 0,
+		EnableAutoLayout(!m_isMinimized);
+		SetWindowPos(nullptr, 0, 0,
 			rcWnd.Width(), rcHeight,
 			SWP_NOZORDER | SWP_NOMOVE);
 	}
@@ -143,7 +147,7 @@ void CAbstractVstEditor::OnNcLButtonDblClk(UINT nHitTest, CPoint point)
 
 void CAbstractVstEditor::OnActivate(UINT nState, CWnd *pWndOther, BOOL bMinimized)
 {
-	CDialog::OnActivate(nState, pWndOther, bMinimized);
+	ResizableDialog::OnActivate(nState, pWndOther, bMinimized);
 	if(nState != WA_INACTIVE) CMainFrame::GetMainFrame()->SetMidiRecordWnd(GetSafeHwnd());
 }
 
@@ -155,7 +159,7 @@ LRESULT CAbstractVstEditor::OnMidiMsg(WPARAM midiData, LPARAM sender)
 	{
 		if(!CheckInstrument(m_nInstrument))
 			m_nInstrument = GetBestInstrumentCandidate();
-		modDoc->ProcessMIDI((uint32)midiData, m_nInstrument, &m_VstPlugin, kCtxVSTGUI);
+		modDoc->ProcessMIDI((uint32)midiData, 0, m_nInstrument, &m_VstPlugin, kCtxVSTGUI);
 		return 1;
 	}
 	return 0;
@@ -235,6 +239,7 @@ void CAbstractVstEditor::OnPasteParameters()
 			{
 				pModDoc->SetModified();
 			}
+			WindowSizeAdjuster adjuster(*this);
 			UpdatePresetField();
 		} else
 		{
@@ -253,7 +258,7 @@ void CAbstractVstEditor::OnRandomizePreset()
 	{
 		randomFactor = dlg.resultAsDouble;
 		PlugParamValue factor = PlugParamValue(randomFactor / 100.0);
-		PlugParamIndex numParams = m_VstPlugin.GetNumParameters();
+		PlugParamIndex numParams = m_VstPlugin.GetNumVisibleParameters();
 		for(PlugParamIndex p = 0; p < numParams; p++)
 		{
 			PlugParamValue val = m_VstPlugin.GetParameter(p);
@@ -340,7 +345,6 @@ void CAbstractVstEditor::UpdatePresetField()
 	}
 
 	DrawMenuBar();
-
 }
 
 
@@ -442,11 +446,11 @@ BOOL CAbstractVstEditor::PreTranslateMessage(MSG *msg)
 	if(msg && HandleKeyMessage(*msg))
 		return TRUE;
 
-	return CDialog::PreTranslateMessage(msg);
+	return ResizableDialog::PreTranslateMessage(msg);
 }
 
 
-bool CAbstractVstEditor::HandleKeyMessage(MSG &msg)
+bool CAbstractVstEditor::HandleKeyMessage(MSG &msg, bool handleGlobal)
 {
 	if(m_VstPlugin.m_passKeypressesToPlug)
 		return false;
@@ -457,19 +461,18 @@ bool CAbstractVstEditor::HandleKeyMessage(MSG &msg)
 	if(ih->IsKeyPressHandledByTextBox(static_cast<DWORD>(msg.wParam), ::GetFocus()))
 		return false;
 
-	// Translate message manually
-	UINT nChar = (UINT)msg.wParam;
-	UINT nRepCnt = LOWORD(msg.lParam);
-	UINT nFlags = HIWORD(msg.lParam);
-	KeyEventType kT = ih->GetKeyEventType(nFlags);
+	const auto event = ih->Translate(msg);
 
 	// If we successfully mapped to a command and plug does not listen for keypresses, no need to pass message on.
-	if(ih->KeyEvent(kCtxVSTGUI, nChar, nRepCnt, nFlags, kT, this) != kcNull)
+	if(ih->KeyEvent(kCtxVSTGUI, event, this) != kcNull)
+		return true;
+
+	if(handleGlobal && HandleGlobalKeyMessage(msg))
 		return true;
 
 	// Don't forward key repeats if plug does not listen for keypresses
 	// (avoids system beeps on note hold)
-	if(kT == kKeyEventRepeat)
+	if(event.keyEventType == kKeyEventRepeat)
 		return true;
 	
 	return false;
@@ -502,11 +505,11 @@ void CAbstractVstEditor::SetTitle()
 		if(hasCustomName)
 			title += _T(")");
 
-#ifndef NO_VST
+#ifdef MPT_WITH_VST
 		const CVstPlugin *vstPlugin = dynamic_cast<CVstPlugin *>(&m_VstPlugin);
 		if(vstPlugin != nullptr && vstPlugin->isBridged)
 			title += MPT_CFORMAT(" ({} Bridged)")(m_VstPlugin.GetPluginFactory().GetDllArchNameUser());
-#endif // NO_VST
+#endif // MPT_WITH_VST
 
 		if(m_VstPlugin.IsBypassed())
 			title += _T(" - Bypass");
@@ -533,9 +536,8 @@ LRESULT CAbstractVstEditor::OnCustomKeyMsg(WPARAM wParam, LPARAM /*lParam*/)
 	{
 		if(ValidateCurrentInstrument())
 		{
-			CModDoc* pModDoc = m_VstPlugin.GetModDoc();
-			CMainFrame* pMainFrm = CMainFrame::GetMainFrame();
-			const ModCommand::NOTE note = static_cast<ModCommand::NOTE>(wParam - kcVSTGUIStartNotes + NOTE_MIN + pMainFrm->GetBaseOctave() * 12);
+			CModDoc *pModDoc = m_VstPlugin.GetModDoc();
+			const ModCommand::NOTE note = pModDoc->GetNoteWithBaseOctave(static_cast<int>(wParam - kcVSTGUIStartNotes), m_nInstrument);
 			if(ModCommand::IsNote(note))
 			{
 				pModDoc->PlayNote(PlayNoteParam(note).Instrument(m_nInstrument), &m_noteChannel);
@@ -547,9 +549,8 @@ LRESULT CAbstractVstEditor::OnCustomKeyMsg(WPARAM wParam, LPARAM /*lParam*/)
 	{
 		if(ValidateCurrentInstrument())
 		{
-			CModDoc* pModDoc = m_VstPlugin.GetModDoc();
-			CMainFrame *pMainFrm = CMainFrame::GetMainFrame();
-			const ModCommand::NOTE note = static_cast<ModCommand::NOTE>(wParam - kcVSTGUIStartNoteStops + NOTE_MIN + pMainFrm->GetBaseOctave() * 12);
+			CModDoc *pModDoc = m_VstPlugin.GetModDoc();
+			const ModCommand::NOTE note = pModDoc->GetNoteWithBaseOctave(static_cast<int>(wParam - kcVSTGUIStartNoteStops), m_nInstrument);
 			if(ModCommand::IsNote(note))
 			{
 				pModDoc->NoteOff(note, false, m_nInstrument, m_noteChannel[note - NOTE_MIN]);
@@ -829,7 +830,7 @@ void CAbstractVstEditor::UpdateMacroMenu()
 	}
 
 	CString label, macroName;
-	for(int nMacro = 0; nMacro < NUM_MACROS; nMacro++)
+	for(int nMacro = 0; nMacro < kSFxMacros; nMacro++)
 	{
 		int action = 0;
 		UINT greyed = MF_GRAYED;
@@ -965,7 +966,7 @@ void CAbstractVstEditor::PrepareToLearnMacro(UINT nID)
 
 void CAbstractVstEditor::SetLearnMacro(int inMacro)
 {
-	if (inMacro < NUM_MACROS)
+	if (inMacro < kSFxMacros)
 	{
 		m_nLearnMacro=inMacro;
 	}
@@ -1016,9 +1017,6 @@ void CAbstractVstEditor::RestoreWindowPos()
 		SetWindowPlacement(&wnd);
 	}
 }
-
-
-#endif // NO_PLUGINS
 
 
 OPENMPT_NAMESPACE_END

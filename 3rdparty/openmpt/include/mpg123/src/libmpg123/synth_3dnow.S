@@ -34,11 +34,7 @@
 #include "mangle.h"
 
 #ifdef ACCURATE_ROUNDING
-#if !defined (__APPLE__) && !defined (__OS2__)
-	.section	.rodata
-#else
-	.data
-#endif
+	RODATA
 	ALIGN8
 max_s16:
 	.long   1191181824 /* 32767.0 */
@@ -52,9 +48,9 @@ ftoi_magic:
 #endif
 	.text
 	ALIGN16
-.globl ASM_NAME(synth_1to1_3dnow_asm)
+.globl ASM_NAME(INT123_synth_1to1_3dnow_asm)
 /* int synth_1to1_3dnow_asm(real *bandPtr, int channel, unsigned char *out, unsigned char *buffs, int *bo, real *decwin); */
-ASM_NAME(synth_1to1_3dnow_asm):
+ASM_NAME(INT123_synth_1to1_3dnow_asm):
 	subl $24,%esp
 	pushl %ebp
 	pushl %edi
@@ -122,7 +118,7 @@ ASM_NAME(synth_1to1_3dnow_asm):
 	leal 1088(,%eax,4),%eax
 	addl %ebx,%eax
 	pushl %eax
-	call FUNC(dct64_3dnow)
+	call FUNC(INT123_dct64_3dnow)
 	addl $12,%esp
 	jmp .L29
 .L28:
@@ -136,7 +132,7 @@ ASM_NAME(synth_1to1_3dnow_asm):
 	sall $2,%esi
 	leal (%ecx,%edx,4),%eax
 	pushl %eax
-	call FUNC(dct64_3dnow)
+	call FUNC(INT123_dct64_3dnow)
 	addl $12,%esp
 	movl %esi,LOCAL1
 .L29:
@@ -337,8 +333,8 @@ ASM_NAME(synth_1to1_3dnow_asm):
 
 #if defined(PIC) && defined(__APPLE__)
 	.section __IMPORT,__jump_table,symbol_stubs,self_modifying_code+pure_instructions,5
-L_dct64_3dnow:
-	.indirect_symbol ASM_NAME(dct64_3dnow)
+FUNC(INT123_dct64_3dnow):
+	.indirect_symbol ASM_NAME(INT123_dct64_3dnow)
 	hlt ; hlt ; hlt ; hlt ; hlt
 #endif
 

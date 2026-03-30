@@ -14,6 +14,8 @@
 #include "openmpt/all/BuildSettings.hpp"
 
 #include "CDecimalSupport.h"
+#include "Globals.h"
+#include "../misc/mptClock.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -41,19 +43,6 @@ protected:
 class CCtrlGeneral final : public CModControlDlg
 {
 public:
-	CCtrlGeneral(CModControlView &parent, CModDoc &document);
-	Setting<LONG> &GetSplitPosRef() override { return TrackerSettings::Instance().glGeneralWindowHeight; }
-
-private:
-
-	// Determine how the global volume slider should be scaled to actual global volume.
-	// Display range for XM / S3M should be 0...64, for other formats it's 0...256.
-	uint32 GetGlobalVolumeFactor() const
-	{
-		return (m_sndFile.GetType() & (MOD_TYPE_XM | MOD_TYPE_S3M)) ? uint32(MAX_SLIDER_GLOBAL_VOL / 64) : uint32(MAX_SLIDER_GLOBAL_VOL / 128);
-	}
-
-public:
 	CEdit m_EditTitle, m_EditArtist;
 	CEdit m_EditSpeed, m_EditGlobalVol, m_EditRestartPos,
 		  m_EditSamplePA, m_EditVSTiVol;
@@ -70,7 +59,16 @@ public:
 
 	TEMPO m_tempoMin, m_tempoMax;
 
+public:
+	CCtrlGeneral(CModControlView &parent, CModDoc &document);
+
+private:
+	// Determine how the global volume slider should be scaled to actual global volume.
+	// Display range for XM / S3M should be 0...64, for other formats it's 0...256.
+	uint32 GetGlobalVolumeFactor() const;
+
 	//{{AFX_VIRTUAL(CCtrlGeneral)
+	Setting<LONG> &GetSplitPosRef() override;
 	BOOL OnInitDialog() override;
 	void DoDataExchange(CDataExchange *pDX) override;  // DDX/DDV support
 	void RecalcLayout() override;
@@ -78,11 +76,10 @@ public:
 	CRuntimeClass *GetAssociatedViewClass() override;
 	void OnActivatePage(LPARAM) override;
 	void OnDeactivatePage() override;
-	BOOL GetToolTipText(UINT uId, LPTSTR pszText) override;
+	CString GetToolTipText(UINT uId, HWND hwnd) const override;
 	//}}AFX_VIRTUAL
 
 protected:
-	static constexpr int MAX_SLIDER_GLOBAL_VOL = 256;
 	static constexpr int MAX_SLIDER_VSTI_VOL = 255;
 	static constexpr int MAX_SLIDER_SAMPLE_VOL = 255;
 

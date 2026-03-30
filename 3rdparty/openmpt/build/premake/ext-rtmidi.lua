@@ -2,14 +2,9 @@
  project "rtmidi"
   uuid "05BBD03D-0985-4D76-8DDD-534DA631C3A8"
   language "C++"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "rtmidi"
-  dofile "../../build/premake/premake-defaults-LIB.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "static"
   targetname "openmpt-rtmidi"
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   files {
    "../../include/rtmidi/RtMidi.cpp"
@@ -21,7 +16,7 @@
    "__WINDOWS_MM__",
    "RTMIDI_DO_NOT_ENSURE_UNIQUE_PORTNAMES"
   }
-	if _OPTIONS["clang"] then
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
 		filter { "not kind:StaticLib" }
 			links { "winmm" }
 		filter {}
@@ -30,3 +25,15 @@
 			links { "winmm" }
 		filter {}
 	end
+
+function mpt_use_rtmidi ()
+	filter {}
+	dependencyincludedirs {
+		"../../include",
+	}
+	filter {}
+	links {
+		"rtmidi",
+	}
+	filter {}
+end

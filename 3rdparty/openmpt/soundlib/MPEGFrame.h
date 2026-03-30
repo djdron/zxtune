@@ -24,8 +24,9 @@ public:
 	bool isValid;		// Is a valid frame at all
 	bool isLAME;		// Has Xing/LAME header
 
-	MPEGFrame(FileReader &file);
+	MPEGFrame(FileCursor &file);
 	static bool IsMPEGHeader(const uint8 (&header)[3]);
+	static bool IsMPEGHeader(const uint8 (&header)[4]);
 };
 
 OPENMPT_NAMESPACE_END

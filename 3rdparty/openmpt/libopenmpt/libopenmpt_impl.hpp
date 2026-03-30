@@ -25,6 +25,11 @@
 // forward declarations
 namespace mpt {
 inline namespace mpt_libopenmpt {
+template <typename Traits, bool allow_transcode_locale>
+class BasicPathString;
+struct NativePathTraits;
+struct Utf8PathTraits;
+using native_path = BasicPathString<NativePathTraits, true>;
 namespace IO {
 class FileCursorTraitsFileData;
 template <typename Tpath>
@@ -40,7 +45,11 @@ template <typename Ttraits, typename Tfilenametraits>
 using FileCursor = mpt::IO::FileCursor<Ttraits, Tfilenametraits>;
 } // namespace detail
 namespace mpt {
-class PathString;
+#if defined(MPT_ENABLE_CHARSET_LOCALE)
+using PathString = mpt::native_path;
+#else
+using PathString = mpt::BasicPathString<mpt::Utf8PathTraits, false>;
+#endif
 } // namespace mpt
 using FileCursor = detail::FileCursor<mpt::IO::FileCursorTraitsFileData, mpt::IO::FileCursorFilenameTraits<mpt::PathString>>;
 class CSoundFile;
@@ -99,7 +108,9 @@ protected:
 		std::int32_t start_row;
 		std::int32_t start_order;
 		std::int32_t sequence;
-		subsong_data( double duration, std::int32_t start_row, std::int32_t start_order, std::int32_t sequence );
+		std::int32_t restart_row;
+		std::int32_t restart_order;
+		subsong_data( double duration, std::int32_t start_row, std::int32_t start_order, std::int32_t sequence, std::int32_t restart_row, std::int32_t restart_order );
 	}; // struct subsong_data
 
 	typedef std::vector<subsong_data> subsongs_type;
@@ -190,9 +201,14 @@ public:
 public:
 	void select_subsong( std::int32_t subsong );
 	std::int32_t get_selected_subsong() const;
+	
+	std::int32_t get_restart_order( std::int32_t subsong ) const;
+	std::int32_t get_restart_row( std::int32_t subsong ) const;
+
 	void set_repeat_count( std::int32_t repeat_count );
 	std::int32_t get_repeat_count() const;
 	double get_duration_seconds() const;
+	double get_time_at_position( std::int32_t order, std::int32_t row ) const;
 	double set_position_seconds( double seconds );
 	double get_position_seconds() const;
 	double set_position_order_row( std::int32_t order, std::int32_t row );
@@ -213,6 +229,8 @@ public:
 	double get_current_estimated_bpm() const;
 	std::int32_t get_current_speed() const;
 	std::int32_t get_current_tempo() const;
+	double get_current_tempo2() const;
+	std::int32_t get_current_sequence() const;
 	std::int32_t get_current_order() const;
 	std::int32_t get_current_pattern() const;
 	std::int32_t get_current_row() const;
@@ -235,7 +253,13 @@ public:
 	std::vector<std::string> get_instrument_names() const;
 	std::vector<std::string> get_sample_names() const;
 	std::int32_t get_order_pattern( std::int32_t o ) const;
+	bool is_order_skip_entry( std::int32_t order ) const;
+	static bool is_pattern_skip_item( std::int32_t pattern );
+	bool is_order_stop_entry( std::int32_t order ) const;
+	static bool is_pattern_stop_item( std::int32_t pattern );
 	std::int32_t get_pattern_num_rows( std::int32_t p ) const;
+	std::int32_t get_pattern_rows_per_beat( std::int32_t pattern ) const;
+	std::int32_t get_pattern_rows_per_measure( std::int32_t pattern ) const;
 	std::uint8_t get_pattern_row_channel_command( std::int32_t p, std::int32_t r, std::int32_t c, int cmd ) const;
 	std::string format_pattern_row_channel_command( std::int32_t p, std::int32_t r, std::int32_t c, int cmd ) const;
 	std::string highlight_pattern_row_channel_command( std::int32_t p, std::int32_t r, std::int32_t c, int cmd ) const;

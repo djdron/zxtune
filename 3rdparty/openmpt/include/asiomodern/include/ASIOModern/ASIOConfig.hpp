@@ -46,6 +46,17 @@
 #endif
 
 
+#if ASIO_COMPILER_MSVC
+#if defined(_MSVC_LANG)
+#define ASIO_CXX_VERSION _MSVC_LANG
+#else
+#define ASIO_CXX_VERSION __cplusplus
+#endif
+#else
+#define ASIO_CXX_VERSION __cplusplus
+#endif
+
+
 #if ASIO_COMPILER_MSVC || ASIO_COMPILER_CLANG || ASIO_COMPILER_GCC || ASIO_SYSTEM_WINDOWS
 // assume #pragma pack support on Windows
 #define ASIO_HAVE_PRAGMA_PACK 1
@@ -70,6 +81,10 @@
 
 
 namespace ASIO {
+
+
+
+inline namespace ASIO_VERSION_NAMESPACE {
 
 
 
@@ -167,10 +182,6 @@ namespace ASIO {
 
 
 inline namespace Core {
-
-
-
-inline namespace ASIO_VERSION_NAMESPACE {
 
 
 
@@ -283,11 +294,11 @@ private:
 	Char buf[size] = "";
 
 public:
-	CharBuf()                = default;
-	CharBuf(const CharBuf &) = default;
-	CharBuf(CharBuf &&)      = default;
+	CharBuf()                            = default;
+	CharBuf(const CharBuf &)             = default;
+	CharBuf(CharBuf &&)                  = default;
 	CharBuf & operator=(const CharBuf &) = default;
-	CharBuf & operator=(CharBuf &&) = default;
+	CharBuf & operator=(CharBuf &&)      = default;
 
 public:
 	constexpr CharBuf(std::nullptr_t) noexcept
@@ -370,11 +381,11 @@ static_assert(sizeof(CharBuf<1>) == 1);
 
 
 
-} // namespace ASIO_VERSION_NAMESPACE
-
-
-
 } // namespace Core
+
+
+
+} // namespace ASIO_VERSION_NAMESPACE
 
 
 

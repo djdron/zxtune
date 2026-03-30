@@ -11,6 +11,7 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "AccessibleControls.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -26,16 +27,16 @@ protected:
 
 	void OnOK() override;
 	BOOL OnInitDialog() override;
-	BOOL OnKillActive() override;
 
 	afx_msg void OnAutosaveEnable();
 	afx_msg void OnAutosaveUseOrigDir();
-	afx_msg void OnBrowseAutosavePath()	{ BrowseFolder(IDC_AUTOSAVE_PATH); }
-	afx_msg void OnBrowseSongs()		{ BrowseFolder(IDC_OPTIONS_DIR_MODS); }
-	afx_msg void OnBrowseSamples()		{ BrowseFolder(IDC_OPTIONS_DIR_SAMPS); }
-	afx_msg void OnBrowseInstruments()	{ BrowseFolder(IDC_OPTIONS_DIR_INSTS); }
-	afx_msg void OnBrowsePlugins()		{ BrowseFolder(IDC_OPTIONS_DIR_VSTS); }
-	afx_msg void OnBrowsePresets()		{ BrowseFolder(IDC_OPTIONS_DIR_VSTPRESETS); }
+	afx_msg void OnAutosaveRetention();
+	afx_msg void OnBrowseAutosavePath();
+	afx_msg void OnBrowseSongs();
+	afx_msg void OnBrowseSamples();
+	afx_msg void OnBrowseInstruments();
+	afx_msg void OnBrowsePlugins();
+	afx_msg void OnBrowsePresets();
 
 	void OnSettingsChanged();
 	BOOL OnSetActive() override;
@@ -45,6 +46,9 @@ protected:
 	mpt::PathString GetPath(int id);
 
 	DECLARE_MESSAGE_MAP()
+
+	std::array<AccessibleEdit, 3> m_accessibleEdits;
+	std::array<AccessibleButton, 6> m_browseButtons;
 };
 
 OPENMPT_NAMESPACE_END

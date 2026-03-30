@@ -12,10 +12,11 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#include "../common/FileReaderFwd.h"
+#include "../soundlib/Snd_defs.h"
+
 #include <vector>
 #include <algorithm>
-
-#include "../common/FileReaderFwd.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -114,6 +115,7 @@ public:
 
 	bool AreOrderEqual(const size_t a, const size_t b) const { return !(m_Directives[a] < m_Directives[b] || m_Directives[b] < m_Directives[a]); }
 
+	void MovePlugin(PLUGINDEX from, PLUGINDEX to);
 private:
 	void Sort() { std::stable_sort(m_Directives.begin(), m_Directives.end()); }
 

@@ -2,23 +2,37 @@
  project "stb_vorbis"
   uuid "E0D81662-85EF-4172-B0D8-F8DCFF712607"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "stb_vorbis"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-stb_vorbis"
   includedirs { }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   defines { "STB_VORBIS_NO_PULLDATA_API", "STB_VORBIS_NO_STDIO" }
   files {
    "../../include/stb_vorbis/stb_vorbis.c",
   }
-  filter { "action:vs*" }
-    buildoptions { "/wd4005", "/wd4100", "/wd4244", "/wd4245", "/wd4701" }
-  filter {}
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd4005", "/wd4100", "/wd4244", "/wd4245", "/wd4701" }
+	end
+	filter {}
   filter { "kind:SharedLib" }
    files { "../../build/premake/def/ext-stb_vorbis.def" }
   filter {}
+
+function mpt_use_stbvorbis ()
+	filter {}
+	dependencyincludedirs {
+		"../../include",
+	}
+	filter {}
+	defines {
+		"STB_VORBIS_HEADER_ONLY",
+		"STB_VORBIS_NO_PULLDATA_API",
+		"STB_VORBIS_NO_STDIO",
+	}
+	links {
+		"stb_vorbis",
+	}
+	filter {}
+end

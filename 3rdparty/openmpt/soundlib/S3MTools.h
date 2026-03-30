@@ -11,12 +11,13 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
-
-#include "../soundlib/ModSample.h"
-#include "../soundlib/SampleIO.h"
-
+#include "openmpt/base/Endian.hpp"
+#include "Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
+
+struct ModSample;
+class SampleIO;
 
 // S3M File Header
 struct S3MFileHeader
@@ -43,12 +44,18 @@ struct S3MFileHeader
 		trkBeRoTracker    = 0x6000,
 		trkCreamTracker   = 0x7000,
 
+		trkAkord          = 0x0208,
 		trkST3_00         = 0x1300,
+		trkST3_01         = 0x1301,
 		trkST3_20         = 0x1320,
+		trkIT1_old        = 0x3320,
 		trkIT2_07         = 0x3207,
 		trkIT2_14         = 0x3214,
 		trkBeRoTrackerOld = 0x4100,  // Used from 2004 to 2012
+		trkGraoumfTracker = 0x5447,
+		trkNESMusa        = 0x5700,
 		trkCamoto         = 0xCA00,
+		trkPlayerPRO      = 0x2013,  // PlayerPRO on Intel doesn't byte-swap the tracker ID bytes
 	};
 
 	// Flags
@@ -89,6 +96,17 @@ struct S3MFileHeader
 	uint16le reserved4;
 	uint16le special;          // Pointer to special custom data (unused)
 	uint8le  channels[32];     // Channel setup
+
+	uint8 GetNumChannels() const
+	{
+		uint8 numChannels  = 4;
+		for(uint8 i = 0; i < 32; i++)
+		{
+			if(channels[i] != 0xFF)
+				numChannels = i + 1;
+		}
+		return numChannels;
+	}
 };
 
 MPT_BINARY_STRUCT(S3MFileHeader, 96)
@@ -142,9 +160,26 @@ struct S3MSampleHeader
 	SmpLength ConvertToS3M(const ModSample &mptSmp);
 	// Retrieve the internal sample format flags for this sample.
 	SampleIO GetSampleFormat(bool signedSamples) const;
+	// Calculate the sample position in file
+	uint32 GetSampleOffset() const;
 };
 
 MPT_BINARY_STRUCT(S3MSampleHeader, 80)
+
+
+// Pattern decoding flags
+enum S3MPattern
+{
+	s3mEndOfRow      = 0x00,
+	s3mChannelMask   = 0x1F,
+	s3mNotePresent   = 0x20,
+	s3mVolumePresent = 0x40,
+	s3mEffectPresent = 0x80,
+	s3mAnyPresent    = 0xE0,
+
+	s3mNoteOff  = 0xFE,
+	s3mNoteNone = 0xFF,
+};
 
 
 OPENMPT_NAMESPACE_END

@@ -1,14 +1,18 @@
 /**
  * \file   debug_prompt.c
  * \brief  Display a prompt and enter interactive REPL mode.
- * \author Copyright (c) 2014 Jason Perkins and the Premake project
+ * \author Copyright (c) 2014 Jess Perkins and the Premake project
  */
 
 #include "premake.h"
 
 /* Build on the REPL built into Lua already */
 #define main lua_main
+#ifdef LUA_STATICLIB
 #include "lua.c"
+#else
+#include "../../contrib/lua/src/lua.c"
+#endif
 
 
 /* Based on dotty() in lua.c */

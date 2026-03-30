@@ -1,7 +1,7 @@
 /**
 * \file   curl_utils.h
 * \brief  curl utilities for the http library.
-* \author Copyright (c) 2017 Tom van Dijck, Jo„o Matos and the Premake project
+* \author Copyright (c) 2017 Tom van Dijck, Jo√£o Matos and the Premake project
 */
 #ifndef curl_utils_h
 #define curl_utils_h
@@ -9,11 +9,13 @@
 #ifdef PREMAKE_CURL
 
 #include "buffered_io.h"
+#ifdef LUA_STATICLIB
 #include "lua.h"
+#else
+#include <lua5.3/lua.h>
+#endif
 
-#define _MPRINTF_REPLACE /* use curl functions only */
 #include <curl/curl.h>
-#include <curl/mprintf.h>
 
 typedef struct
 {
@@ -23,9 +25,6 @@ typedef struct
 	char                errorBuffer[256];
 	struct curl_slist*  headers;
 } curl_state;
-
-int    curlProgressCallback(curl_state* state, double dltotal, double dlnow, double ultotal, double ulnow);
-size_t curlWriteCallback(char *ptr, size_t size, size_t nmemb, curl_state* state);
 
 CURL*  curlRequest(lua_State* L, curl_state* state, int optionsIndex, int progressFnIndex, int headersIndex);
 void   curlCleanup(CURL* curl, curl_state* state);

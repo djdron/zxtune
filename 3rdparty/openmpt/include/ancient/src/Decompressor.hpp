@@ -18,7 +18,7 @@ namespace ancient::internal
 class Decompressor
 {
 protected:
-	Decompressor() noexcept;
+	Decompressor() noexcept=default;
 
 public:
 
@@ -30,7 +30,7 @@ public:
 	Decompressor(const Decompressor&)=delete;
 	Decompressor& operator=(const Decompressor&)=delete;
 
-	virtual ~Decompressor();
+	virtual ~Decompressor() noexcept=default;
 
 	// Name returned is human readable long name
 	virtual const std::string &getName() const noexcept=0;
@@ -52,7 +52,7 @@ public:
 	void decompress(Buffer &rawData,bool verify);
 
 	// in case of disk image based formats the data does not necessarily start
-	// from logical beginnig of the image but it is offsetted inside the logical image
+	// from logical beginning of the image but it is offsetted inside the logical image
 	// (f.e. DMS). getDataOffset will return the offset (or 0 if not relevant or if offset does not exist)
 	// getImageSize will return the size of the the logical image, or 0 if not image-based format
 	virtual size_t getImageSize() const noexcept;
@@ -71,11 +71,11 @@ public:
 	// check exactSizeKnown from size documentation
 	// can throw InvalidFormatError if stream is not recognized or it is invalid
 	// can throw VerificationError if verify enabled and checksum does not match
-	static std::unique_ptr<Decompressor> create(const Buffer &packedData,bool exactSizeKnown,bool verify);
+	static std::shared_ptr<Decompressor> create(const Buffer &packedData,bool exactSizeKnown,bool verify);
 
 	// Detect signature whether it matches to any known compressor
-	// This does not guarantee the data is decompressable though, only signature is read
-	static bool detect(const Buffer &packedData) noexcept;
+	// This does not guarantee the data is decompressable though, only signature(s) is read
+	static bool detect(const Buffer &packedData,bool exactSizeKnown) noexcept;
 
 protected:
 	virtual void decompressImpl(Buffer &rawData,bool verify)=0;

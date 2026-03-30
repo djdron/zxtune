@@ -34,6 +34,7 @@ protected:
 
 	// Plugin
 	Vst::AEffect *m_nativeEffect = nullptr;
+	Vst::MainProc m_mainProc = nullptr;
 	HMODULE m_library = nullptr;
 	HWND m_window = nullptr;
 	int m_windowWidth = 0, m_windowHeight = 0;
@@ -58,6 +59,12 @@ protected:
 	bool m_needIdle = false;  // Plugin needs idle time
 
 public:
+
+#ifndef UNICODE
+	static std::string StringEncode(const std::wstring &src, UINT codepage);
+	static std::wstring StringDecode(const std::string &src, UINT codepage);
+#endif
+
 	PluginBridge(const wchar_t *memName, HANDLE otherProcess);
 	~PluginBridge();
 	

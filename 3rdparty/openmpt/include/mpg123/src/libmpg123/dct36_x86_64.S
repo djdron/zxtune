@@ -30,11 +30,7 @@
 	void dct36_x86_64(real *inbuf,real *o1,real *o2,real *wintab,real *tsbuf);
 */
 	
-#ifndef __APPLE__
-	.section	.rodata
-#else
-	.data
-#endif
+	RODATA
 	ALIGN16
 dct36_x86_64_COS9:
 	.long 0x3f5db3d7
@@ -72,8 +68,8 @@ dct36_x86_64_sign:
 	.long 0x80000000,0x80000000,0x80000000,0x80000000
 	.text
 	ALIGN16
-	.globl ASM_NAME(dct36_x86_64)
-ASM_NAME(dct36_x86_64):
+	.globl ASM_NAME(INT123_dct36_x86_64)
+ASM_NAME(INT123_dct36_x86_64):
 #ifdef IS_MSABI
 	push		%rbp
 	mov			%rsp, %rbp

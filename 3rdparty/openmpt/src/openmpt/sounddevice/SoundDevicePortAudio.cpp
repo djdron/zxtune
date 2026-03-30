@@ -3,13 +3,16 @@
 
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "openmpt/all/PlatformFixes.hpp"
 
 #include "SoundDevicePortAudio.hpp"
 
 #include "SoundDevice.hpp"
 
+#include "mpt/arch/arch.hpp"
 #include "mpt/base/detect.hpp"
 #include "mpt/base/macros.hpp"
+#include "mpt/base/pointer.hpp"
 #include "mpt/base/saturate_cast.hpp"
 #include "mpt/base/saturate_round.hpp"
 #include "mpt/format/message_macros.hpp"
@@ -17,7 +20,7 @@
 #include "mpt/parse/parse.hpp"
 #include "mpt/string/buffer.hpp"
 #include "mpt/string/types.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 #include "openmpt/base/Types.hpp"
 #include "openmpt/logging/Logger.hpp"
 #include "openmpt/soundbase/SampleFormat.hpp"
@@ -30,6 +33,12 @@
 #ifdef MPT_WITH_PORTAUDIO
 #if defined(MODPLUG_TRACKER) && MPT_COMPILER_MSVC
 #include "../include/portaudio/src/common/pa_debugprint.h"
+#endif
+#if defined(MPT_BUILD_MSVC) && MPT_COMPILER_MSVC && MPT_ARCH_X86 && !defined(MPT_ARCH_X86_SSE2)
+extern "C"
+{
+void PaUtil_InitializeX86PlainConverters(void);
+}
 #endif
 #if MPT_OS_WINDOWS
 #include <shellapi.h>
@@ -48,7 +57,7 @@ namespace SoundDevice
 #ifdef MPT_WITH_PORTAUDIO
 
 #ifdef MPT_ALL_LOGGING
-#define PALOG(x)       MPT_LOG(GetLogger(), LogDebug, "PortAudio", x)
+#define PALOG(x)       MPT_LOG(GetLogger(), LogDebug, "PortAudio", (x))
 #define PA_LOG_ENABLED 1
 #else
 #define PALOG(x) \
@@ -72,7 +81,7 @@ CPortaudioDevice::CPortaudioDevice(ILogger &logger, SoundDevice::Info info, Soun
 	} else
 	{
 		m_DeviceIsDefault = false;
-		m_DeviceIndex = mpt::ConvertStringTo<PaDeviceIndex>(internalID);
+		m_DeviceIndex = mpt::parse<PaDeviceIndex>(internalID);
 	}
 	m_HostApiType = Pa_GetHostApiInfo(Pa_GetDeviceInfo(m_DeviceIndex)->hostApi)->type;
 	m_StreamParameters = {};
@@ -219,7 +228,7 @@ bool CPortaudioDevice::InternalOpen()
 				}
 			} else
 			{
-				if(!GetSysInfo().IsWine && GetSysInfo().WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version::Win7))
+				if(!GetSysInfo().IsWindowsWine() && GetSysInfo().WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version::Win7))
 				{  // retry with automatic stream format conversion (i.e. resampling)
 #if MPT_OS_WINDOWS
 					m_WasapiStreamInfo.flags |= paWinWasapiAutoConvert;
@@ -244,7 +253,7 @@ bool CPortaudioDevice::InternalOpen()
 	{
 		flags |= paDitherOff;
 	}
-	if(Pa_OpenStream(&m_Stream, (m_Settings.InputChannels > 0) ? &m_InputStreamParameters : NULL, &m_StreamParameters, m_Settings.Samplerate, framesPerBuffer, flags, StreamCallbackWrapper, reinterpret_cast<void *>(this)) != paNoError)
+	if(Pa_OpenStream(&m_Stream, (m_Settings.InputChannels > 0) ? &m_InputStreamParameters : NULL, &m_StreamParameters, m_Settings.Samplerate, framesPerBuffer, flags, StreamCallbackWrapper, mpt::void_ptr<CPortaudioDevice>(this)) != paNoError)
 	{
 		return false;
 	}
@@ -461,7 +470,7 @@ SoundDevice::Caps CPortaudioDevice::InternalGetDeviceCaps()
 		}
 	} else if(m_HostApiType == paMME)
 	{
-		if(GetSysInfo().IsWine)
+		if(GetSysInfo().IsWindowsWine())
 		{
 			caps.DefaultSettings.sampleFormat = SampleFormat::Int16;
 		} else if(GetSysInfo().WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version::WinVista))
@@ -669,7 +678,7 @@ bool CPortaudioDevice::OpenDriverSettings()
 		controlEXE += TEXT("\\");
 	}
 	controlEXE += TEXT("control.exe");
-	return (reinterpret_cast<INT_PTR>(ShellExecute(NULL, TEXT("open"), controlEXE.c_str(), (hasVista ? TEXT("/name Microsoft.Sound") : TEXT("mmsys.cpl")), NULL, SW_SHOW)) >= 32);
+	return (mpt::pointer_cast<INT_PTR>(ShellExecute(NULL, TEXT("open"), controlEXE.c_str(), (hasVista ? TEXT("/name Microsoft.Sound") : TEXT("mmsys.cpl")), NULL, SW_SHOW)) >= 32);
 #else   // !MPT_OS_WINDOWS
 	return false;
 #endif  // MPT_OS_WINDOWS
@@ -727,7 +736,7 @@ int CPortaudioDevice::StreamCallback(
 int CPortaudioDevice::StreamCallbackWrapper(
 	const void *input, void *output, unsigned long frameCount, const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData)
 {
-	return reinterpret_cast<CPortaudioDevice *>(userData)->StreamCallback(input, output, frameCount, timeInfo, statusFlags);
+	return mpt::void_ptr<CPortaudioDevice>(userData)->StreamCallback(input, output, frameCount, timeInfo, statusFlags);
 }
 
 
@@ -788,9 +797,9 @@ std::vector<SoundDevice::Info> CPortaudioDevice::EnumerateDevices(ILogger &logge
 				break;
 		}
 		result.internalID = mpt::format<mpt::ustring>::dec(dev);
-		result.name = mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetDeviceInfo(dev)->name);
-		result.apiName = mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetHostApiInfo(Pa_GetDeviceInfo(dev)->hostApi)->name);
-		result.extraData[MPT_USTRING("PortAudio-HostAPI-name")] = mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetHostApiInfo(Pa_GetDeviceInfo(dev)->hostApi)->name);
+		result.name = mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetDeviceInfo(dev)->name);
+		result.apiName = mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetHostApiInfo(Pa_GetDeviceInfo(dev)->hostApi)->name);
+		result.extraData[MPT_USTRING("PortAudio-HostAPI-name")] = mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetHostApiInfo(Pa_GetDeviceInfo(dev)->hostApi)->name);
 		result.apiPath.push_back(MPT_USTRING("PortAudio"));
 		result.useNameAsIdentifier = true;
 		result.flags = {
@@ -860,12 +869,12 @@ std::vector<SoundDevice::Info> CPortaudioDevice::EnumerateDevices(ILogger &logge
 			result.apiName = MPT_USTRING("OSS");
 			result.default_ = ((Pa_GetHostApiInfo(Pa_GetDeviceInfo(dev)->hostApi)->defaultOutputDevice == static_cast<PaDeviceIndex>(dev)) ? Info::Default::Named : Info::Default::None);
 			result.flags = {
-				sysInfo.SystemClass == mpt::osinfo::osclass::BSD ? Info::Usability::Usable : sysInfo.SystemClass == mpt::osinfo::osclass::Linux ? Info::Usability::Deprecated : Info::Usability::NotAvailable,
+				sysInfo.SystemClass == mpt::osinfo::osclass::BSD_ ? Info::Usability::Usable : sysInfo.SystemClass == mpt::osinfo::osclass::Linux ? Info::Usability::Deprecated : Info::Usability::NotAvailable,
 				Info::Level::Primary,
 				Info::Compatible::No,
-				sysInfo.SystemClass == mpt::osinfo::osclass::BSD ? Info::Api::Native : sysInfo.SystemClass == mpt::osinfo::osclass::Linux ? Info::Api::Emulated : Info::Api::Emulated,
+				sysInfo.SystemClass == mpt::osinfo::osclass::BSD_ ? Info::Api::Native : sysInfo.SystemClass == mpt::osinfo::osclass::Linux ? Info::Api::Emulated : Info::Api::Emulated,
 				Info::Io::FullDuplex,
-				sysInfo.SystemClass == mpt::osinfo::osclass::BSD ? Info::Mixing::Hardware : sysInfo.SystemClass == mpt::osinfo::osclass::Linux ? Info::Mixing::Software : Info::Mixing::Software,
+				sysInfo.SystemClass == mpt::osinfo::osclass::BSD_ ? Info::Mixing::Hardware : sysInfo.SystemClass == mpt::osinfo::osclass::Linux ? Info::Mixing::Software : Info::Mixing::Software,
 				Info::Implementor::External
 			};
 			break;
@@ -1007,7 +1016,7 @@ std::vector<std::pair<PaDeviceIndex, mpt::ustring>> CPortaudioDevice::EnumerateI
 		{
 			continue;
 		}
-		result.push_back(std::make_pair(dev, mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetDeviceInfo(dev)->name)));
+		result.push_back(std::make_pair(dev, mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, Pa_GetDeviceInfo(dev)->name)));
 	}
 	return result;
 }
@@ -1036,7 +1045,7 @@ static void PortaudioLog(const char *text)
 		return;
 	}
 #if PA_LOG_ENABLED
-	MPT_LOG(mpt::log::GlobalLogger(), LogDebug, "PortAudio", MPT_UFORMAT_MESSAGE("PortAudio: {}")(mpt::convert<mpt::ustring>(mpt::common_encoding::utf8, text)));
+	MPT_LOG(mpt::log::GlobalLogger(), LogDebug, "PortAudio", MPT_UFORMAT_MESSAGE("PortAudio: {}")(mpt::transcode<mpt::ustring>(mpt::common_encoding::utf8, text)));
 #endif
 }
 #endif  // MPT_COMPILER_MSVC
@@ -1046,6 +1055,9 @@ PortAudioInitializer::PortAudioInitializer()
 {
 #if defined(MODPLUG_TRACKER) && MPT_COMPILER_MSVC
 	PaUtil_SetDebugPrintFunction(PortaudioLog);
+#endif
+#if defined(MPT_BUILD_MSVC) && MPT_COMPILER_MSVC && MPT_ARCH_X86 && !defined(MPT_ARCH_X86_SSE2)
+	PaUtil_InitializeX86PlainConverters();
 #endif
 	m_initialized = (Pa_Initialize() == paNoError);
 }

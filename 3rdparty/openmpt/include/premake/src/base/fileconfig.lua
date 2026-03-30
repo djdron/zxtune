@@ -1,7 +1,7 @@
 --
 -- fileconfig.lua
 -- The set of configuration information for a specific file.
--- Copyright (c) 2011-2014 Jason Perkins and the Premake project
+-- Copyright (c) 2011-2014 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -298,3 +298,11 @@
 	function fcfg_mt.extension(fcfg)
 		return path.getextension(fcfg.abspath)
 	end
+
+
+	function fcfg_mt.ruleinputs(fcfg)
+		-- fallback for batch rule inputs
+		return fcfg.relpath
+	end
+
+

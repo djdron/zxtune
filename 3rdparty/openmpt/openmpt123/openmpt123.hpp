@@ -12,231 +12,128 @@
 
 #include "openmpt123_config.hpp"
 
+#include "openmpt123_exception.hpp"
+#include "openmpt123_terminal.hpp"
+
 #include "mpt/base/compiletime_warning.hpp"
-#include "mpt/base/floatingpoint.hpp"
+#include "mpt/base/detect.hpp"
+#include "mpt/base/float.hpp"
+#include "mpt/base/math.hpp"
+#include "mpt/base/namespace.hpp"
 #include "mpt/base/preprocessor.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/base/saturate_round.hpp"
+#include "mpt/exception/exception_text.hpp"
+#include "mpt/format/concat.hpp"
+#include "mpt/format/message.hpp"
+#include "mpt/format/message_macros.hpp"
+#include "mpt/format/simple.hpp"
+#include "mpt/io_file/fstream.hpp"
+#include "mpt/parse/parse.hpp"
+#include "mpt/path/native_path.hpp"
+#include "mpt/string/types.hpp"
+#include "mpt/string/utility.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 
 #include <string>
 
-namespace openmpt123 {
+#include <libopenmpt/libopenmpt.hpp>
 
-struct exception : public openmpt::exception {
-	exception( const std::string & text ) : openmpt::exception(text) { }
+namespace mpt {
+inline namespace MPT_INLINE_NS {
+
+template <>
+struct make_string_type<mpt::native_path> {
+	using type = mpt::native_path;
 };
 
+
+template <>
+struct is_string_type<mpt::native_path> : public std::true_type { };
+
+template <>
+struct string_transcoder<mpt::native_path> {
+	using string_type = mpt::native_path;
+	static inline mpt::widestring decode( const string_type & src ) {
+		return mpt::transcode<mpt::widestring>( src.AsNative() );
+	}
+	static inline string_type encode( const mpt::widestring & src ) {
+		return mpt::native_path::FromNative( mpt::transcode<mpt::native_path::raw_path_type>( src ) );
+	}
+};
+
+} // namespace MPT_INLINE_NS
+} // namespace mpt
+
+namespace openmpt123 {
+
 struct show_help_exception {
-	std::string message;
 	bool longhelp;
-	show_help_exception( const std::string & msg = "", bool longhelp_ = true ) : message(msg), longhelp(longhelp_) { }
+	show_help_exception( bool longhelp_ = true ) : longhelp(longhelp_) { }
+};
+
+struct args_nofiles_exception {
+	args_nofiles_exception() = default;
 };
 
 struct args_error_exception {
-	args_error_exception() { }
+	args_error_exception() = default;
 };
 
 struct show_help_keyboard_exception { };
 
-#if defined(WIN32)
-bool IsConsole( DWORD stdHandle );
-#endif
-bool IsTerminal( int fd );
 
+template <typename Tstring, typename Tchar, typename T>
+inline Tstring align_right( const Tchar pad, std::size_t width, const T val ) {
+	assert( Tstring( 1, pad ).length() == 1 );
+	Tstring str = mpt::default_formatter::template format<Tstring>( val );
+	if ( width > str.length() ) {
+		str.insert( str.begin(), width - str.length(), pad );
+	}
+	return str;
+}
 
 
 struct field {
-	std::string key;
-	std::string val;
-	field( const std::string & key )
-		: key(key)
-	{
-		return;
-	}
+	mpt::ustring key;
+	mpt::ustring val;
 };
 
-class textout : public std::ostringstream {
-public:
-	textout() {
-		return;
-	}
-	virtual ~textout() {
-		return;
-	}
-protected:
-	std::string pop() {
-		std::string text = str();
-		str(std::string());
-		return text;
-	}
-public:
-	virtual void writeout() = 0;
-	virtual void cursor_up( std::size_t lines ) {
-		static_cast<void>( lines );
-	}
-};
 
-class textout_dummy : public textout {
-public:
-	textout_dummy() {
-		return;
-	}
-	virtual ~textout_dummy() {
-		return;
-	}
-public:
-	void writeout() override {
-		static_cast<void>( pop() );
-	}
-};
-
-class textout_ostream : public textout {
-private:
-	std::ostream & s;
-#if defined(__DJGPP__)
-	mpt::common_encoding codepage;
-#endif
-public:
-	textout_ostream( std::ostream & s_ )
-		: s(s_)
-#if defined(__DJGPP__)
-		, codepage(mpt::common_encoding::cp437)
-#endif
-	{
-		#if defined(__DJGPP__)
-			codepage = mpt::djgpp_get_locale_encoding();
-		#endif
-		return;
-	}
-	virtual ~textout_ostream() {
-		writeout_impl();
-	}
-private:
-	void writeout_impl() {
-		std::string text = pop();
-		if ( text.length() > 0 ) {
-			#if defined(__DJGPP__)
-				s << mpt::convert<std::string>( codepage, mpt::common_encoding::utf8, text );
-			#elif defined(__EMSCRIPTEN__)
-				s << text;
-			#else
-				s << mpt::convert<std::string>( mpt::logical_encoding::locale, mpt::common_encoding::utf8, text );
-		#endif
-			s.flush();
-		}	
-	}
-public:
-	void writeout() override {
-		writeout_impl();
-	}
-	void cursor_up( std::size_t lines ) override {
-		s.flush();
-		for ( std::size_t line = 0; line < lines; ++line ) {
-			*this << "\x1b[1A";
-		}
-	}
-};
-
-#if defined(WIN32)
-
-class textout_ostream_console : public textout {
-private:
-#if defined(UNICODE)
-	std::wostream & s;
-#else
-	std::ostream & s;
-#endif
-	HANDLE handle;
-	bool console;
-public:
-#if defined(UNICODE)
-	textout_ostream_console( std::wostream & s_, DWORD stdHandle_ )
-#else
-	textout_ostream_console( std::ostream & s_, DWORD stdHandle_ )
-#endif
-		: s(s_)
-		, handle(GetStdHandle( stdHandle_ ))
-		, console(IsConsole( stdHandle_ ))
-	{
-		return;
-	}
-	virtual ~textout_ostream_console() {
-		writeout_impl();
-	}
-private:
-	void writeout_impl() {
-		std::string text = pop();
-		if ( text.length() > 0 ) {
-			if ( console ) {
-				#if defined(UNICODE)
-					std::wstring wtext = mpt::convert<std::wstring>( mpt::common_encoding::utf8, text );
-					WriteConsole( handle, wtext.data(), static_cast<DWORD>( wtext.size() ), NULL, NULL );
-				#else
-					std::string ltext = mpt::convert<std::string>( mpt::logical_encoding::locale, mpt::common_encoding::utf8, text );
-					WriteConsole( handle, ltext.data(), static_cast<DWORD>( ltext.size() ), NULL, NULL );
-				#endif
-			} else {
-				#if defined(UNICODE)
-					s << mpt::convert<std::wstring>( mpt::common_encoding::utf8, text );
-				#else
-					s << mpt::convert<std::string>( mpt::logical_encoding::locale, mpt::common_encoding::utf8, text );
-				#endif
-				s.flush();
-			}
-		}
-	}
-public:
-	void writeout() override {
-		writeout_impl();
-	}
-	void cursor_up( std::size_t lines ) override {
-		if ( console ) {
-			s.flush();
-			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			ZeroMemory( &csbi, sizeof( CONSOLE_SCREEN_BUFFER_INFO ) );
-			COORD coord_cursor = COORD();
-			if ( GetConsoleScreenBufferInfo( handle, &csbi ) != FALSE ) {
-				coord_cursor = csbi.dwCursorPosition;
-				coord_cursor.X = 1;
-				coord_cursor.Y -= static_cast<SHORT>( lines );
-				SetConsoleCursorPosition( handle, coord_cursor );
-			}
-		}
-	}
-};
-
-#endif // WIN32
-
-static inline float mpt_round( float val ) {
-	if ( val >= 0.0f ) {
-		return std::floor( val + 0.5f );
-	} else {
-		return std::ceil( val - 0.5f );
-	}
-}
-
-static inline long mpt_lround( float val ) {
-	return static_cast< long >( mpt_round( val ) );
-}
-
-static inline std::string append_software_tag( std::string software ) {
-	std::string openmpt123 = std::string() + "openmpt123 " + OPENMPT123_VERSION_STRING + " (libopenmpt " + openmpt::string::get( "library_version" ) + ", OpenMPT " + openmpt::string::get( "core_version" ) + ")";
+inline mpt::ustring append_software_tag( mpt::ustring software ) {
+	mpt::ustring openmpt123 = mpt::ustring()
+		+ MPT_USTRING("openmpt123 ")
+		+ mpt::transcode<mpt::ustring>( mpt::source_encoding, OPENMPT123_VERSION_STRING )
+		+ MPT_USTRING(" (libopenmpt ")
+		+ mpt::transcode<mpt::ustring>( mpt::common_encoding::utf8, openmpt::string::get( "library_version" ) )
+		+ MPT_USTRING(", OpenMPT ")
+		+ mpt::transcode<mpt::ustring>( mpt::common_encoding::utf8, openmpt::string::get( "core_version" ) )
+		+ MPT_USTRING(")")
+		;
 	if ( software.empty() ) {
 		software = openmpt123;
 	} else {
-		software += " (via " + openmpt123 + ")";
+		software += MPT_USTRING(" (via ") + openmpt123 + MPT_USTRING(")");
 	}
 	return software;
 }
 
-static inline std::string get_encoder_tag() {
-	return std::string() + "openmpt123 " + OPENMPT123_VERSION_STRING + " (libopenmpt " + openmpt::string::get( "library_version" ) + ", OpenMPT " + openmpt::string::get( "core_version" ) + ")";
+inline mpt::ustring get_encoder_tag() {
+	return mpt::ustring()
+		+ MPT_USTRING("openmpt123 ")
+		+ mpt::transcode<mpt::ustring>( mpt::source_encoding, OPENMPT123_VERSION_STRING )
+		+ MPT_USTRING(" (libopenmpt ")
+		+ mpt::transcode<mpt::ustring>( mpt::common_encoding::utf8, openmpt::string::get( "library_version" ) )
+		+ MPT_USTRING(", OpenMPT ")
+		+ mpt::transcode<mpt::ustring>( mpt::common_encoding::utf8, openmpt::string::get( "core_version" ) )
+		+ MPT_USTRING(")");
 }
 
-static inline std::string get_extension( std::string filename ) {
-	if ( filename.find_last_of( "." ) != std::string::npos ) {
-		return filename.substr( filename.find_last_of( "." ) + 1 );
+inline mpt::native_path get_extension( mpt::native_path filename ) {
+	mpt::native_path tmp = filename.GetFilenameExtension();
+	if ( !tmp.empty() ) {
+		tmp = mpt::native_path::FromNative( tmp.AsNative().substr( 1 ) );
 	}
-	return "";
+	return tmp;
 }
 
 enum class Mode {
@@ -248,67 +145,77 @@ enum class Mode {
 	Render
 };
 
-static inline std::string mode_to_string( Mode mode ) {
+inline mpt::ustring mode_to_string( Mode mode ) {
 	switch ( mode ) {
-		case Mode::None:   return "none"; break;
-		case Mode::Probe:  return "probe"; break;
-		case Mode::Info:   return "info"; break;
-		case Mode::UI:     return "ui"; break;
-		case Mode::Batch:  return "batch"; break;
-		case Mode::Render: return "render"; break;
+		case Mode::None:   return MPT_USTRING("none"); break;
+		case Mode::Probe:  return MPT_USTRING("probe"); break;
+		case Mode::Info:   return MPT_USTRING("info"); break;
+		case Mode::UI:     return MPT_USTRING("ui"); break;
+		case Mode::Batch:  return MPT_USTRING("batch"); break;
+		case Mode::Render: return MPT_USTRING("render"); break;
 	}
-	return "";
+	return MPT_USTRING("");
 }
 
-static const std::int32_t default_low = -2;
-static const std::int32_t default_high = -1;
+inline const std::int32_t default_low = -2;
+inline const std::int32_t default_high = -1;
+
+enum verbosity : std::int8_t {
+	verbosity_shortversion = -1,
+	verbosity_hidden = 0,
+	verbosity_normal = 1,
+	verbosity_verbose = 2,
+};
 
 struct commandlineflags {
-	Mode mode;
-	bool canUI;
-	std::int32_t ui_redraw_interval;
-	bool canProgress;
-	std::string driver;
-	std::string device;
-	std::int32_t buffer;
-	std::int32_t period;
-	std::int32_t samplerate;
-	std::int32_t channels;
-	std::int32_t gain;
-	std::int32_t separation;
-	std::int32_t filtertaps;
-	std::int32_t ramping; // ramping strength : -1:default 0:off 1 2 3 4 5 // roughly milliseconds
-	std::int32_t tempo;
-	std::int32_t pitch;
-	std::int32_t dither;
-	std::int32_t repeatcount;
-	std::int32_t subsong;
-	std::map<std::string, std::string> ctls;
-	double seek_target;
-	double end_time;
-	bool quiet;
-	bool verbose;
-	int terminal_width;
-	int terminal_height;
-	bool show_details;
-	bool show_message;
-	bool show_ui;
-	bool show_progress;
-	bool show_meters;
-	bool show_channel_meters;
-	bool show_pattern;
-	bool use_float;
-	bool use_stdout;
-	bool randomize;
-	bool shuffle;
-	bool restart;
-	std::size_t playlist_index;
-	std::vector<std::string> filenames;
-	std::string output_filename;
-	std::string output_extension;
-	bool force_overwrite;
-	bool paused;
-	std::string warnings;
+
+	Mode mode = Mode::UI;
+	std::int32_t ui_redraw_interval = default_high;
+	mpt::ustring driver = MPT_USTRING("");
+	mpt::ustring device = MPT_USTRING("");
+	std::int32_t buffer = default_high;
+	std::int32_t period = default_high;
+	std::int32_t samplerate = MPT_OS_DJGPP ? 44100 : 48000;
+	std::int32_t channels = 2;
+	std::int32_t gain = 0;
+	std::int32_t separation = 100;
+	std::int32_t filtertaps = 8;
+	std::int32_t ramping = -1; // ramping strength : -1:default 0:off 1 2 3 4 5 // roughly milliseconds
+	std::int32_t tempo = 0;
+	std::int32_t pitch = 0;
+	std::int32_t dither = 1;
+	std::int32_t repeatcount = 0;
+	std::int32_t subsong = -1;
+	std::map<std::string, std::string> ctls = {};
+	double seek_target = 0.0;
+	double end_time = 0.0;
+	bool quiet = false;
+	verbosity banner = verbosity_normal;
+	bool verbose = false;
+	bool assume_terminal = false;
+	int terminal_width = -1;
+	int terminal_height = -1;
+	bool show_details = true;
+	bool show_message = false;
+	bool show_ui = true;
+	bool show_progress = true;
+	bool show_meters = true;
+	bool show_channel_meters = false;
+	bool show_pattern = false;
+	bool use_float = MPT_OS_DJGPP ? false : mpt::float_traits<float>::is_hard && mpt::float_traits<float>::is_ieee754_binary;
+	bool stdin_data = false;
+	bool stdout_data = false;
+	bool randomize = false;
+	bool shuffle = false;
+	bool restart = false;
+	std::size_t playlist_index = 0;
+	std::vector<mpt::native_path> filenames = {};
+	mpt::native_path output_filename = MPT_NATIVE_PATH("");
+	mpt::native_path output_extension = MPT_NATIVE_PATH("auto");
+	bool force_overwrite = false;
+	bool paused = false;
+	mpt::ustring warnings = MPT_USTRING("");
+
 	void apply_default_buffer_sizes() {
 		if ( ui_redraw_interval == default_high ) {
 			ui_redraw_interval = 50;
@@ -326,126 +233,37 @@ struct commandlineflags {
 			period = 10;
 		}
 	}
-	commandlineflags() {
-		mode = Mode::UI;
-		ui_redraw_interval = default_high;
-		driver = "";
-		device = "";
-		buffer = default_high;
-		period = default_high;
-#if defined(__DJGPP__)
-		samplerate = 44100;
-		channels = 2;
-		use_float = false;
-#else
-		samplerate = 48000;
-		channels = 2;
-		use_float = mpt::float_traits<float>::is_hard && mpt::float_traits<float>::is_ieee754_binary;
-#endif
-		gain = 0;
-		separation = 100;
-		filtertaps = 8;
-		ramping = -1;
-		tempo = 0;
-		pitch = 0;
-		dither = 1;
-		repeatcount = 0;
-		subsong = -1;
-		seek_target = 0.0;
-		end_time = 0.0;
-		quiet = false;
-		verbose = false;
-#if defined(__DJGPP__)
-		terminal_width = 80;
-		terminal_height = 25;
-#else
-		terminal_width = 72;
-		terminal_height = 23;
-#endif
-#if defined(WIN32)
-		terminal_width = 72;
-		terminal_height = 23;
-		HANDLE hStdOutput = GetStdHandle( STD_OUTPUT_HANDLE );
-		if ( ( hStdOutput != NULL ) && ( hStdOutput != INVALID_HANDLE_VALUE ) ) {
-			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			ZeroMemory( &csbi, sizeof( CONSOLE_SCREEN_BUFFER_INFO ) );
-			if ( GetConsoleScreenBufferInfo( hStdOutput, &csbi ) != FALSE ) {
-				terminal_width = std::min( static_cast<int>( 1 + csbi.srWindow.Right - csbi.srWindow.Left ), static_cast<int>( csbi.dwSize.X ) );
-				terminal_height = std::min( static_cast<int>( 1 + csbi.srWindow.Bottom - csbi.srWindow.Top ), static_cast<int>( csbi.dwSize.Y ) );
-			}
-		}
-#else // WIN32
-		if ( isatty( STDERR_FILENO ) ) {
-			if ( std::getenv( "COLUMNS" ) ) {
-				std::istringstream istr( std::getenv( "COLUMNS" ) );
-				int tmp = 0;
-				istr >> tmp;
-				if ( tmp > 0 ) {
-					terminal_width = tmp;
-				}
-			}
-			if ( std::getenv( "ROWS" ) ) {
-				std::istringstream istr( std::getenv( "ROWS" ) );
-				int tmp = 0;
-				istr >> tmp;
-				if ( tmp > 0 ) {
-					terminal_height = tmp;
-				}
-			}
-			#if defined(TIOCGWINSZ)
-				struct winsize ts;
-				if ( ioctl( STDERR_FILENO, TIOCGWINSZ, &ts ) >= 0 ) {
-					terminal_width = ts.ws_col;
-					terminal_height = ts.ws_row;
-				}
-			#elif defined(TIOCGSIZE)
-				struct ttysize ts;
-				if ( ioctl( STDERR_FILENO, TIOCGSIZE, &ts ) >= 0 ) {
-					terminal_width = ts.ts_cols;
-					terminal_height = ts.ts_rows;
-				}
-			#endif
-		}
-#endif
-		show_details = true;
-		show_message = false;
-#if defined(WIN32)
-		canUI = IsTerminal( 0 ) ? true : false;
-		canProgress = IsTerminal( 2 ) ? true : false;
-#else // !WIN32
-		canUI = isatty( STDIN_FILENO ) ? true : false;
-		canProgress = isatty( STDERR_FILENO ) ? true : false;
-#endif // WIN32
-		show_ui = canUI;
-		show_progress = canProgress;
-		show_meters = canUI && canProgress;
-		show_channel_meters = false;
-		show_pattern = false;
-		use_stdout = false;
-		randomize = false;
-		shuffle = false;
-		restart = false;
-		playlist_index = 0;
-		output_extension = "auto";
-		force_overwrite = false;
-		paused = false;
-	}
+
 	void check_and_sanitize() {
+		bool canUI = true;
+		bool canProgress = true;
+		if ( !assume_terminal ) {
+			canUI = mpt::terminal::is_terminal( mpt::terminal::stdio_fd::in ).value_or( false );
+			canProgress = mpt::terminal::is_terminal( mpt::terminal::stdio_fd::err ).value_or( false );
+		}
+		mpt::terminal::query_size( terminal_width, terminal_height );
 		if ( filenames.size() == 0 ) {
+			throw args_nofiles_exception();
+		}
+		stdin_data = mpt::contains( filenames, MPT_NATIVE_PATH("-") );
+		if ( stdout_data && ( device != commandlineflags().device || !output_filename.empty() ) ) {
 			throw args_error_exception();
 		}
-		if ( use_stdout && ( device != commandlineflags().device || !output_filename.empty() ) ) {
-			throw args_error_exception();
-		}
-		if ( !output_filename.empty() && ( device != commandlineflags().device || use_stdout ) ) {
+		if ( !output_filename.empty() && ( device != commandlineflags().device || stdout_data ) ) {
 			throw args_error_exception();
 		}
 		for ( const auto & filename : filenames ) {
-			if ( filename == "-" ) {
+			if ( filename == MPT_NATIVE_PATH("-") ) {
 				canUI = false;
 			}
 		}
 		show_ui = canUI;
+		if ( !canProgress ) {
+			show_progress = false;
+		}
+		if ( !canUI || !canProgress ) {
+			show_meters = false;
+		}
 		if ( mode == Mode::None ) {
 			if ( canUI ) {
 				mode = Mode::UI;
@@ -507,8 +325,8 @@ struct commandlineflags {
 		if ( samplerate < 0 ) {
 			samplerate = commandlineflags().samplerate;
 		}
-		if ( output_extension == "auto" ) {
-			output_extension = "";
+		if ( output_extension == MPT_NATIVE_PATH("auto") ) {
+			output_extension = MPT_NATIVE_PATH("");
 		}
 		if ( mode != Mode::Render && !output_extension.empty() ) {
 			throw args_error_exception();
@@ -520,9 +338,10 @@ struct commandlineflags {
 			output_extension = get_extension( output_filename );
 		}
 		if ( output_extension.empty() ) {
-			output_extension = "wav";
+			output_extension = MPT_NATIVE_PATH("wav");
 		}
 	}
+
 };
 
 template < typename Tsample > Tsample convert_sample_to( float val );
@@ -537,16 +356,15 @@ template < > std::int16_t convert_sample_to( float val ) {
 }
 
 class write_buffers_interface {
-protected:
+public:
 	virtual ~write_buffers_interface() {
 		return;
 	}
-public:
-	virtual void write_metadata( std::map<std::string,std::string> metadata ) {
+	virtual void write_metadata( std::map<mpt::ustring, mpt::ustring> metadata ) {
 		(void)metadata;
 		return;
 	}
-	virtual void write_updated_metadata( std::map<std::string,std::string> metadata ) {
+	virtual void write_updated_metadata( std::map<mpt::ustring, mpt::ustring> metadata ) {
 		(void)metadata;
 		return;
 	}
@@ -704,11 +522,11 @@ protected:
 		return;
 	}
 public:
-	void write_metadata( std::map<std::string,std::string> metadata ) override {
+	void write_metadata( std::map<mpt::ustring, mpt::ustring> metadata ) override {
 		(void)metadata;
 		return;
 	}
-	void write_updated_metadata( std::map<std::string,std::string> metadata ) override {
+	void write_updated_metadata( std::map<mpt::ustring, mpt::ustring> metadata ) override {
 		(void)metadata;
 		return;
 	}

@@ -1,7 +1,7 @@
 --
 -- vs2017.lua
 -- Extend the existing exporters with support for Visual Studio 2017.
--- Copyright (c) Jason Perkins and the Premake project
+-- Copyright (c) Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -25,10 +25,16 @@
 
 		-- The capabilities of this action
 
-		valid_kinds     = { "ConsoleApp", "WindowedApp", "StaticLib", "SharedLib", "Makefile", "None", "Utility", "SharedItems" },
+		valid_kinds     = { "ConsoleApp", "WindowedApp", "StaticLib", "SharedLib", "Makefile", "None", "Utility", "SharedItems", p.PACKAGING },
 		valid_languages = { "C", "C++", "C#", "F#" },
 		valid_tools     = {
-			cc     = { "msc"   },
+			cc     = function(prj)
+						if prj.system == p.LINUX then
+							return { "gcc" }
+						else
+							return { "msc" }
+						end
+					end,
 			dotnet = { "msnet" },
 		},
 

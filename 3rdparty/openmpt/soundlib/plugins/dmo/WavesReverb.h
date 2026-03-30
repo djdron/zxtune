@@ -8,8 +8,6 @@
  */
 
 
-#ifndef NO_PLUGINS
-
 #include "../PlugInterface.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -26,16 +24,16 @@ protected:
 		kRvbReverbMix,
 		kRvbReverbTime,
 		kRvbHighFreqRTRatio,
-		kDistNumParameters
+		kRvbNumParameters
 	};
 
-	float m_param[kDistNumParameters];
+	std::array<float, kRvbNumParameters> m_param;
 
 	// Parameters and coefficients
 	float m_dryFactor;
 	float m_wetFactor;
-	float m_coeffs[10];
-	uint32 m_delay[6];
+	std::array<float, 10> m_coeffs;
+	std::array<uint32, 6> m_delay;
 
 	// State
 	struct ReverbState
@@ -47,10 +45,9 @@ protected:
 	} m_state;
 
 public:
-	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
-	WavesReverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
+	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
+	WavesReverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
 
-	void Release() override { delete this; }
 	int32 GetUID() const override { return 0x87FC0268; }
 	int32 GetVersion() const override { return 0; }
 	void Idle() override { }
@@ -64,9 +61,9 @@ public:
 	int32 GetCurrentProgram() override { return 0; }
 	void SetCurrentProgram(int32) override { }
 
-	PlugParamIndex GetNumParameters() const override { return kDistNumParameters; }
+	PlugParamIndex GetNumParameters() const override { return kRvbNumParameters; }
 	PlugParamValue GetParameter(PlugParamIndex index) override;
-	void SetParameter(PlugParamIndex index, PlugParamValue value) override;
+	void SetParameter(PlugParamIndex index, PlugParamValue value, PlayState * = nullptr, CHANNELINDEX = CHANNELINDEX_INVALID) override;
 
 	void Resume() override;
 	void Suspend() override { m_isResumed = false; }
@@ -103,5 +100,3 @@ protected:
 } // namespace DMO
 
 OPENMPT_NAMESPACE_END
-
-#endif // !NO_PLUGINS

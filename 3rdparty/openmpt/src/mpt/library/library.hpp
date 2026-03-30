@@ -9,14 +9,18 @@
 #include "mpt/base/macros.hpp"
 #include "mpt/base/namespace.hpp"
 #include "mpt/base/saturate_cast.hpp"
+#include "mpt/base/utility.hpp"
 #include "mpt/detect/dl.hpp"
 #include "mpt/detect/ltdl.hpp"
-#include "mpt/path/path.hpp"
+#include "mpt/fs/common_directories.hpp"
+#include "mpt/fs/fs.hpp"
+#include "mpt/osinfo/windows_version.hpp"
+#include "mpt/path/native_path.hpp"
 #include "mpt/string/types.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 
-#include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -37,14 +41,41 @@ inline namespace MPT_INLINE_NS {
 
 
 
+#if MPT_OS_WINDOWS
+
+// KB2533623 / Win8
+#ifdef LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+#define MPT_LOAD_LIBRARY_SEARCH_DEFAULT_DIRS LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+#else
+#define MPT_LOAD_LIBRARY_SEARCH_DEFAULT_DIRS 0x00001000
+#endif
+#ifdef LOAD_LIBRARY_SEARCH_APPLICATION_DIR
+#define MPT_LOAD_LIBRARY_SEARCH_APPLICATION_DIR LOAD_LIBRARY_SEARCH_APPLICATION_DIR
+#else
+#define MPT_LOAD_LIBRARY_SEARCH_APPLICATION_DIR 0x00000200
+#endif
+#ifdef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define MPT_LOAD_LIBRARY_SEARCH_SYSTEM32 LOAD_LIBRARY_SEARCH_SYSTEM32
+#else
+#define MPT_LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
+#ifdef LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
+#define MPT_LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
+#else
+#define MPT_LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0x00000100
+#endif
+
+#endif // MPT_OS_WINDOWS
+
+
+
 class library {
 
 public:
 	typedef void * (*func_ptr)(); // pointer to function returning void *
 	static_assert(sizeof(func_ptr) == sizeof(void *));
 
-	enum class path_search
-	{
+	enum class path_search {
 		invalid,
 		unsafe,
 		default_,
@@ -53,14 +84,12 @@ public:
 		none,
 	};
 
-	enum class path_prefix
-	{
+	enum class path_prefix {
 		none,
 		default_,
 	};
 
-	enum class path_suffix
-	{
+	enum class path_suffix {
 		none,
 		default_,
 	};
@@ -70,28 +99,28 @@ public:
 	public:
 		path_search search = path_search::invalid;
 		path_prefix prefix = path_prefix::default_;
-		mpt::path filename{};
+		mpt::native_path filename{};
 		path_suffix suffix = path_suffix::default_;
 
-		static mpt::path default_prefix() {
+		static mpt::native_path default_prefix() {
 #if MPT_OS_WINDOWS
-			return MPT_PATH("");
+			return MPT_NATIVE_PATH("");
 #else
-			return MPT_PATH("lib");
+			return MPT_NATIVE_PATH("lib");
 #endif
 		}
 
-		static mpt::path default_suffix() {
+		static mpt::native_path default_suffix() {
 #if MPT_OS_WINDOWS
-			return MPT_PATH(".dll");
+			return MPT_NATIVE_PATH(".dll");
 #elif MPT_OS_ANDROID || defined(MPT_WITH_DL)
-			return MPT_PATH(".so");
+			return MPT_NATIVE_PATH(".so");
 #else
-			return MPT_PATH("");
+			return MPT_NATIVE_PATH("");
 #endif
 		}
 
-		std::optional<mpt::path> get_effective_filename() const {
+		std::optional<mpt::native_path> get_effective_filename() const {
 			switch (search) {
 				case library::path_search::unsafe:
 					break;
@@ -116,11 +145,11 @@ public:
 					return std::nullopt;
 					break;
 			}
-			mpt::path result{};
-			result += filename.parent_path();
-			result += ((prefix == path_prefix::default_) ? default_prefix() : mpt::path{});
-			result += filename.filename();
-			result += ((suffix == path_suffix::default_) ? default_suffix() : mpt::path{});
+			mpt::native_path result{};
+			result += filename.GetDirectoryWithDrive();
+			result += ((prefix == path_prefix::default_) ? default_prefix() : mpt::native_path{});
+			result += filename.GetFilenameBase();
+			result += ((suffix == path_suffix::default_) ? default_suffix() : mpt::native_path{});
 			return result;
 		}
 	};
@@ -151,65 +180,42 @@ public:
 		return *this;
 	}
 
-private:
-#if !MPT_OS_WINDOWS_WINRT
-#if (_WIN32_WINNT < 0x0602)
-
-	static mpt::path get_application_path() {
-		std::vector<TCHAR> path(MAX_PATH);
-		while (GetModuleFileName(0, path.data(), mpt::saturate_cast<DWORD>(path.size())) >= path.size()) {
-			if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-				return mpt::path{};
-			}
-			path.resize(mpt::exponential_grow(path.size()));
-		}
-		return mpt::path::from_stdpath(std::filesystem::absolute(mpt::convert<mpt::path>(mpt::winstring(path.data())).stdpath()));
-	}
-
-	static mpt::path get_system_path() {
-		DWORD size = GetSystemDirectory(nullptr, 0);
-		std::vector<TCHAR> path(size + 1);
-		if (!GetSystemDirectory(path.data(), size + 1)) {
-			return mpt::path{};
-		}
-		return mpt::convert<mpt::path>(mpt::winstring(path.data()));
-	}
-
-#endif
-#endif // !MPT_OS_WINDOWS_WINRT
-
 public:
-	static std::optional<library> load(mpt::library::path path) {
+	static std::optional<library> load_optional(mpt::library::path path) {
 
 		HMODULE hModule = NULL;
 
-		std::optional<mpt::path> optionalfilename = path.get_effective_filename();
+		std::optional<mpt::native_path> optionalfilename = path.get_effective_filename();
 		if (!optionalfilename) {
 			return std::nullopt;
 		}
-		mpt::path & filename = optionalfilename.value();
+#if defined(MPT_LIBCXX_QUIRK_NO_OPTIONAL_VALUE)
+		mpt::native_path & filename = *optionalfilename;
+#else
+		mpt::native_path & filename = optionalfilename.value();
+#endif
 		if (filename.empty()) {
 			return std::nullopt;
 		}
 
 #if MPT_OS_WINDOWS_WINRT
 
-#if (_WIN32_WINNT < 0x0602)
+#if MPT_WINRT_BEFORE(MPT_WIN_8)
 		MPT_UNUSED(path);
 		return std::nullopt;
 #else  // Windows 8
 		switch (path.search) {
 			case library::path_search::unsafe:
-				hModule = LoadPackagedLibrary(filename.ospath().c_str(), 0);
+				hModule = ::LoadPackagedLibrary(filename.AsNative().c_str(), 0);
 				break;
 			case library::path_search::default_:
-				hModule = LoadPackagedLibrary(filename.ospath().c_str(), 0);
+				hModule = ::LoadPackagedLibrary(filename.AsNative().c_str(), 0);
 				break;
 			case library::path_search::system:
 				hModule = NULL; // Only application packaged libraries can be loaded dynamically in WinRT
 				break;
 			case library::path_search::application:
-				hModule = LoadPackagedLibrary(filename.ospath().c_str(), 0);
+				hModule = ::LoadPackagedLibrary(filename.AsNative().c_str(), 0);
 				break;
 			case library::path_search::none:
 				hModule = NULL; // Absolute path is not supported in WinRT
@@ -222,75 +228,97 @@ public:
 
 #else // !MPT_OS_WINDOWS_WINRT
 
-#if (_WIN32_WINNT >= 0x0602) // Windows 8
-
-		switch (path.search) {
-			case library::path_search::unsafe:
-				hModule = LoadLibrary(filename.ospath().c_str());
-				break;
-			case library::path_search::default_:
-				hModule = LoadLibraryEx(filename.ospath().c_str(), NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-				break;
-			case library::path_search::system:
-				hModule = LoadLibraryEx(filename.ospath().c_str(), NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
-				break;
-			case library::path_search::application:
-				hModule = LoadLibraryEx(filename.ospath().c_str(), NULL, LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
-				break;
-			case library::path_search::none:
-				hModule = LoadLibraryEx(filename.ospath().c_str(), NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
-				break;
-			case library::path_search::invalid:
-				hModule = NULL;
-				break;
+#if MPT_WINNT_AT_LEAST(MPT_WIN_8) && 0
+		bool hasKB2533623 = true;
+#else
+		bool hasKB2533623 = false;
+		mpt::osinfo::windows::Version WindowsVersion = mpt::osinfo::windows::Version::Current();
+		if (WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version::Win8)) {
+			hasKB2533623 = true;
+		} else if (WindowsVersion.IsAtLeast(mpt::osinfo::windows::Version::WinVista)) {
+			HMODULE hKernel32DLL = ::LoadLibrary(TEXT("kernel32.dll"));
+			if (hKernel32DLL) {
+				if (::GetProcAddress(hKernel32DLL, "SetDefaultDllDirectories") != nullptr) {
+					hasKB2533623 = true;
+				}
+				::FreeLibrary(hKernel32DLL);
+				hKernel32DLL = NULL;
+			}
 		}
+#endif
 
-#else // < Windows 8
+		MPT_MAYBE_CONSTANT_IF (hasKB2533623) {
 
-		switch (path.search) {
-			case library::path_search::unsafe:
-				hModule = LoadLibrary(filename.ospath().c_str());
-				break;
-			case library::path_search::default_:
-				hModule = LoadLibrary(filename.ospath().c_str());
-				break;
-			case library::path_search::system:
-				{
-					mpt::path system_path = get_system_path();
-					if (system_path.empty()) {
-						hModule = NULL;
-					} else {
-						hModule = LoadLibrary((system_path / filename).ospath().c_str());
+			switch (path.search) {
+				case library::path_search::unsafe:
+					hModule = ::LoadLibrary(filename.AsNative().c_str());
+					break;
+				case library::path_search::default_:
+					hModule = ::LoadLibraryEx(filename.AsNative().c_str(), NULL, MPT_LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+					break;
+				case library::path_search::system:
+					hModule = ::LoadLibraryEx(filename.AsNative().c_str(), NULL, MPT_LOAD_LIBRARY_SEARCH_SYSTEM32);
+					break;
+				case library::path_search::application:
+					hModule = ::LoadLibraryEx(filename.AsNative().c_str(), NULL, MPT_LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
+					break;
+				case library::path_search::none:
+					hModule = ::LoadLibraryEx(filename.AsNative().c_str(), NULL, MPT_LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+					break;
+				case library::path_search::invalid:
+					hModule = NULL;
+					break;
+			}
+
+		} else {
+
+			switch (path.search) {
+				case library::path_search::unsafe:
+					hModule = ::LoadLibrary(filename.AsNative().c_str());
+					break;
+				case library::path_search::default_:
+					hModule = ::LoadLibrary(filename.AsNative().c_str());
+					break;
+				case library::path_search::system:
+					{
+						mpt::native_path system_path = mpt::common_directories::get_system_directory();
+						if (system_path.empty()) {
+							hModule = NULL;
+						} else {
+							hModule = ::LoadLibrary((system_path.WithTrailingSlash() + filename).AsNative().c_str());
+						}
 					}
-				}
-				break;
-			case library::path_search::application:
-				{
-					mpt::path application_path = get_application_path();
-					if (application_path.empty()) {
-						hModule = NULL;
-					} else {
-						hModule = LoadLibrary((application_path / filename).ospath().c_str());
+					break;
+				case library::path_search::application:
+					{
+						mpt::native_path application_path = mpt::common_directories::get_application_directory();
+						if (application_path.empty()) {
+							hModule = NULL;
+						} else {
+							hModule = ::LoadLibrary((application_path.WithTrailingSlash() + filename).AsNative().c_str());
+						}
 					}
-				}
-				break;
-			case library::path_search::none:
-				hModule = LoadLibrary(filename.ospath().c_str());
-				break;
-			case library::path_search::invalid:
-				hModule = NULL;
-				break;
+					break;
+				case library::path_search::none:
+					hModule = ::LoadLibrary(filename.AsNative().c_str());
+					break;
+				case library::path_search::invalid:
+					hModule = NULL;
+					break;
+			}
 		}
 
 #endif // MPT_OS_WINDOWS_WINRT
 
-#endif
+		if (!hModule) {
+			return std::nullopt;
+		}
 
 		return library{hModule};
 	}
 
-	func_ptr get_address(const std::string & symbol) const {
-		return reinterpret_cast<func_ptr>(::GetProcAddress(m_hModule, symbol.c_str()));
+	auto get_address(const std::string & symbol) const {
+		return ::GetProcAddress(m_hModule, symbol.c_str());
 	}
 
 	~library() {
@@ -324,24 +352,28 @@ public:
 	}
 
 public:
-	static std::optional<library> load(mpt::library::path path) {
-		std::optional<mpt::path> optionalfilename = path.get_effective_filename();
+	static std::optional<library> load_optional(mpt::library::path path) {
+		std::optional<mpt::native_path> optionalfilename = path.get_effective_filename();
 		if (!optionalfilename) {
 			return std::nullopt;
 		}
-		mpt::path & filename = optionalfilename.value();
+#if defined(MPT_LIBCXX_QUIRK_NO_OPTIONAL_VALUE)
+		mpt::native_path & filename = *optionalfilename;
+#else
+		mpt::native_path & filename = optionalfilename.value();
+#endif
 		if (filename.empty()) {
 			return std::nullopt;
 		}
-		void * handle = dlopen(filename.ospath().c_str(), RTLD_NOW);
+		void * handle = dlopen(filename.AsNative().c_str(), RTLD_NOW);
 		if (!handle) {
 			return std::nullopt;
 		}
 		return library{handle};
 	}
 
-	func_ptr get_address(const std::string & symbol) const {
-		return reinterpret_cast<func_ptr>(dlsym(handle, symbol.c_str()));
+	auto get_address(const std::string & symbol) const {
+		return dlsym(handle, symbol.c_str());
 	}
 
 	~library() {
@@ -375,27 +407,31 @@ public:
 	}
 
 public:
-	static std::optional<library> load(mpt::library::path path) {
+	static std::optional<library> load_optional(mpt::library::path path) {
 		if (lt_dlinit() != 0) {
 			return std::nullopt;
 		}
-		std::optional<mpt::path> optionalfilename = path.get_effective_filename();
+		std::optional<mpt::native_path> optionalfilename = path.get_effective_filename();
 		if (!optionalfilename) {
 			return std::nullopt;
 		}
-		mpt::path & filename = optionalfilename.value();
+#if defined(MPT_LIBCXX_QUIRK_NO_OPTIONAL_VALUE)
+		mpt::native_path & filename = *optionalfilename;
+#else
+		mpt::native_path & filename = optionalfilename.value();
+#endif
 		if (filename.empty()) {
 			return std::nullopt;
 		}
-		lt_dlhandle handle = lt_dlopenext(filename.ospath().c_str());
+		lt_dlhandle handle = lt_dlopenext(filename.AsNative().c_str());
 		if (!handle) {
 			return std::nullopt;
 		}
 		return library{handle};
 	}
 
-	func_ptr get_address(const std::string & symbol) const {
-		return reinterpret_cast<func_ptr>(dlsym(handle, symbol.c_str()));
+	auto get_address(const std::string & symbol) const {
+		return lt_dlsym(handle, symbol.c_str());
 	}
 
 	~library() {
@@ -429,12 +465,12 @@ public:
 	}
 
 public:
-	static std::optional<library> load(mpt::library::path path) {
+	static std::optional<library> load_optional(mpt::library::path path) {
 		MPT_UNUSED(path);
 		return std::nullopt;
 	}
 
-	func_ptr get_address(const std::string & symbol) const {
+	void * get_address(const std::string & symbol) const {
 		MPT_UNUSED(symbol);
 		return nullptr;
 	}
@@ -445,16 +481,109 @@ public:
 
 #endif
 
+	static library load(mpt::library::path path) {
+		std::optional<library> result = load_optional(path);
+		if (!result) {
+			throw std::runtime_error("library not loadable");
+		}
+		return std::move(result.value());
+	}
+
 	template <typename Tfunc>
-	bool bind(Tfunc *& f, const std::string & symbol) const {
-#if !(MPT_OS_WINDOWS && MPT_COMPILER_GCC)
+	bool bind_function(Tfunc *& f, const std::string & symbol) const {
+#if !defined(MPT_LIBCXX_QUIRK_INCOMPLETE_IS_FUNCTION)
 		// MinGW64 std::is_function is always false for non __cdecl functions.
 		// Issue is similar to <https://connect.microsoft.com/VisualStudio/feedback/details/774720/stl-is-function-bug>.
 		static_assert(std::is_function<Tfunc>::value);
 #endif
-		const func_ptr addr = get_address(symbol);
-		f = reinterpret_cast<Tfunc *>(addr);
-		return (addr != nullptr);
+		auto sym_ptr = get_address(symbol);
+		if (!sym_ptr) {
+			return false;
+		}
+		if constexpr (std::is_same<decltype(sym_ptr), void *>::value) {
+			f = reinterpret_cast<Tfunc *>(sym_ptr);
+		} else {
+			f = mpt::function_pointer_cast<Tfunc *>(sym_ptr);
+		}
+		return true;
+	}
+
+	template <typename Tdata>
+	bool bind_data(Tdata *& d, const std::string & symbol) const {
+#if !defined(MPT_LIBCXX_QUIRK_INCOMPLETE_IS_FUNCTION)
+		// MinGW64 std::is_function is always false for non __cdecl functions.
+		// Issue is similar to <https://connect.microsoft.com/VisualStudio/feedback/details/774720/stl-is-function-bug>.
+		static_assert(!std::is_function<Tdata>::value);
+#endif
+		auto sym_ptr = get_address(symbol);
+		if (!sym_ptr) {
+			return false;
+		}
+		if constexpr (std::is_same<decltype(sym_ptr), void *>::value) {
+			d = static_cast<Tdata *>(sym_ptr);
+		} else {
+			d = reinterpret_cast<Tdata *>(sym_ptr);
+		}
+		return true;
+	}
+
+	template <typename Tfunc>
+	class optional_function {
+#if !defined(MPT_LIBCXX_QUIRK_INCOMPLETE_IS_FUNCTION)
+		static_assert(std::is_function<Tfunc>::value);
+#endif
+	private:
+		Tfunc * f = nullptr;
+	public:
+		optional_function(const std::optional<library> & library, const std::string & symbol) {
+			if (!library.has_value()) {
+				return;
+			}
+			if (!library->bind_function(f, symbol)) {
+				return;
+			}
+		}
+		optional_function(const library & library, const std::string & symbol) {
+			if (!library.bind_function(f, symbol)) {
+				return;
+			}
+		}
+		explicit operator bool() const {
+			return f != nullptr;
+		}
+		bool operator!() const {
+			return f == nullptr;
+		}
+		template <typename... Targs>
+		auto operator()(Targs &&... args) const -> typename std::conditional<std::is_same<void, decltype(std::declval<Tfunc *>()(std::forward<Targs>(args)...))>::value, bool, std::optional<decltype(std::declval<Tfunc *>()(std::forward<Targs>(args)...))>>::type {
+			if constexpr (std::is_same<void, decltype(std::declval<Tfunc *>()(std::forward<Targs>(args)...))>::value) {
+				if (!f) {
+					return false;
+				}
+				f(std::forward<Targs>(args)...);
+				return true;
+			} else {
+				if (!f) {
+					return std::nullopt;
+				}
+				return std::make_optional(f(std::forward<Targs>(args)...));
+			}
+		}
+	};
+
+	template <typename Tfunc, typename... Targs>
+	auto optional_call(const std::string & symbol, Targs &&... args) const {
+		return optional_function<Tfunc>{*this, symbol}(std::forward<Targs>(args)...);
+	}
+
+	template <typename Tfunc, typename... Targs>
+	static inline auto optional_call(const std::optional<library> & lib, const std::string & symbol, Targs &&... args) {
+		return optional_function<Tfunc>{lib, symbol}(std::forward<Targs>(args)...);
+	}
+
+	template <typename Tfunc, typename... Targs>
+	static inline auto optional_call(const library::path & path, const std::string & symbol, Targs &&... args) {
+		return optional_call<Tfunc>(library::load_optional(path), symbol, std::forward<Targs>(args)...);
 	}
 };
 

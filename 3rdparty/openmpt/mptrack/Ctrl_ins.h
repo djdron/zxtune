@@ -14,9 +14,13 @@
 #include "openmpt/all/BuildSettings.hpp"
 
 #include "CDecimalSupport.h"
+#include "Globals.h"
+#include "PluginComboBox.h"
+#include "../soundlib/modcommand.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
+class CModDoc;
 class CNoteMapWnd;
 class CCtrlInstruments;
 
@@ -65,7 +69,7 @@ protected:
 	//{{AFX_MSG(CNoteMapWnd)
 	afx_msg void OnLButtonDown(UINT, CPoint);
 	afx_msg void OnMButtonDown(UINT flags, CPoint pt) { OnLButtonDown(flags, pt); }
-	afx_msg void OnRButtonDown(UINT, CPoint);
+	afx_msg void OnRButtonUp(UINT, CPoint);
 	afx_msg void OnLButtonDblClk(UINT, CPoint);
 	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
 	afx_msg void OnSetFocus(CWnd *pOldWnd);
@@ -77,11 +81,13 @@ protected:
 	afx_msg void OnMapTransposeUp();
 	afx_msg void OnMapTransposeDown();
 	afx_msg void OnMapReset();
+	afx_msg void OnTransposeSamples();
 	afx_msg void OnMapRemove();
 	afx_msg void OnEditSample(UINT nID);
 	afx_msg void OnEditSampleMap();
 	afx_msg void OnInstrumentDuplicate();
-	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM); //rewbs.customKeys
+	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM);
+	afx_msg LRESULT OnDPIChangedAfterParent(WPARAM, LPARAM);
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 };
@@ -93,7 +99,8 @@ protected:
 	CModControlBar m_ToolBar;
 	CSpinButtonCtrl m_SpinInstrument, m_SpinFadeOut, m_SpinGlobalVol, m_SpinPanning;
 	CSpinButtonCtrl m_SpinMidiPR, m_SpinPPS, m_SpinMidiBK, m_SpinPWD;
-	CComboBox m_ComboNNA, m_ComboDCT, m_ComboDCA, m_ComboPPC, m_CbnMidiCh, m_CbnMixPlug, m_CbnResampling, m_CbnFilterMode, m_CbnPluginVolumeHandling;
+	CComboBox m_ComboNNA, m_ComboDCT, m_ComboDCA, m_ComboPPC, m_CbnMidiCh, m_CbnResampling, m_CbnFilterMode, m_CbnPluginVolumeHandling;
+	PluginComboBox m_CbnMixPlug;
 	CEdit m_EditName, m_EditFileName, m_EditGlobalVol, m_EditPanning, m_EditFadeOut;
 	CNumberEdit m_EditPPS, m_EditPWD;
 	CButton m_CheckPanning, m_CheckCutOff, m_CheckResonance, velocityStyle;
@@ -115,8 +122,6 @@ protected:
 	void UpdateTuningComboBox();
 	void BuildTuningComboBox();
 
-	void UpdatePluginList();
-	
 public:
 	CCtrlInstruments(CModControlView &parent, CModDoc &document);
 
@@ -129,11 +134,12 @@ public:
 	void SaveInstrument(bool doBatchSave);
 	BOOL EditSample(UINT nSample);
 	void UpdateFilterText();
-	Setting<LONG> &GetSplitPosRef() override {return TrackerSettings::Instance().glInstrumentWindowHeight;}
 
 public:
 	//{{AFX_VIRTUAL(CCtrlInstruments)
+	Setting<LONG> &GetSplitPosRef() override;
 	BOOL OnInitDialog() override;
+	void OnDPIChanged() override;
 	void DoDataExchange(CDataExchange* pDX) override;	// DDX/DDV support
 	CRuntimeClass *GetAssociatedViewClass() override;
 	void RecalcLayout() override;
@@ -141,8 +147,9 @@ public:
 	void OnDeactivatePage() override;
 	void UpdateView(UpdateHint hint, CObject *pObj = nullptr) override;
 	LRESULT OnModCtrlMsg(WPARAM wParam, LPARAM lParam) override;
-	BOOL GetToolTipText(UINT uId, LPTSTR pszText) override;
+	CString GetToolTipText(UINT uId, HWND hwnd) const override;
 	BOOL PreTranslateMessage(MSG* pMsg) override;
+	bool OnDragonDrop(bool doDrop, const DRAGONDROP &dropInfo) override;
 	//}}AFX_VIRTUAL
 protected:
 	void PrepareUndo(const char *description);

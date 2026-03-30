@@ -11,19 +11,16 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "AccessibleControls.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
 class COptionsSampleEditor : public CPropertyPage
 {
-protected:
-	CComboBox m_cbnDefaultSampleFormat, m_cbnDefaultVolumeHandling;
-
 public:
-	COptionsSampleEditor() : CPropertyPage(IDD_OPTIONS_SAMPLEEDITOR) { }
+	COptionsSampleEditor();
 
 protected:
-
 	BOOL OnInitDialog() override;
 	void OnOK() override;
 	void DoDataExchange(CDataExchange* pDX) override;
@@ -35,6 +32,9 @@ protected:
 	afx_msg void OnSettingsChanged() { SetModified(TRUE); }
 	afx_msg void OnUndoSizeChanged();
 	DECLARE_MESSAGE_MAP();
+
+	CComboBox m_cbnDefaultSampleFormat, m_cbnDefaultVolumeHandling;
+	AccessibleEdit m_undoBufferEdit, m_finetuneEdit;
 };
 
 OPENMPT_NAMESPACE_END

@@ -83,6 +83,10 @@ namespace openmpt {
 			return dynamic_cast< ext::pattern_vis * >( this );
 		} else if ( interface_id == ext::interactive_id ) {
 			return dynamic_cast< ext::interactive * >( this );
+		} else if ( interface_id == ext::interactive2_id ) {
+			return dynamic_cast< ext::interactive2 * >( this );
+		} else if ( interface_id == ext::interactive3_id ) {
+			return dynamic_cast< ext::interactive3 * >( this );
 
 
 
@@ -98,25 +102,25 @@ namespace openmpt {
 	// pattern_vis
 
 	module_ext_impl::effect_type module_ext_impl::get_pattern_row_channel_volume_effect_type( std::int32_t pattern, std::int32_t row, std::int32_t channel ) const {
-		std::uint8_t byte = get_pattern_row_channel_command( pattern, row, channel, module::command_volumeffect );
-		switch ( OpenMPT::ModCommand::GetVolumeEffectType( byte ) ) {
-			case OpenMPT::EFFECT_TYPE_NORMAL : return effect_general; break;
-			case OpenMPT::EFFECT_TYPE_GLOBAL : return effect_global ; break;
-			case OpenMPT::EFFECT_TYPE_VOLUME : return effect_volume ; break;
-			case OpenMPT::EFFECT_TYPE_PANNING: return effect_panning; break;
-			case OpenMPT::EFFECT_TYPE_PITCH  : return effect_pitch  ; break;
+		auto volcmd = static_cast<OpenMPT::VolumeCommand>( get_pattern_row_channel_command( pattern, row, channel, module::command_volumeffect ) );
+		switch ( OpenMPT::ModCommand::GetVolumeEffectType( volcmd ) ) {
+			case OpenMPT::EffectType::Normal : return effect_general; break;
+			case OpenMPT::EffectType::Global : return effect_global ; break;
+			case OpenMPT::EffectType::Volume : return effect_volume ; break;
+			case OpenMPT::EffectType::Panning: return effect_panning; break;
+			case OpenMPT::EffectType::Pitch  : return effect_pitch  ; break;
 			default: return effect_unknown; break;
 		}
 	}
 
 	module_ext_impl::effect_type module_ext_impl::get_pattern_row_channel_effect_type( std::int32_t pattern, std::int32_t row, std::int32_t channel ) const {
-		std::uint8_t byte = get_pattern_row_channel_command( pattern, row, channel, module::command_effect );
-		switch (OpenMPT::ModCommand::GetEffectType( byte ) ) {
-			case OpenMPT::EFFECT_TYPE_NORMAL : return effect_general; break;
-			case OpenMPT::EFFECT_TYPE_GLOBAL : return effect_global ; break;
-			case OpenMPT::EFFECT_TYPE_VOLUME : return effect_volume ; break;
-			case OpenMPT::EFFECT_TYPE_PANNING: return effect_panning; break;
-			case OpenMPT::EFFECT_TYPE_PITCH  : return effect_pitch  ; break;
+		auto command = static_cast<OpenMPT::EffectCommand>( get_pattern_row_channel_command( pattern, row, channel, module::command_effect ) );
+		switch (OpenMPT::ModCommand::GetEffectType( command ) ) {
+			case OpenMPT::EffectType::Normal : return effect_general; break;
+			case OpenMPT::EffectType::Global : return effect_global ; break;
+			case OpenMPT::EffectType::Volume : return effect_volume ; break;
+			case OpenMPT::EffectType::Panning: return effect_panning; break;
+			case OpenMPT::EffectType::Pitch  : return effect_pitch  ; break;
 			default: return effect_unknown; break;
 		}
 	}
@@ -165,11 +169,11 @@ namespace openmpt {
 		if ( volume < 0.0 || volume > 1.0 ) {
 			throw openmpt::exception("invalid global volume");
 		}
-		m_sndFile->m_PlayState.m_nGlobalVolume = mpt::saturate_round<uint32_t>( volume * MAX_GLOBAL_VOLUME );
+		m_sndFile->m_PlayState.m_nGlobalVolume = mpt::saturate_round<uint32_t>( volume * OpenMPT::MAX_GLOBAL_VOLUME );
 	}
 
 	double module_ext_impl::get_global_volume( ) const {
-		return m_sndFile->m_PlayState.m_nGlobalVolume / static_cast<double>( MAX_GLOBAL_VOLUME );
+		return m_sndFile->m_PlayState.m_nGlobalVolume / static_cast<double>( OpenMPT::MAX_GLOBAL_VOLUME );
 	}
 	
 	void module_ext_impl::set_channel_volume( std::int32_t channel, double volume ) {
@@ -179,7 +183,7 @@ namespace openmpt {
 		if ( volume < 0.0 || volume > 1.0 ) {
 			throw openmpt::exception("invalid global volume");
 		}
-		m_sndFile->m_PlayState.Chn[channel].nGlobalVol = mpt::saturate_round<std::int32_t>(volume * 64.0);
+		m_sndFile->m_PlayState.Chn[channel].nGlobalVol = mpt::saturate_round<std::uint8_t>(volume * 64.0);
 	}
 
 	double module_ext_impl::get_channel_volume( std::int32_t channel ) const {
@@ -210,7 +214,7 @@ namespace openmpt {
 		if ( channel < 0 || channel >= get_num_channels() ) {
 			throw openmpt::exception("invalid channel");
 		}
-		return m_sndFile->m_PlayState.Chn[channel].dwFlags[OpenMPT::CHN_MUTE];
+		return m_sndFile->m_PlayState.Chn[channel].dwFlags[OpenMPT::CHN_MUTE | OpenMPT::CHN_SYNCMUTE];
 	}
 	
 	void module_ext_impl::set_instrument_mute_status( std::int32_t instrument, bool mute ) {
@@ -289,11 +293,65 @@ namespace openmpt {
 		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
 			throw openmpt::exception("invalid channel");
 		}
-		OpenMPT::ModChannel &chn = m_sndFile->m_PlayState.Chn[channel];
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
 		chn.nLength = 0;
 		chn.pCurrentSample = nullptr;
 	}
 
+	void module_ext_impl::note_off(int32_t channel ) {
+		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
+			throw openmpt::exception( "invalid channel" );
+		}
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
+		chn.dwFlags |= OpenMPT::CHN_KEYOFF;
+	}
+
+	void module_ext_impl::note_fade(int32_t channel ) {
+		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
+			throw openmpt::exception( "invalid channel" );
+		}
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
+		chn.dwFlags |= OpenMPT::CHN_NOTEFADE;
+	}
+
+	void module_ext_impl::set_channel_panning( int32_t channel, double panning ) {
+		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
+			throw openmpt::exception( "invalid channel" );
+		}
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
+		chn.nPan = mpt::saturate_round<int32_t>( std::clamp( panning, -1.0, 1.0 ) * 128.0 + 128.0 );
+	}
+
+	double module_ext_impl::get_channel_panning( int32_t channel ) {
+		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
+			throw openmpt::exception( "invalid channel" );
+		}
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
+		return ( chn.nPan - 128 ) / 128.0;
+	}
+
+	void module_ext_impl::set_note_finetune( int32_t channel, double finetune ) {
+		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
+			throw openmpt::exception( "invalid channel" );
+		}
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
+		chn.microTuning = mpt::saturate_round<int16_t>( finetune * 32768.0 );
+	}
+
+	double module_ext_impl::get_note_finetune( int32_t channel ) {
+		if ( channel < 0 || channel >= OpenMPT::MAX_CHANNELS ) {
+			throw openmpt::exception( "invalid channel" );
+		}
+		auto & chn = m_sndFile->m_PlayState.Chn[channel];
+		return chn.microTuning / 32768.0;
+	}
+
+	void module_ext_impl::set_current_tempo2( double tempo ) {
+		if ( tempo < 32.0 || tempo > 512.0 ) {
+			throw openmpt::exception("invalid tempo");
+		}
+		m_sndFile->m_PlayState.m_nMusicTempo = decltype( m_sndFile->m_PlayState.m_nMusicTempo )( tempo );
+	}
 
 	/* add stuff here */
 

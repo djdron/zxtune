@@ -10,33 +10,50 @@
 
 #include "stdafx.h"
 #include "CommandSet.h"
+#include "DefaultKeyBindings.h"
 #include "resource.h"
 #include "Mptrack.h"	// For ErrorBox
 #include "../soundlib/mod_specifications.h"
 #include "../soundlib/Tables.h"
 #include "../mptrack/Reporting.h"
+#include "mpt/io_file/fstream.hpp"
+#include "mpt/io_file/outputfile.hpp"
 #include "../common/mptFileIO.h"
 #include <sstream>
 #include "TrackerSettings.h"
+#include "mpt/parse/parse.hpp"
+#include "mpt/string/utility.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
 namespace
 {
-// Version of the .mkb format
-constexpr int KEYMAP_VERSION = 1;
 
-constexpr std::tuple<InputTargetContext, CommandID, CommandID> NoteContexts[] =
+constexpr CommandID ModifierCommands[] =
 {
-	{kCtxViewPatternsNote, kcVPStartNotes, kcVPStartNoteStops},
-	{kCtxViewSamples, kcSampStartNotes, kcSampStartNoteStops},
-	{kCtxViewInstruments, kcInstrumentStartNotes, kcInstrumentStartNoteStops},
-	{kCtxViewTree, kcTreeViewStartNotes, kcTreeViewStartNoteStops},
-	{kCtxInsNoteMap, kcInsNoteMapStartNotes, kcInsNoteMapStartNoteStops},
-	{kCtxVSTGUI, kcVSTGUIStartNotes, kcVSTGUIStartNoteStops},
-	{kCtxViewComments, kcCommentsStartNotes, kcCommentsStartNoteStops},
+	kcSelect, kcCopySelect, kcChordModifier, kcSetSpacing
 };
+
+constexpr std::pair<CommandID, CommandID> NoteRanges[] =
+{
+	{kcVPStartNotes, kcVPStartNoteStops},
+	{kcSampStartNotes, kcSampStartNoteStops},
+	{kcInstrumentStartNotes, kcInstrumentStartNoteStops},
+	{kcTreeViewStartNotes, kcTreeViewStartNoteStops},
+	{kcInsNoteMapStartNotes, kcInsNoteMapStartNoteStops},
+	{kcVSTGUIStartNotes, kcVSTGUIStartNoteStops},
+	{kcCommentsStartNotes, kcCommentsStartNoteStops},
+};
+
+std::vector<HKL> GetKeyboardLayouts()
+{
+	std::vector<HKL> layouts(GetKeyboardLayoutList(0, nullptr));
+	GetKeyboardLayoutList(static_cast<int>(layouts.size()), layouts.data());
+	// GetKeyboardLayoutList appears to return the layouts in no particular order. Always force the active layout to be evaluated first.
+	layouts.insert(layouts.begin(), GetKeyboardLayout(0));
+	return layouts;
+}
 
 };  // namespace
 
@@ -45,7 +62,7 @@ constexpr std::tuple<InputTargetContext, CommandID, CommandID> NoteContexts[] =
 #endif
 
 #ifdef MPT_COMMANDSET_LOGGING
-#define LOG_COMMANDSET(x) MPT_LOG_GLOBAL(LogDebug, "CommandSet", x)
+#define LOG_COMMANDSET(x) MPT_LOG_GLOBAL(LogDebug, "CommandSet", (x))
 #else
 #define LOG_COMMANDSET(x) do { } while(0)
 #endif
@@ -76,9 +93,9 @@ CCommandSet::CCommandSet()
 
 // Setup
 
-KeyCommand::KeyCommand(uint32 uid, const TCHAR *message, std::vector<KeyCombination> keys)
+KeyCommand::KeyCommand(uint32 uid, const TCHAR *commandName, std::vector<KeyCombination> keys)
     : kcList{std::move(keys)}
-    , Message{message}
+    , name{commandName}
     , UID{uid}
 {
 }
@@ -89,7 +106,9 @@ static constexpr struct
 	CommandID cmd = kcNull;
 	const TCHAR *description = nullptr;
 } CommandDefinitions[] =
+// clang-format off
 {
+	{KeyCommand::Dummy, kcNull, _T("")},
 	{1001, kcPatternRecord, _T("Enable Recording")},
 	{1002, kcPatternPlayRow, _T("Play Row")},
 	{1003, kcCursorCopy, _T("Quick Copy")},
@@ -101,7 +120,7 @@ static constexpr struct
 	{1009, kcTransposeOctUp, _T("Transpose +1 Octave")},
 	{1010, kcTransposeOctDown, _T("Transpose -1 Octave")},
 	{1011, kcSelectChannel, _T("Select Channel / Select All")},
-	{1012, kcPatternAmplify, _T("Amplify selection")},
+	{1012, kcPatternAmplify, _T("Amplify Selection")},
 	{1013, kcPatternSetInstrument, _T("Apply current instrument")},
 	{1014, kcPatternInterpolateVol, _T("Interpolate Volume")},
 	{1015, kcPatternInterpolateEffect, _T("Interpolate Effect")},
@@ -146,10 +165,10 @@ static constexpr struct
 	{1054, kcNextPattern, _T("Next Pattern")},
 	{1055, kcPrevPattern, _T("Previous Pattern")},
 	//{1056, kcClearSelection, _T("Wipe selection")},
-	{1057, kcClearRow, _T("Clear row")},
-	{1058, kcClearField, _T("Clear field")},
-	{1059, kcClearRowStep, _T("Clear row and step")},
-	{1060, kcClearFieldStep, _T("Clear field and step")},
+	{1057, kcClearRow, _T("Clear Row")},
+	{1058, kcClearField, _T("Clear Field")},
+	{1059, kcClearRowStep, _T("Clear Row and Step")},
+	{1060, kcClearFieldStep, _T("Clear Field and Step")},
 	{1061, kcDeleteRow, _T("Delete Row(s)")},
 	{1062, kcShowNoteProperties, _T("Show Note Properties")},
 	{1063, kcShowEditMenu, _T("Show Context (Right-Click) Menu")},
@@ -187,6 +206,32 @@ static constexpr struct
 	{1095, kcVPNoteG_2, _T("Base octave +2 G")},
 	{1096, kcVPNoteGS2, _T("Base octave +2 G#")},
 	{1097, kcVPNoteA_3, _T("Base octave +2 A")},
+	{2070, kcVPNoteAS3, _T("Base octave +2 A#")},
+	{2071, kcVPNoteB_3, _T("Base octave +2 B")},
+	{2072, kcVPNoteC_3, _T("Base octave +3 C")},
+	{2073, kcVPNoteCS3, _T("Base octave +3 C#")},
+	{2074, kcVPNoteD_3, _T("Base octave +3 D")},
+	{2075, kcVPNoteDS3, _T("Base octave +3 D#")},
+	{2076, kcVPNoteE_3, _T("Base octave +3 E")},
+	{2077, kcVPNoteF_3, _T("Base octave +3 F")},
+	{2078, kcVPNoteFS3, _T("Base octave +3 F#")},
+	{2079, kcVPNoteG_3, _T("Base octave +3 G")},
+	{2080, kcVPNoteGS3, _T("Base octave +3 G#")},
+	{2081, kcVPNoteA_4, _T("Base octave +3 A")},
+	{2082, kcVPNoteAS4, _T("Base octave +3 A#")},
+	{2083, kcVPNoteB_4, _T("Base octave +3 B")},
+	{2084, kcVPNoteC_4, _T("Base octave +4 C")},
+	{2085, kcVPNoteCS4, _T("Base octave +4 C#")},
+	{2086, kcVPNoteD_4, _T("Base octave +4 D")},
+	{2087, kcVPNoteDS4, _T("Base octave +4 D#")},
+	{2088, kcVPNoteE_4, _T("Base octave +4 E")},
+	{2089, kcVPNoteF_4, _T("Base octave +4 F")},
+	{2090, kcVPNoteFS4, _T("Base octave +4 F#")},
+	{2091, kcVPNoteG_4, _T("Base octave +4 G")},
+	{2092, kcVPNoteGS4, _T("Base octave +4 G#")},
+	{2093, kcVPNoteA_5, _T("Base octave +4 A")},
+	{2094, kcVPNoteAS5, _T("Base octave +4 A#")},
+	{2095, kcVPNoteB_5, _T("Base octave +4 B")},
 	{KeyCommand::Hidden, kcVPNoteStopC_0, _T("Stop base octave C")},
 	{KeyCommand::Hidden, kcVPNoteStopCS0, _T("Stop base octave C#")},
 	{KeyCommand::Hidden, kcVPNoteStopD_0, _T("Stop base octave D")},
@@ -196,9 +241,9 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPNoteStopFS0, _T("Stop base octave F#")},
 	{KeyCommand::Hidden, kcVPNoteStopG_0, _T("Stop base octave G")},
 	{KeyCommand::Hidden, kcVPNoteStopGS0, _T("Stop base octave G#")},
-	{KeyCommand::Hidden, kcVPNoteStopA_1, _T("Stop base octave +1 A")},
-	{KeyCommand::Hidden, kcVPNoteStopAS1, _T("Stop base octave +1 A#")},
-	{KeyCommand::Hidden, kcVPNoteStopB_1, _T("Stop base octave +1 B")},
+	{KeyCommand::Hidden, kcVPNoteStopA_1, _T("Stop base octave A")},
+	{KeyCommand::Hidden, kcVPNoteStopAS1, _T("Stop base octave A#")},
+	{KeyCommand::Hidden, kcVPNoteStopB_1, _T("Stop base octave B")},
 	{KeyCommand::Hidden, kcVPNoteStopC_1, _T("Stop base octave +1 C")},
 	{KeyCommand::Hidden, kcVPNoteStopCS1, _T("Stop base octave +1 C#")},
 	{KeyCommand::Hidden, kcVPNoteStopD_1, _T("Stop base octave +1 D")},
@@ -208,9 +253,9 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPNoteStopFS1, _T("Stop base octave +1 F#")},
 	{KeyCommand::Hidden, kcVPNoteStopG_1, _T("Stop base octave +1 G")},
 	{KeyCommand::Hidden, kcVPNoteStopGS1, _T("Stop base octave +1 G#")},
-	{KeyCommand::Hidden, kcVPNoteStopA_2, _T("Stop base octave +2 A")},
-	{KeyCommand::Hidden, kcVPNoteStopAS2, _T("Stop base octave +2 A#")},
-	{KeyCommand::Hidden, kcVPNoteStopB_2, _T("Stop base octave +2 B")},
+	{KeyCommand::Hidden, kcVPNoteStopA_2, _T("Stop base octave +1 A")},
+	{KeyCommand::Hidden, kcVPNoteStopAS2, _T("Stop base octave +1 A#")},
+	{KeyCommand::Hidden, kcVPNoteStopB_2, _T("Stop base octave +1 B")},
 	{KeyCommand::Hidden, kcVPNoteStopC_2, _T("Stop base octave +2 C")},
 	{KeyCommand::Hidden, kcVPNoteStopCS2, _T("Stop base octave +2 C#")},
 	{KeyCommand::Hidden, kcVPNoteStopD_2, _T("Stop base octave +2 D")},
@@ -220,7 +265,33 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPNoteStopFS2, _T("Stop base octave +2 F#")},
 	{KeyCommand::Hidden, kcVPNoteStopG_2, _T("Stop base octave +2 G")},
 	{KeyCommand::Hidden, kcVPNoteStopGS2, _T("Stop base octave +2 G#")},
-	{KeyCommand::Hidden, kcVPNoteStopA_3, _T("Stop base octave +3 A")},
+	{KeyCommand::Hidden, kcVPNoteStopA_3, _T("Stop base octave +2 A")},
+	{KeyCommand::Hidden, kcVPNoteStopAS3, _T("Stop base octave +2 A#")},
+	{KeyCommand::Hidden, kcVPNoteStopB_3, _T("Stop base octave +2 B")},
+	{KeyCommand::Hidden, kcVPNoteStopC_3, _T("Stop base octave +3 C")},
+	{KeyCommand::Hidden, kcVPNoteStopCS3, _T("Stop base octave +3 C#")},
+	{KeyCommand::Hidden, kcVPNoteStopD_3, _T("Stop base octave +3 D")},
+	{KeyCommand::Hidden, kcVPNoteStopDS3, _T("Stop base octave +3 D#")},
+	{KeyCommand::Hidden, kcVPNoteStopE_3, _T("Stop base octave +3 E")},
+	{KeyCommand::Hidden, kcVPNoteStopF_3, _T("Stop base octave +3 F")},
+	{KeyCommand::Hidden, kcVPNoteStopFS3, _T("Stop base octave +3 F#")},
+	{KeyCommand::Hidden, kcVPNoteStopG_3, _T("Stop base octave +3 G")},
+	{KeyCommand::Hidden, kcVPNoteStopGS3, _T("Stop base octave +3 G#")},
+	{KeyCommand::Hidden, kcVPNoteStopA_4, _T("Stop base octave +3 A")},
+	{KeyCommand::Hidden, kcVPNoteStopAS4, _T("Stop base octave +3 A#")},
+	{KeyCommand::Hidden, kcVPNoteStopB_4, _T("Stop base octave +3 B")},
+	{KeyCommand::Hidden, kcVPNoteStopC_4, _T("Stop base octave +4 C")},
+	{KeyCommand::Hidden, kcVPNoteStopCS4, _T("Stop base octave +4 C#")},
+	{KeyCommand::Hidden, kcVPNoteStopD_4, _T("Stop base octave +4 D")},
+	{KeyCommand::Hidden, kcVPNoteStopDS4, _T("Stop base octave +4 D#")},
+	{KeyCommand::Hidden, kcVPNoteStopE_4, _T("Stop base octave +4 E")},
+	{KeyCommand::Hidden, kcVPNoteStopF_4, _T("Stop base octave +4 F")},
+	{KeyCommand::Hidden, kcVPNoteStopFS4, _T("Stop base octave +4 F#")},
+	{KeyCommand::Hidden, kcVPNoteStopG_4, _T("Stop base octave +4 G")},
+	{KeyCommand::Hidden, kcVPNoteStopGS4, _T("Stop base octave +4 G#")},
+	{KeyCommand::Hidden, kcVPNoteStopA_5, _T("Stop base octave +4 A")},
+	{KeyCommand::Hidden, kcVPNoteStopAS5, _T("Stop base octave +4 A#")},
+	{KeyCommand::Hidden, kcVPNoteStopB_5, _T("Stop base octave +4 B")},
 	{KeyCommand::Hidden, kcVPChordC_0, _T("Base octave chord C")},
 	{KeyCommand::Hidden, kcVPChordCS0, _T("Base octave chord C#")},
 	{KeyCommand::Hidden, kcVPChordD_0, _T("Base octave chord D")},
@@ -230,9 +301,9 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPChordFS0, _T("Base octave chord F#")},
 	{KeyCommand::Hidden, kcVPChordG_0, _T("Base octave chord G")},
 	{KeyCommand::Hidden, kcVPChordGS0, _T("Base octave chord G#")},
-	{KeyCommand::Hidden, kcVPChordA_1, _T("Base octave +1 chord A")},
-	{KeyCommand::Hidden, kcVPChordAS1, _T("Base octave +1 chord A#")},
-	{KeyCommand::Hidden, kcVPChordB_1, _T("Base octave +1 chord B")},
+	{KeyCommand::Hidden, kcVPChordA_1, _T("Base octave chord A")},
+	{KeyCommand::Hidden, kcVPChordAS1, _T("Base octave chord A#")},
+	{KeyCommand::Hidden, kcVPChordB_1, _T("Base octave chord B")},
 	{KeyCommand::Hidden, kcVPChordC_1, _T("Base octave +1 chord C")},
 	{KeyCommand::Hidden, kcVPChordCS1, _T("Base octave +1 chord C#")},
 	{KeyCommand::Hidden, kcVPChordD_1, _T("Base octave +1 chord D")},
@@ -242,9 +313,9 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPChordFS1, _T("Base octave +1 chord F#")},
 	{KeyCommand::Hidden, kcVPChordG_1, _T("Base octave +1 chord G")},
 	{KeyCommand::Hidden, kcVPChordGS1, _T("Base octave +1 chord G#")},
-	{KeyCommand::Hidden, kcVPChordA_2, _T("Base octave +2 chord A")},
-	{KeyCommand::Hidden, kcVPChordAS2, _T("Base octave +2 chord A#")},
-	{KeyCommand::Hidden, kcVPChordB_2, _T("Base octave +2 chord B")},
+	{KeyCommand::Hidden, kcVPChordA_2, _T("Base octave +1 chord A")},
+	{KeyCommand::Hidden, kcVPChordAS2, _T("Base octave +1 chord A#")},
+	{KeyCommand::Hidden, kcVPChordB_2, _T("Base octave +1 chord B")},
 	{KeyCommand::Hidden, kcVPChordC_2, _T("Base octave +2 chord C")},
 	{KeyCommand::Hidden, kcVPChordCS2, _T("Base octave +2 chord C#")},
 	{KeyCommand::Hidden, kcVPChordD_2, _T("Base octave +2 chord D")},
@@ -254,7 +325,33 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPChordFS2, _T("Base octave +2 chord F#")},
 	{KeyCommand::Hidden, kcVPChordG_2, _T("Base octave +2 chord G")},
 	{KeyCommand::Hidden, kcVPChordGS2, _T("Base octave +2 chord G#")},
-	{KeyCommand::Hidden, kcVPChordA_3, _T("Base octave chord +3 A")},
+	{KeyCommand::Hidden, kcVPChordA_3, _T("Base octave +2 chord A")},
+	{KeyCommand::Hidden, kcVPChordAS3, _T("Base octave +2 chord A#")},
+	{KeyCommand::Hidden, kcVPChordB_3, _T("Base octave +2 chord B")},
+	{KeyCommand::Hidden, kcVPChordC_3, _T("Base octave +3 chord C")},
+	{KeyCommand::Hidden, kcVPChordCS3, _T("Base octave +3 chord C#")},
+	{KeyCommand::Hidden, kcVPChordD_3, _T("Base octave +3 chord D")},
+	{KeyCommand::Hidden, kcVPChordDS3, _T("Base octave +3 chord D#")},
+	{KeyCommand::Hidden, kcVPChordE_3, _T("Base octave +3 chord E")},
+	{KeyCommand::Hidden, kcVPChordF_3, _T("Base octave +3 chord F")},
+	{KeyCommand::Hidden, kcVPChordFS3, _T("Base octave +3 chord F#")},
+	{KeyCommand::Hidden, kcVPChordG_3, _T("Base octave +3 chord G")},
+	{KeyCommand::Hidden, kcVPChordGS3, _T("Base octave +3 chord G#")},
+	{KeyCommand::Hidden, kcVPChordA_4, _T("Base octave +3 chord A")},
+	{KeyCommand::Hidden, kcVPChordAS4, _T("Base octave +3 chord A#")},
+	{KeyCommand::Hidden, kcVPChordB_4, _T("Base octave +3 chord B")},
+	{KeyCommand::Hidden, kcVPChordC_4, _T("Base octave +4 chord C")},
+	{KeyCommand::Hidden, kcVPChordCS4, _T("Base octave +4 chord C#")},
+	{KeyCommand::Hidden, kcVPChordD_4, _T("Base octave +4 chord D")},
+	{KeyCommand::Hidden, kcVPChordDS4, _T("Base octave +4 chord D#")},
+	{KeyCommand::Hidden, kcVPChordE_4, _T("Base octave +4 chord E")},
+	{KeyCommand::Hidden, kcVPChordF_4, _T("Base octave +4 chord F")},
+	{KeyCommand::Hidden, kcVPChordFS4, _T("Base octave +4 chord F#")},
+	{KeyCommand::Hidden, kcVPChordG_4, _T("Base octave +4 chord G")},
+	{KeyCommand::Hidden, kcVPChordGS4, _T("Base octave +4 chord G#")},
+	{KeyCommand::Hidden, kcVPChordA_5, _T("Base octave +4 chord A")},
+	{KeyCommand::Hidden, kcVPChordAS5, _T("Base octave +4 chord A#")},
+	{KeyCommand::Hidden, kcVPChordB_5, _T("Base octave +4 chord B")},
 	{KeyCommand::Hidden, kcVPChordStopC_0, _T("Stop base octave chord C")},
 	{KeyCommand::Hidden, kcVPChordStopCS0, _T("Stop base octave chord C#")},
 	{KeyCommand::Hidden, kcVPChordStopD_0, _T("Stop base octave chord D")},
@@ -264,9 +361,9 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPChordStopFS0, _T("Stop base octave chord F#")},
 	{KeyCommand::Hidden, kcVPChordStopG_0, _T("Stop base octave chord G")},
 	{KeyCommand::Hidden, kcVPChordStopGS0, _T("Stop base octave chord G#")},
-	{KeyCommand::Hidden, kcVPChordStopA_1, _T("Stop base octave +1 chord A")},
-	{KeyCommand::Hidden, kcVPChordStopAS1, _T("Stop base octave +1 chord A#")},
-	{KeyCommand::Hidden, kcVPChordStopB_1, _T("Stop base octave +1 chord B")},
+	{KeyCommand::Hidden, kcVPChordStopA_1, _T("Stop base octave chord A")},
+	{KeyCommand::Hidden, kcVPChordStopAS1, _T("Stop base octave chord A#")},
+	{KeyCommand::Hidden, kcVPChordStopB_1, _T("Stop base octave chord B")},
 	{KeyCommand::Hidden, kcVPChordStopC_1, _T("Stop base octave +1 chord C")},
 	{KeyCommand::Hidden, kcVPChordStopCS1, _T("Stop base octave +1 chord C#")},
 	{KeyCommand::Hidden, kcVPChordStopD_1, _T("Stop base octave +1 chord D")},
@@ -276,9 +373,9 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPChordStopFS1, _T("Stop base octave +1 chord F#")},
 	{KeyCommand::Hidden, kcVPChordStopG_1, _T("Stop base octave +1 chord G")},
 	{KeyCommand::Hidden, kcVPChordStopGS1, _T("Stop base octave +1 chord G#")},
-	{KeyCommand::Hidden, kcVPChordStopA_2, _T("Stop base octave +2 chord A")},
-	{KeyCommand::Hidden, kcVPChordStopAS2, _T("Stop base octave +2 chord A#")},
-	{KeyCommand::Hidden, kcVPChordStopB_2, _T("Stop base octave +2 chord B")},
+	{KeyCommand::Hidden, kcVPChordStopA_2, _T("Stop base octave +1 chord A")},
+	{KeyCommand::Hidden, kcVPChordStopAS2, _T("Stop base octave +1 chord A#")},
+	{KeyCommand::Hidden, kcVPChordStopB_2, _T("Stop base octave +1 chord B")},
 	{KeyCommand::Hidden, kcVPChordStopC_2, _T("Stop base octave +2 chord C")},
 	{KeyCommand::Hidden, kcVPChordStopCS2, _T("Stop base octave +2 chord C#")},
 	{KeyCommand::Hidden, kcVPChordStopD_2, _T("Stop base octave +2 chord D")},
@@ -288,7 +385,33 @@ static constexpr struct
 	{KeyCommand::Hidden, kcVPChordStopFS2, _T("Stop base octave +2 chord F#")},
 	{KeyCommand::Hidden, kcVPChordStopG_2, _T("Stop base octave +2 chord G")},
 	{KeyCommand::Hidden, kcVPChordStopGS2, _T("Stop base octave +2 chord G#")},
-	{KeyCommand::Hidden, kcVPChordStopA_3, _T("Stop base octave +3 chord A")},
+	{KeyCommand::Hidden, kcVPChordStopA_3, _T("Stop base octave +2 chord A")},
+	{KeyCommand::Hidden, kcVPChordStopAS3, _T("Stop base octave +2 chord A#")},
+	{KeyCommand::Hidden, kcVPChordStopB_3, _T("Stop base octave +2 chord B")},
+	{KeyCommand::Hidden, kcVPChordStopC_3, _T("Stop base octave +3 chord C")},
+	{KeyCommand::Hidden, kcVPChordStopCS3, _T("Stop base octave +3 chord C#")},
+	{KeyCommand::Hidden, kcVPChordStopD_3, _T("Stop base octave +3 chord D")},
+	{KeyCommand::Hidden, kcVPChordStopDS3, _T("Stop base octave +3 chord D#")},
+	{KeyCommand::Hidden, kcVPChordStopE_3, _T("Stop base octave +3 chord E")},
+	{KeyCommand::Hidden, kcVPChordStopF_3, _T("Stop base octave +3 chord F")},
+	{KeyCommand::Hidden, kcVPChordStopFS3, _T("Stop base octave +3 chord F#")},
+	{KeyCommand::Hidden, kcVPChordStopG_3, _T("Stop base octave +3 chord G")},
+	{KeyCommand::Hidden, kcVPChordStopGS3, _T("Stop base octave +3 chord G#")},
+	{KeyCommand::Hidden, kcVPChordStopA_4, _T("Stop base octave +3 chord A")},
+	{KeyCommand::Hidden, kcVPChordStopAS4, _T("Stop base octave +3 chord A#")},
+	{KeyCommand::Hidden, kcVPChordStopB_4, _T("Stop base octave +3 chord B")},
+	{KeyCommand::Hidden, kcVPChordStopC_4, _T("Stop base octave +4 chord C")},
+	{KeyCommand::Hidden, kcVPChordStopCS4, _T("Stop base octave +4 chord C#")},
+	{KeyCommand::Hidden, kcVPChordStopD_4, _T("Stop base octave +4 chord D")},
+	{KeyCommand::Hidden, kcVPChordStopDS4, _T("Stop base octave +4 chord D#")},
+	{KeyCommand::Hidden, kcVPChordStopE_4, _T("Stop base octave +4 chord E")},
+	{KeyCommand::Hidden, kcVPChordStopF_4, _T("Stop base octave +4 chord F")},
+	{KeyCommand::Hidden, kcVPChordStopFS4, _T("Stop base octave +4 chord F#")},
+	{KeyCommand::Hidden, kcVPChordStopG_4, _T("Stop base octave +4 chord G")},
+	{KeyCommand::Hidden, kcVPChordStopGS4, _T("Stop base octave +4 chord G#")},
+	{KeyCommand::Hidden, kcVPChordStopA_5, _T("Stop base octave +4 chord A")},
+	{KeyCommand::Hidden, kcVPChordStopAS5, _T("Stop base octave +4 chord A#")},
+	{KeyCommand::Hidden, kcVPChordStopB_5, _T("Stop base octave +4 chord B")},
 	{1200, kcNoteCut, _T("Note Cut")},
 	{1201, kcNoteOff, _T("Note Off")},
 	{1202, kcSetIns0, _T("Set instrument digit 0")},
@@ -383,40 +506,41 @@ static constexpr struct
 	{KeyCommand::Hidden, kcSetFXpanSlide, _T("FX Pan Slide")},
 	{KeyCommand::Hidden, kcSetFXsetEnvPos, _T("FX Set Envelope Position (XM)")},
 	{KeyCommand::Hidden, kcSetFXmacro, _T("FX MIDI Macro")},
+	{KeyCommand::Hidden, kcSetFXDummy, _T("FX Dummy") },
 	{1294, kcSetFXmacroSlide, _T("Smooth MIDI Macro Slide")},
 	{1295, kcSetFXdelaycut, _T("Combined Note Delay and Note Cut")},
-	{KeyCommand::Hidden, kcPatternJumpDownh1Select, _T("kcPatternJumpDownh1Select")},
-	{KeyCommand::Hidden, kcPatternJumpUph1Select, _T("kcPatternJumpUph1Select")},
-	{KeyCommand::Hidden, kcPatternSnapDownh1Select, _T("kcPatternSnapDownh1Select")},
-	{KeyCommand::Hidden, kcPatternSnapUph1Select, _T("kcPatternSnapUph1Select")},
-	{KeyCommand::Hidden, kcNavigateDownSelect, _T("kcNavigateDownSelect")},
-	{KeyCommand::Hidden, kcNavigateUpSelect, _T("kcNavigateUpSelect")},
-	{KeyCommand::Hidden, kcNavigateLeftSelect, _T("kcNavigateLeftSelect")},
-	{KeyCommand::Hidden, kcNavigateRightSelect, _T("kcNavigateRightSelect")},
-	{KeyCommand::Hidden, kcNavigateNextChanSelect, _T("kcNavigateNextChanSelect")},
-	{KeyCommand::Hidden, kcNavigatePrevChanSelect, _T("kcNavigatePrevChanSelect")},
-	{KeyCommand::Hidden, kcHomeHorizontalSelect, _T("kcHomeHorizontalSelect")},
-	{KeyCommand::Hidden, kcHomeVerticalSelect, _T("kcHomeVerticalSelect")},
-	{KeyCommand::Hidden, kcHomeAbsoluteSelect, _T("kcHomeAbsoluteSelect")},
-	{KeyCommand::Hidden, kcEndHorizontalSelect, _T("kcEndHorizontalSelect")},
-	{KeyCommand::Hidden, kcEndVerticalSelect, _T("kcEndVerticalSelect")},
-	{KeyCommand::Hidden, kcEndAbsoluteSelect, _T("kcEndAbsoluteSelect")},
+	{KeyCommand::Hidden, kcPatternJumpDownh1Select, _T("Jump down by measure select")},
+	{KeyCommand::Hidden, kcPatternJumpUph1Select, _T("Jump up by measure select")},
+	{KeyCommand::Hidden, kcPatternSnapDownh1Select, _T("Snap down to measure select")},
+	{KeyCommand::Hidden, kcPatternSnapUph1Select, _T("Snap up to measure select")},
+	{KeyCommand::Hidden, kcNavigateDownSelect, _T("Select to Down")},
+	{KeyCommand::Hidden, kcNavigateUpSelect, _T("Select to Up")},
+	{KeyCommand::Hidden, kcNavigateLeftSelect, _T("Select to Left")},
+	{KeyCommand::Hidden, kcNavigateRightSelect, _T("Select to Right")},
+	{KeyCommand::Hidden, kcNavigateNextChanSelect, _T("Select to Next Channel")},
+	{KeyCommand::Hidden, kcNavigatePrevChanSelect, _T("Select to Previous Channel")},
+	{KeyCommand::Hidden, kcHomeHorizontalSelect, _T("Select to First Channel")},
+	{KeyCommand::Hidden, kcHomeVerticalSelect, _T("Select to First Row")},
+	{KeyCommand::Hidden, kcHomeAbsoluteSelect, _T("Selecto to First Row / Channel")},
+	{KeyCommand::Hidden, kcEndHorizontalSelect, _T("Select to Last Channel")},
+	{KeyCommand::Hidden, kcEndVerticalSelect, _T("Select to Last Row")},
+	{KeyCommand::Hidden, kcEndAbsoluteSelect, _T("Select to Last Row /channel")},
 	{KeyCommand::Hidden, kcSelectWithNav, _T("kcSelectWithNav")},
 	{KeyCommand::Hidden, kcSelectOffWithNav, _T("kcSelectOffWithNav")},
 	{KeyCommand::Hidden, kcCopySelectWithNav, _T("kcCopySelectWithNav")},
 	{KeyCommand::Hidden, kcCopySelectOffWithNav, _T("kcCopySelectOffWithNav")},
 	{1316 | KeyCommand::Dummy, kcChordModifier, _T("Chord Modifier")},
-	{1317 | KeyCommand::Dummy, kcSetSpacing, _T("Set edit step on note entry")},
-	{KeyCommand::Hidden, kcSetSpacing0, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing1, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing2, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing3, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing4, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing5, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing6, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing7, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing8, _T("")},
-	{KeyCommand::Hidden, kcSetSpacing9, _T("")},
+	{1317 | KeyCommand::Dummy, kcSetSpacing, _T("Edit Step Modifier")},
+	{KeyCommand::Hidden, kcSetSpacing0, _T("Set Edit Step to 0")},
+	{KeyCommand::Hidden, kcSetSpacing1, _T("Set Edit Step to 1")},
+	{KeyCommand::Hidden, kcSetSpacing2, _T("Set Edit Step to 2")},
+	{KeyCommand::Hidden, kcSetSpacing3, _T("Set Edit Step to 3")},
+	{KeyCommand::Hidden, kcSetSpacing4, _T("Set Edit Step to 4")},
+	{KeyCommand::Hidden, kcSetSpacing5, _T("Set Edit Step to 5")},
+	{KeyCommand::Hidden, kcSetSpacing6, _T("Set Edit Step to 6")},
+	{KeyCommand::Hidden, kcSetSpacing7, _T("Set Edit Step to 7")},
+	{KeyCommand::Hidden, kcSetSpacing8, _T("Set Edit Step to 8")},
+	{KeyCommand::Hidden, kcSetSpacing9, _T("Set Edit Step to 9")},
 	{KeyCommand::Hidden, kcCopySelectWithSelect, _T("kcCopySelectWithSelect")},
 	{KeyCommand::Hidden, kcCopySelectOffWithSelect, _T("kcCopySelectOffWithSelect")},
 	{KeyCommand::Hidden, kcSelectWithCopySelect, _T("kcSelectWithCopySelect")},
@@ -433,10 +557,10 @@ static constexpr struct
 	{1339, kcPatternJumpUph2, _T("Jump up by beat")},
 	{1340, kcPatternSnapDownh2, _T("Snap down to beat")},
 	{1341, kcPatternSnapUph2, _T("Snap up to beat")},
-	{KeyCommand::Hidden, kcPatternJumpDownh2Select, _T("kcPatternJumpDownh2Select")},
-	{KeyCommand::Hidden, kcPatternJumpUph2Select, _T("kcPatternJumpUph2Select")},
-	{KeyCommand::Hidden, kcPatternSnapDownh2Select, _T("kcPatternSnapDownh2Select")},
-	{KeyCommand::Hidden, kcPatternSnapUph2Select, _T("kcPatternSnapUph2Select")},
+	{KeyCommand::Hidden, kcPatternJumpDownh2Select, _T("Jump down by beat select")},
+	{KeyCommand::Hidden, kcPatternJumpUph2Select, _T("Jump up by beat select")},
+	{KeyCommand::Hidden, kcPatternSnapDownh2Select, _T("Snap down to beat select")},
+	{KeyCommand::Hidden, kcPatternSnapUph2Select, _T("Snap up to beat select")},
 	{1346, kcFileOpen, _T("File/Open")},
 	{1347, kcFileNew, _T("File/New")},
 	{1348, kcFileClose, _T("File/Close")},
@@ -483,15 +607,15 @@ static constexpr struct
 	{1661, kcPatternShrinkSelection, _T("Shrink selection")},
 	{1662, kcTogglePluginEditor, _T("Toggle channel's plugin editor")},
 	{1663, kcToggleFollowSong, _T("Toggle follow song")},
-	{1664, kcClearFieldITStyle, _T("Clear field (IT Style)")},
-	{1665, kcClearFieldStepITStyle, _T("Clear field and step (IT Style)")},
+	{1664, kcClearFieldITStyle, _T("Clear Field (IT Style)")},
+	{1665, kcClearFieldStepITStyle, _T("Clear Field and Step (IT Style)")},
 	{1666, kcSetFXextension, _T("Parameter Extension Command")},
 	{1667 | KeyCommand::Hidden, kcNoteCutOld, _T("Note Cut")},  // Legacy
 	{1668 | KeyCommand::Hidden, kcNoteOffOld, _T("Note Off")},  // Legacy
 	{1669, kcViewAddPlugin, _T("View Plugin Manager")},
 	{1670, kcViewChannelManager, _T("View Channel Manager")},
 	{1671, kcCopyAndLoseSelection, _T("Copy and lose selection")},
-	{1672, kcNewPattern, _T("Insert new pattern")},
+	{1672, kcNewPattern, _T("Insert New Pattern")},
 	{1673, kcSampleLoad, _T("Load Sample")},
 	{1674, kcSampleSave, _T("Save Sample")},
 	{1675, kcSampleNew, _T("New Sample")},
@@ -507,8 +631,8 @@ static constexpr struct
 	{1685, kcSwitchToOrderList, _T("Switch to Order List")},
 	{1686, kcEditMixPasteITStyle, _T("Mix Paste (IT Style)")},
 	{1687, kcApproxRealBPM, _T("Show approx. real BPM")},
-	{KeyCommand::Hidden, kcNavigateDownBySpacingSelect, _T("kcNavigateDownBySpacingSelect")},
-	{KeyCommand::Hidden, kcNavigateUpBySpacingSelect, _T("kcNavigateUpBySpacingSelect")},
+	{KeyCommand::Hidden, kcNavigateDownBySpacingSelect, _T("Up-By-Spacing-Select")},
+	{KeyCommand::Hidden, kcNavigateUpBySpacingSelect, _T("Down-By-Spacing-Select")},
 	{1691, kcNavigateDownBySpacing, _T("Navigate down by spacing")},
 	{1692, kcNavigateUpBySpacing, _T("Navigate up by spacing")},
 	{1693, kcPrevDocument, _T("Previous Document")},
@@ -531,12 +655,12 @@ static constexpr struct
 	{1779, kcSoloChnOnPatTransition, _T("Solo channel on pattern transition")},
 	{1780, kcTimeAtRow, _T("Show playback time at current row")},
 	{1781, kcViewMIDImapping, _T("View MIDI Mapping")},
-	{1782, kcVSTGUIPrevPresetJump, _T("Plugin preset backward jump")},
-	{1783, kcVSTGUINextPresetJump, _T("Plugin preset forward jump")},
+	{1782, kcVSTGUIPrevPresetJump, _T("Plugin Preset -10")},
+	{1783, kcVSTGUINextPresetJump, _T("Plugin Preset +10")},
 	{1784, kcSampleInvert, _T("Invert Sample Phase")},
 	{1785, kcSampleSignUnsign, _T("Signed / Unsigned Conversion")},
 	{1786, kcChannelReset, _T("Reset Channel")},
-	{1787, kcToggleOverflowPaste, _T("Toggle overflow paste")},
+	{1787, kcToggleOverflowPaste, _T("Toggle Overflow Paste")},
 	{1788, kcNotePC, _T("Parameter Control")},
 	{1789, kcNotePCS, _T("Parameter Control (smooth)")},
 	{1790, kcSampleRemoveDCOffset, _T("Remove DC Offset")},
@@ -547,10 +671,10 @@ static constexpr struct
 	{1795, kcOrderlistNavigateRight, _T("Next Order")},
 	{1796, kcOrderlistNavigateFirst, _T("First Order")},
 	{1797, kcOrderlistNavigateLast, _T("Last Order")},
-	{KeyCommand::Hidden, kcOrderlistNavigateLeftSelect, _T("kcOrderlistNavigateLeftSelect")},
-	{KeyCommand::Hidden, kcOrderlistNavigateRightSelect, _T("kcOrderlistNavigateRightSelect")},
-	{KeyCommand::Hidden, kcOrderlistNavigateFirstSelect, _T("kcOrderlistNavigateFirstSelect")},
-	{KeyCommand::Hidden, kcOrderlistNavigateLastSelect, _T("kcOrderlistNavigateLastSelect")},
+	{KeyCommand::Hidden, kcOrderlistNavigateLeftSelect, _T("Left-Select")},
+	{KeyCommand::Hidden, kcOrderlistNavigateRightSelect, _T("Right-Select")},
+	{KeyCommand::Hidden, kcOrderlistNavigateFirstSelect, _T("First-Select")},
+	{KeyCommand::Hidden, kcOrderlistNavigateLastSelect, _T("Last-Select")},
 	{1802, kcOrderlistEditDelete, _T("Delete Order")},
 	{1803, kcOrderlistEditInsert, _T("Insert Order")},
 	{1804, kcOrderlistEditPattern, _T("Edit Pattern")},
@@ -566,26 +690,26 @@ static constexpr struct
 	{1814, kcOrderlistPat7, _T("Pattern index digit 7")},
 	{1815, kcOrderlistPat8, _T("Pattern index digit 8")},
 	{1816, kcOrderlistPat9, _T("Pattern index digit 9")},
-	{1817, kcOrderlistPatPlus, _T("Increase pattern index ")},
-	{1818, kcOrderlistPatMinus, _T("Decrease pattern index")},
+	{1817, kcOrderlistPatPlus, _T("Increase Pattern Index")},
+	{1818, kcOrderlistPatMinus, _T("Decrease Pattern Index")},
 	{1819, kcShowSplitKeyboardSettings, _T("Split Keyboard Settings dialog")},
 	{1820, kcEditPushForwardPaste, _T("Push Forward Paste (Insert)")},
-	{1821, kcInstrumentEnvelopePointMoveLeft, _T("Move envelope point left")},
-	{1822, kcInstrumentEnvelopePointMoveRight, _T("Move envelope point right")},
-	{1823, kcInstrumentEnvelopePointMoveUp, _T("Move envelope point up")},
-	{1824, kcInstrumentEnvelopePointMoveDown, _T("Move envelope point down")},
-	{1825, kcInstrumentEnvelopePointPrev, _T("Select previous envelope point")},
-	{1826, kcInstrumentEnvelopePointNext, _T("Select next envelope point")},
+	{1821, kcInstrumentEnvelopePointMoveLeft, _T("Move Envelope Point Left")},
+	{1822, kcInstrumentEnvelopePointMoveRight, _T("Move Envelope Point Right")},
+	{1823, kcInstrumentEnvelopePointMoveUp, _T("Move envelope Point Up")},
+	{1824, kcInstrumentEnvelopePointMoveDown, _T("Move Envelope Point Down")},
+	{1825, kcInstrumentEnvelopePointPrev, _T("Select Previous Envelope Point")},
+	{1826, kcInstrumentEnvelopePointNext, _T("Select Next Envelope Point")},
 	{1827, kcInstrumentEnvelopePointInsert, _T("Insert Envelope Point")},
 	{1828, kcInstrumentEnvelopePointRemove, _T("Remove Envelope Point")},
 	{1829, kcInstrumentEnvelopeSetLoopStart, _T("Set Loop Start")},
 	{1830, kcInstrumentEnvelopeSetLoopEnd, _T("Set Loop End")},
-	{1831, kcInstrumentEnvelopeSetSustainLoopStart, _T("Set sustain loop start")},
-	{1832, kcInstrumentEnvelopeSetSustainLoopEnd, _T("Set sustain loop end")},
-	{1833, kcInstrumentEnvelopeToggleReleaseNode, _T("Toggle release node")},
-	{1834, kcInstrumentEnvelopePointMoveUp8, _T("Move envelope point up (Coarse)")},
-	{1835, kcInstrumentEnvelopePointMoveDown8, _T("Move envelope point down (Coarse)")},
-	{1836, kcPatternEditPCNotePlugin, _T("Toggle PC Event/instrument plugin editor")},
+	{1831, kcInstrumentEnvelopeSetSustainLoopStart, _T("Set Sustain Loop Start")},
+	{1832, kcInstrumentEnvelopeSetSustainLoopEnd, _T("Set Sustain Loop End")},
+	{1833, kcInstrumentEnvelopeToggleReleaseNode, _T("Toggle Release Mode")},
+	{1834, kcInstrumentEnvelopePointMoveUp8, _T("Move Envelope Point Up (Coarse)")},
+	{1835, kcInstrumentEnvelopePointMoveDown8, _T("Move Envelope Point Down (Coarse)")},
+	{1836, kcPatternEditPCNotePlugin, _T("Toggle PC Event/Instrument Plugin Editor")},
 	{1837, kcInstrumentEnvelopeZoomIn, _T("Zoom In")},
 	{1838, kcInstrumentEnvelopeZoomOut, _T("Zoom Out")},
 	{1839, kcVSTGUIToggleRecordParams, _T("Toggle Parameter Recording")},
@@ -614,16 +738,16 @@ static constexpr struct
 	{1862, kcDecreaseSpacing, _T("Decrease Edit Step")},
 	{1863, kcSampleAutotune, _T("Tune Sample to given Note")},
 	{1864, kcFileCloseAll, _T("File/Close All")},
-	{KeyCommand::Hidden, kcSetOctaveStop0, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop1, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop2, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop3, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop4, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop5, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop6, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop7, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop8, _T("")},
-	{KeyCommand::Hidden, kcSetOctaveStop9, _T("")},
+	{KeyCommand::Hidden, kcSetOctaveStop0, _T("Set Octave 0")},
+	{KeyCommand::Hidden, kcSetOctaveStop1, _T("Set Octave 1")},
+	{KeyCommand::Hidden, kcSetOctaveStop2, _T("Set Octave 2")},
+	{KeyCommand::Hidden, kcSetOctaveStop3, _T("Set Octave 3")},
+	{KeyCommand::Hidden, kcSetOctaveStop4, _T("Set Octave 4")},
+	{KeyCommand::Hidden, kcSetOctaveStop5, _T("Set Octave 5")},
+	{KeyCommand::Hidden, kcSetOctaveStop6, _T("Set Octave 6")},
+	{KeyCommand::Hidden, kcSetOctaveStop7, _T("Set Octave 7")},
+	{KeyCommand::Hidden, kcSetOctaveStop8, _T("Set Octave 8")},
+	{KeyCommand::Hidden, kcSetOctaveStop9, _T("Set Octave 9")},
 	{1875, kcOrderlistLockPlayback, _T("Lock Playback to Selection")},
 	{1876, kcOrderlistUnlockPlayback, _T("Unlock Playback")},
 	{1877, kcChannelSettings, _T("Quick Channel Settings")},
@@ -677,7 +801,7 @@ static constexpr struct
 	{1950, kcOrderlistEditCopyOrders, _T("Copy Orders")},
 	{KeyCommand::Hidden, kcTreeViewStopPreview, _T("Stop sample preview")},
 	{1952, kcSampleDuplicate, _T("Duplicate Sample")},
-	{1953, kcSampleSlice, _T("Slice at cue points")},
+	{1953, kcSampleSliceCuePoints, _T("Slice at cue points")},
 	{1954, kcInstrumentEnvelopeScale, _T("Scale Envelope Points")},
 	{1955, kcInsNoteMapRemove, _T("Remove All Samples")},
 	{1956, kcInstrumentEnvelopeSelectLoopStart, _T("Select Envelope Loop Start")},
@@ -750,7 +874,97 @@ static constexpr struct
 	{2023, kcTempoDecreaseFine, _T("Decrease Tempo (Fine)")},
 	{2024, kcSpeedIncrease, _T("Increase Ticks per Row")},
 	{2025, kcSpeedDecrease, _T("Decrease Ticks per Row")},
+	{2026, kcRenameSmpInsListItem, _T("Rename Item")},
+	{2027, kcShowChannelCtxMenu, _T("Show Channel Context (Right-Click) Menu")},
+	{2028, kcShowChannelPluginCtxMenu, _T("Show Channel Plugin Context (Right-Click) Menu")},
+	{2029, kcViewToggle, _T("Toggle Between Upper / Lower View") },
+	{2030, kcFileSaveOPL, _T("File/Export OPL Register Dump") },
+	{2031, kcSampleLoadRaw, _T("Load Raw Sample")},
+	{2032, kcTogglePatternPlayRow, _T("Toggle Row Playback when Navigating")},
+	{2033, kcInsNoteMapTransposeSamples, _T("Transpose Samples / Reset Map") },
+	{KeyCommand::Hidden, kcPrevEntryInColumnSelect, _T("Select to previous entry in column")},
+	{KeyCommand::Hidden, kcNextEntryInColumnSelect, _T("Select to next entry in column")},
+	{2034, kcTreeViewOpen, _T("Open / View Item")},
+	{2035, kcTreeViewPlay, _T("Play Item")},
+	{2036, kcTreeViewInsert, _T("Insert Item")},
+	{2037, kcTreeViewDuplicate, _T("Duplicate Item")},
+	{2038, kcTreeViewDelete, _T("Delete Item")},
+	{2039, kcTreeViewRename, _T("Rename Item / Send To Editor")},
+	{2040, kcTreeViewFind, _T("Find in Instrument Library")},
+	{2041, kcTreeViewSortByName, _T("Sort Instrument Library By Name")},
+	{2042, kcTreeViewSortByDate, _T("Sort Instrument Library By Date")},
+	{2043, kcTreeViewSortBySize, _T("Sort Instrument Library By Size")},
+	{2044, kcTreeViewSendToEditorInsertNew, _T("Send To Editor (Insert New)")},
+	{2045, kcPlayStopSong, _T("Play Song / Stop Song")},
+	{2046, kcTreeViewDeletePermanently, _T("Delete Item Permanently")},
+	{2047, kcSampleToggleFollowPlayCursor, _T("Toggle Follow Sample Play Cursor")},
+	{2048, kcPatternScrollLeft, _T("Scroll Left")},
+	{2049, kcPatternScrollRight, _T("Scroll Right") },
+	{2050, kcPatternScrollUp, _T("Scroll Up")},
+	{2051, kcPatternScrollDown, _T("Scroll Down")},
+	{2052, kcPlaySongFromCursorPause, _T("Play Song from Cursor / Pause")},
+	{2053, kcPlaySongFromPatternPause, _T("Play Song from Pattern Start / Pause")},
+	{2054, kcSampleFinetuneUp, _T("Increment Finetune")},
+	{2055, kcSampleFinetuneDown, _T("Decrement Finetune")},
+	{2056, kcTreeViewSwitchViews, _T("Switch between Upper / Lower Tree View")},
+	{2057, kcTreeViewFolderUp, _T("Go to Parent Folder")},
+	{KeyCommand::Hidden, kcTransposeUpStop, _T("Stop Transpose +1")},
+	{KeyCommand::Hidden, kcTransposeDownStop, _T("Stop Transpose -1")},
+	{KeyCommand::Hidden, kcTransposeOctUpStop, _T("Stop Transpose +1 Octave")},
+	{KeyCommand::Hidden, kcTransposeOctDownStop, _T("Stop Transpose -1 Octave")},
+	{KeyCommand::Hidden, kcTransposeCustomStop, _T("Stop Transpose Custom")},
+	{KeyCommand::Hidden, kcTransposeCustomQuickStop, _T("Stop Transpose Custom (Quick)")},
+	{KeyCommand::Hidden, kcDataEntryUpStop, _T("Stop Data Entry +1")},
+	{KeyCommand::Hidden, kcDataEntryDownStop, _T("Stop Data Entry -1")},
+	{KeyCommand::Hidden, kcDataEntryUpCoarseStop, _T("Stop Data Entry Up (Coarse)")},
+	{KeyCommand::Hidden, kcDataEntryDownCoarseStop, _T("Stop Data Entry Down (Coarse)")},
+	{2058, kcPrevOrderAtMeasureEnd, _T("Previous Order (Transition at end of current measure)")},
+	{2059, kcNextOrderAtMeasureEnd, _T("Next Order (Transition at end of current measure)")},
+	{2060, kcPrevOrderAtBeatEnd, _T("Previous Order (Transition at end of current beat)")},
+	{2061, kcNextOrderAtBeatEnd, _T("Next Order (Transition at end of current beat)")},
+	{2062, kcPrevOrderAtRowEnd, _T("Previous Order (Transition at end of current row)")},
+	{2063, kcNextOrderAtRowEnd, _T("Next Order (Transition at end of current row)")},
+	{2064, kcOrderlistQueueAtPatternEnd, _T("Queue Pattern (Transition at end of current pattern)")},
+	{2065, kcOrderlistQueueAtMeasureEnd, _T("Queue Pattern (Transition at end of current measure)")},
+	{2066, kcOrderlistQueueAtBeatEnd, _T("Queue Pattern (Transition at end of current beat)")},
+	{2067, kcOrderlistQueueAtRowEnd, _T("Queue Pattern (Transition at end of current row)")},
+	{2068, kcSampleConvertNormalLoopToSustain, _T("Convert Normal Loop to Sustain Loop")},
+	{2069, kcSampleConvertSustainLoopToNormal, _T("Convert Sustain Loop to Normal Loop")},
+	{2096, kcGotoNoteColumn, _T("Go to note column")},
+	{2097, kcGotoInstrColumn, _T("Go to instrument column")},
+	{2098, kcGotoVolumeColumn, _T("Go to volume effect column")},
+	{2099, kcGotoCommandColumn, _T("Go to effect command column")},
+	{2100, kcGotoParamColumn, _T("Go to effect parameter column")},
+	{2101, kcContextMenu, _T("Open Context Menu")},
+	{2102, kcOrderlistStreamExport, _T("Stream Export")},
+	{2103, kcToggleVisibilityInstrColumn, _T("Toggle Instrument Column Visibility")},
+	{2104, kcToggleVisibilityVolumeColumn, _T("Toggle Volume Column Visibility")},
+	{2105, kcToggleVisibilityEffectColumn, _T("Toggle Effect Column Visibility")},
+	{2106, kcFileOpenTemplate, _T("File/Open Template")},
+	{2107, kcSetVolumeA, _T("Set volume digit A")},
+	{2108, kcSetVolumeB, _T("Set volume digit B")},
+	{2109, kcSetVolumeC, _T("Set volume digit C")},
+	{2110, kcSetVolumeD, _T("Set volume digit D")},
+	{2111, kcSetVolumeE, _T("Set volume digit E")},
+	{2112, kcSetVolumeF, _T("Set volume digit F")},
+	{2113, kcToggleOctaveTransposeMIDI, _T("Toggle Apply Octave Transpose to incoming MIDI Notes")},
+	{2114, kcToggleContinueSongOnMIDINote, _T("Toggle Continue Song when MIDI Note is received")},
+	{2115, kcToggleContinueSongOnMIDIPlayEvents, _T("Toggle Respond to Play / Continue / Stop Song MIDI messages")},
+	{2116, kcToggleRecordMIDIVelocity, _T("Toggle Record MIDI Velocity")},
+	{2117, kcToggleRecordMIDIPitchBend, _T("Toggle Record MIDI Pitch Bend")},
+	{2118, kcToggleRecordMIDICCs, _T("Toggle Record MIDI CCs")},
+	{2119, kcToggleMetronome, _T("Toggle Metronome")},
+	{2120, kcPatternExpand, _T("Expand Pattern")},
+	{2121, kcPatternShrink, _T("Shrink Pattern")},
+	{2122, kcSampleToggleNormalLoop, _T("Toggle Loop")},
+	{2123, kcSampleToggleSustainLoop, _T("Toggle Sustain Loop")},
+	{2124, kcSampleSendSelectionToNew, _T("Send Selection to New Sample Slot")},
+	{2125, kcTreeViewMoveUp, _T("Move Item Up")},
+	{2126, kcTreeViewMoveDown, _T("Move Item Down")},
+	{2127, kcSampleSliceGrid, _T("Slice at grid") },
 };
+// clang-format on
+
 
 // Get command descriptions etc.. loaded up.
 void CCommandSet::SetupCommands()
@@ -762,33 +976,32 @@ void CCommandSet::SetupCommands()
 
 	for(int j = kcStartSampleCues; j <= kcEndSampleCues; j++)
 	{
-		CString s = MPT_CFORMAT("Preview Sample Cue {}")(j - kcStartSampleCues + 1);
+		CString s = MPT_CFORMAT("Preview / Set Sample Cue {}")(j - kcStartSampleCues + 1);
 		m_commands[j] = {static_cast<uint32>(1924 + j - kcStartSampleCues), s};
 	}
 	static_assert(1924 + kcEndSampleCues - kcStartSampleCues < 1950);
 
 	// Automatically generated note entry keys in non-pattern contexts
-	for(const auto ctx : NoteContexts)
+	for(const auto &[contextStartNotes, contextStopNotes] : NoteRanges)
 	{
-		const auto contextStartNotes = std::get<1>(ctx);
-		const auto contextStopNotes = std::get<2>(ctx);
 		if(contextStartNotes == kcVPStartNotes)
 			continue;
 
 		for(int i = kcVPStartNotes; i <= kcVPEndNotes; i++)
 		{
-			m_commands[i - kcVPStartNotes + contextStartNotes] = {KeyCommand::Hidden, m_commands[i].Message};
+			m_commands[i - kcVPStartNotes + contextStartNotes] = {KeyCommand::Hidden, m_commands[i].name};
 		}
 		for(int i = kcVPStartNoteStops; i <= kcVPEndNoteStops; i++)
 		{
-			m_commands[i - kcVPStartNoteStops + contextStopNotes] = {KeyCommand::Hidden, m_commands[i].Message};
+			m_commands[i - kcVPStartNoteStops + contextStopNotes] = {KeyCommand::Hidden, m_commands[i].name};
 		}
 	}
 
 #ifdef MPT_BUILD_DEBUG
-	// Ensure that every visible command has a unique ID
-	for(size_t i = 0; i < kcNumCommands; i++)
+	// Ensure that every visible command has a unique ID, and all commands have a valid context
+	for(CommandID i = kcFirst; i < kcNumCommands; i = static_cast<CommandID>(i + 1))
 	{
+		MPT_ASSERT(ContextFromCommand(i) != kCtxUnknownContext);
 		if(m_commands[i].ID() != 0 || !m_commands[i].IsHidden())
 		{
 			for(size_t j = i + 1; j < kcNumCommands; j++)
@@ -810,46 +1023,44 @@ void CCommandSet::SetupCommands()
 
 CString CCommandSet::Add(KeyCombination kc, CommandID cmd, bool overwrite, int pos, bool checkEventConflict)
 {
+	kc.Context(ContextFromCommand(cmd));
 	auto &kcList = m_commands[cmd].kcList;
 
 	// Avoid duplicate
 	if(mpt::contains(kcList, kc))
-	{
-		return CString();
-	}
+		return CString{};
 
 	// Check that this keycombination isn't already assigned (in this context), except for dummy keys
 	CString report;
 	if(auto conflictCmd = IsConflicting(kc, cmd, checkEventConflict); conflictCmd.first != kcNull)
 	{
-		if (!overwrite)
+		if(!overwrite)
 		{
-			return CString();
+			return CString{};
 		} else
 		{
-			if (IsCrossContextConflict(kc, conflictCmd.second))
-			{
-				report += _T("The following commands may conflict:\r\n   >") + GetCommandText(conflictCmd.first) + _T(" in ") + conflictCmd.second.GetContextText() + _T("\r\n   >") + GetCommandText(cmd) + _T(" in ") + kc.GetContextText() + _T("\r\n\r\n");
-				LOG_COMMANDSET(mpt::ToUnicode(report));
-			} else
-			{
-				//if(!TrackerSettings::Instance().MiscAllowMultipleCommandsPerKey)
-				//	Remove(conflictCmd.second, conflictCmd.first);
-				report += _T("The following commands in same context share the same key combination:\r\n   >") + GetCommandText(conflictCmd.first) + _T(" in ") + conflictCmd.second.GetContextText() + _T("\r\n\r\n");
-				LOG_COMMANDSET(mpt::ToUnicode(report));
-			}
+			report = FormatConflict(kc, conflictCmd.first, conflictCmd.second);
+			LOG_COMMANDSET(mpt::ToUnicode(report));
 		}
 	}
 
 	kcList.insert((pos < 0) ? kcList.end() : (kcList.begin() + pos), kc);
 
 	//enfore rules on CommandSet
-	report += EnforceAll(kc, cmd, true);
+	EnforceAll(kc, cmd, true);
 	return report;
 }
 
 
-std::pair<CommandID, KeyCombination> CCommandSet::IsConflicting(KeyCombination kc, CommandID cmd, bool checkEventConflict) const
+CString CCommandSet::FormatConflict(KeyCombination kc, CommandID conflictCommand, KeyCombination conflictCombination) const
+{
+	if(IsCrossContextConflict(kc, conflictCombination))
+		return _T("May conflict with ") + GetCommandText(conflictCommand) + _T(" in ") + conflictCombination.GetContextText();
+	else
+		return _T("Conflicts with ") + GetCommandText(conflictCommand) + _T(" in same context");
+}
+
+std::pair<CommandID, KeyCombination> CCommandSet::IsConflicting(KeyCombination kc, CommandID cmd, bool checkEventConflict, bool checkSameCommand) const
 {
 	if(m_commands[cmd].IsDummy())  // no need to search if we are adding a dummy key
 		return {kcNull, KeyCombination()};
@@ -858,9 +1069,9 @@ std::pair<CommandID, KeyCombination> CCommandSet::IsConflicting(KeyCombination k
 	{
 		// In the first pass, only look for conflicts in the same context, since
 		// such conflicts are errors. Cross-context conflicts only emit warnings.
-		for(int curCmd = 0; curCmd < kcNumCommands; curCmd++)
+		for(int curCmd = kcFirst; curCmd < kcNumCommands; curCmd++)
 		{
-			if(m_commands[curCmd].IsDummy())
+			if(m_commands[curCmd].IsDummy() || (!checkSameCommand && cmd == curCmd))
 				continue;
 
 			for(auto &curKc : m_commands[curCmd].kcList)
@@ -880,19 +1091,18 @@ std::pair<CommandID, KeyCombination> CCommandSet::IsConflicting(KeyCombination k
 }
 
 
-CString CCommandSet::Remove(int pos, CommandID cmd)
+void CCommandSet::Remove(int pos, CommandID cmd)
 {
-	if (pos>=0 && (size_t)pos<m_commands[cmd].kcList.size())
+	if(pos >= 0 && static_cast<size_t>(pos) < m_commands[cmd].kcList.size())
 	{
-		return Remove(m_commands[cmd].kcList[pos], cmd);
+		Remove(m_commands[cmd].kcList[pos], cmd);
 	}
 
 	LOG_COMMANDSET(U_("Failed to remove a key: keychoice out of range."));
-	return _T("");
 }
 
 
-CString CCommandSet::Remove(KeyCombination kc, CommandID cmd)
+void CCommandSet::Remove(KeyCombination kc, CommandID cmd)
 {
 	auto &kcList = m_commands[cmd].kcList;
 	auto index = std::find(kcList.begin(), kcList.end(), kc);
@@ -900,23 +1110,20 @@ CString CCommandSet::Remove(KeyCombination kc, CommandID cmd)
 	{
 		kcList.erase(index);
 		LOG_COMMANDSET(U_("Removed a key"));
-		return EnforceAll(kc, cmd, false);
+		EnforceAll(kc, cmd, false);
 	} else
 	{
 		LOG_COMMANDSET(U_("Failed to remove a key as it was not found"));
-		return CString();
 	}
-
 }
 
 
-CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool adding)
+void CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool adding)
 {
 	//World's biggest, most confusing method. :)
 	//Needs refactoring. Maybe make lots of Rule subclasses, each with their own Enforce() method?
 	KeyCombination curKc;	// for looping through key combinations
 	KeyCombination newKc;	// for adding new key combinations
-	CString report;
 
 	if(m_enforceRule[krAllowNavigationWithSelection])
 	{
@@ -1102,6 +1309,7 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 			case kcCopySelectWithNav:		cmdOff = kcCopySelectOffWithNav;	break;
 			case kcSelectWithCopySelect:	cmdOff = kcSelectOffWithCopySelect; break;
 			case kcCopySelectWithSelect:	cmdOff = kcCopySelectOffWithSelect; break;
+			default: break;
 		}
 
 		if(cmdOff != kcNull)
@@ -1230,52 +1438,28 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 	// Auto set note off on release
 	if (m_enforceRule[krNoteOffOnKeyRelease])
 	{
-		if (inCmd>=kcVPStartNotes && inCmd<=kcVPEndNotes)
+		int cmdOffset = int32_min;
+		if(inCmd >= kcVPStartNotes && inCmd <= kcVPEndNotes)
+			cmdOffset = kcVPStartNoteStops - kcVPStartNotes;
+		else if(inCmd >= kcVPStartChords && inCmd <= kcVPEndChords)
+			cmdOffset = kcVPStartChordStops - kcVPStartChords;
+		else if(inCmd >= kcSetOctave0 && inCmd <= kcSetOctave9)
+			cmdOffset = kcSetOctaveStop0 - kcSetOctave0;
+		else if(inCmd >= kcBeginTranspose && inCmd <= kcEndTranspose)
+			cmdOffset = kcBeginTransposeStop - kcBeginTranspose;
+
+		if(cmdOffset != int32_min)
 		{
-			int noteOffset = inCmd - kcVPStartNotes;
-			newKc=inKc;
+			newKc = inKc;
 			newKc.EventType(kKeyEventUp);
 			if (adding)
 			{
 				LOG_COMMANDSET(U_("Enforcing rule krNoteOffOnKeyRelease: adding note off command"));
-				Add(newKc, (CommandID)(kcVPStartNoteStops+noteOffset), false);
-			}
-			else
+				Add(newKc, static_cast<CommandID>(inCmd + cmdOffset), false);
+			} else
 			{
 				LOG_COMMANDSET(U_("Enforcing rule krNoteOffOnKeyRelease: removing note off command"));
-				Remove(newKc, (CommandID)(kcVPStartNoteStops+noteOffset));
-			}
-		}
-		if (inCmd>=kcVPStartChords && inCmd<=kcVPEndChords)
-		{
-			int noteOffset = inCmd - kcVPStartChords;
-			newKc=inKc;
-			newKc.EventType(kKeyEventUp);
-			if (adding)
-			{
-				LOG_COMMANDSET(U_("Enforcing rule krNoteOffOnKeyRelease: adding Chord off command"));
-				Add(newKc, (CommandID)(kcVPStartChordStops+noteOffset), false);
-			}
-			else
-			{
-				LOG_COMMANDSET(U_("Enforcing rule krNoteOffOnKeyRelease: removing Chord off command"));
-				Remove(newKc, (CommandID)(kcVPStartChordStops+noteOffset));
-			}
-		}
-		if(inCmd >= kcSetOctave0 && inCmd <= kcSetOctave9)
-		{
-			int noteOffset = inCmd - kcSetOctave0;
-			newKc=inKc;
-			newKc.EventType(kKeyEventUp);
-			if (adding)
-			{
-				LOG_COMMANDSET(U_("Enforcing rule krNoteOffOnKeyRelease: adding Chord off command"));
-				Add(newKc, (CommandID)(kcSetOctaveStop0+noteOffset), false);
-			}
-			else
-			{
-				LOG_COMMANDSET(U_("Enforcing rule krNoteOffOnKeyRelease: removing Chord off command"));
-				Remove(newKc, (CommandID)(kcSetOctaveStop0+noteOffset));
+				Remove(newKc, static_cast<CommandID>(inCmd + cmdOffset));
 			}
 		}
 	}
@@ -1305,8 +1489,7 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 				newKc.KeyCode(VK_NUMPAD0 + i);
 				Add(newKc, (CommandID)(kcSetSpacing0 + i), false);
 			}
-		}
-		else if (!adding && (inCmd < kcSetSpacing || inCmd > kcSetSpacing9))
+		} else if (!adding && (inCmd < kcSetSpacing || inCmd > kcSetSpacing9))
 		{
 			// Re-add combinations that might have been overwritten by another command
 			if(('0' <= inKc.KeyCode() && inKc.KeyCode() <= '9') || (VK_NUMPAD0 <= inKc.KeyCode() && inKc.KeyCode() <= VK_NUMPAD9))
@@ -1315,9 +1498,9 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 				{
 					newKc = KeyCombination(kCtxViewPatterns, spacing.Modifier(), inKc.KeyCode(), spacing.EventType());
 					if('0' <= inKc.KeyCode() && inKc.KeyCode() <= '9')
-						Add(newKc, (CommandID)(kcSetSpacing0 + inKc.KeyCode() - '0'), false);
+						Add(newKc, static_cast<CommandID>(kcSetSpacing0 + inKc.KeyCode() - '0'), false);
 					else if(VK_NUMPAD0 <= inKc.KeyCode() && inKc.KeyCode() <= VK_NUMPAD9)
-						Add(newKc, (CommandID)(kcSetSpacing0 + inKc.KeyCode() - VK_NUMPAD0), false);
+						Add(newKc, static_cast<CommandID>(kcSetSpacing0 + inKc.KeyCode() - VK_NUMPAD0), false);
 				}
 			}
 
@@ -1330,10 +1513,10 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 			const bool areNoteStarts = (inCmd >= kcVPStartNotes && inCmd <= kcVPEndNotes);
 			const auto startNote = areNoteStarts ? kcVPStartNotes : kcVPStartNoteStops;
 			const auto noteOffset = inCmd - startNote;
-			for(const auto ctx : NoteContexts)
+			for(const auto &range : NoteRanges)
 			{
-				const auto context = std::get<0>(ctx);
-				const auto contextStartNote = areNoteStarts ? std::get<1>(ctx) : std::get<2>(ctx);
+				const auto contextStartNote = areNoteStarts ? range.first : range.second;
+				const auto context = ContextFromCommand(contextStartNote);
 
 				if(contextStartNote == startNote)
 					continue;
@@ -1368,15 +1551,13 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 	if (m_enforceRule[krCheckModifiers])
 	{
 		// for all commands that must be modifiers
-		for (auto curCmd : { kcSelect, kcCopySelect, kcChordModifier, kcSetSpacing })
+		for (auto curCmd : ModifierCommands)
 		{
 			//for all of this command's key combinations
 			for (auto &kc : m_commands[curCmd].kcList)
 			{
-				if ((!kc.Modifier()) || (kc.KeyCode()!=VK_SHIFT && kc.KeyCode()!=VK_CONTROL && kc.KeyCode()!=VK_MENU && kc.KeyCode()!=0 &&
-					kc.KeyCode()!=VK_LWIN && kc.KeyCode()!=VK_RWIN )) // Feature: use Windows keys as modifier keys
+				if(!kc.IsModifierCombination())
 				{
-					report += _T("Error! ") + GetCommandText((CommandID)curCmd) + _T(" must be a modifier (shift/ctrl/alt), but is currently ") + inKc.GetKeyText() + _T("\r\n");
 					//replace with dummy
 					kc.Modifier(ModShift);
 					kc.KeyCode(0);
@@ -1388,18 +1569,20 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 	}
 	if (m_enforceRule[krPropagateSampleManipulation])
 	{
-		if (inCmd>=kcSampleLoad && inCmd<=kcSampleNew)
+		static constexpr CommandID propagateCmds[] = {kcSampleLoad, kcSampleSave, kcSampleNew};
+		static constexpr CommandID translatedCmds[] = {kcInstrumentLoad, kcInstrumentSave, kcInstrumentNew};
+		if(const auto propCmd = std::find(std::begin(propagateCmds), std::end(propagateCmds), inCmd); propCmd != std::end(propagateCmds))
 		{
-			int newCmd;
-			int offset = inCmd-kcStartSampleMisc;
-
 			//propagate to InstrumentView
-			newCmd = kcStartInstrumentMisc+offset;
-			m_commands[newCmd].kcList.reserve(m_commands[inCmd].kcList.size());
-			for(auto kc : m_commands[inCmd].kcList)
+			const auto newCmd = translatedCmds[std::distance(std::begin(propagateCmds), propCmd)];
+			if(kcFirst <= inCmd && inCmd < kcNumCommands)
 			{
-				kc.Context(kCtxViewInstruments);
-				m_commands[newCmd].kcList.push_back(kc);
+				m_commands[newCmd].kcList.reserve(m_commands[inCmd].kcList.size());
+				for(auto kc : m_commands[inCmd].kcList)
+				{
+					kc.Context(kCtxViewInstruments);
+					m_commands[newCmd].kcList.push_back(kc);
+				}
 			}
 		}
 
@@ -1427,7 +1610,6 @@ CString CCommandSet::EnforceAll(KeyCombination inKc, CommandID inCmd, bool addin
 		}
 	}
 */
-	return report;
 }
 
 
@@ -1442,7 +1624,7 @@ void CCommandSet::GenKeyMap(KeyMap &km)
 	const bool allowDupes = TrackerSettings::Instance().MiscAllowMultipleCommandsPerKey;
 
 	// Copy commandlist content into map:
-	for(UINT cmd = 0; cmd < kcNumCommands; cmd++)
+	for(UINT cmd = kcFirst; cmd < kcNumCommands; cmd++)
 	{
 		if(m_commands[cmd].IsDummy())
 			continue;
@@ -1487,10 +1669,10 @@ void CCommandSet::GenKeyMap(KeyMap &km)
 }
 
 
-void CCommandSet::Copy(const CCommandSet *source)
+void CCommandSet::Copy(const CCommandSet &source)
 {
-	m_oldSpecs = nullptr;
-	std::copy(std::begin(source->m_commands), std::end(source->m_commands), std::begin(m_commands));
+	m_currentModSpecs = source.m_currentModSpecs;
+	std::copy(std::begin(source.m_commands), std::end(source.m_commands), std::begin(m_commands));
 }
 
 
@@ -1508,8 +1690,8 @@ ctx:UID:Description:Modifier:Key:EventMask
 ...
 */
 
-	mpt::SafeOutputFile sf(filename, std::ios::out, mpt::FlushModeFromBool(TrackerSettings::Instance().MiscFlushFileBuffersOnSave));
-	mpt::ofstream& f = sf;
+	mpt::IO::SafeOutputFile sf(filename, std::ios::out, mpt::IO::FlushModeFromBool(TrackerSettings::Instance().MiscFlushFileBuffersOnSave));
+	mpt::IO::ofstream& f = sf;
 	if(!f)
 	{
 		ErrorBox(IDS_CANT_OPEN_FILE_FOR_WRITING);
@@ -1519,10 +1701,9 @@ ctx:UID:Description:Modifier:Key:EventMask
 	     "//- Format is:                                                         -\n"
 	     "//- Context:Command ID:Modifiers:Key:KeypressEventType     //Comments  -\n"
 	     "//----------------------------------------------------------------------\n"
-	     "version:" << KEYMAP_VERSION << "\n";
+	     "version:" << mpt::ToCharset(mpt::Charset::ASCII, Version::Current().ToUString()) << "\n";
 
-	std::vector<HKL> layouts(GetKeyboardLayoutList(0, nullptr));
-	GetKeyboardLayoutList(static_cast<int>(layouts.size()), layouts.data());
+	const std::vector<HKL> layouts = GetKeyboardLayouts();
 
 	for(int ctx = 0; ctx < kCtxMaxInputContexts; ctx++)
 	{
@@ -1533,12 +1714,12 @@ ctx:UID:Description:Modifier:Key:EventMask
 			if(m_commands[cmd].IsHidden())
 				continue;
 
-			for(const auto kc : m_commands[cmd].kcList)
+			for(const auto &kc : m_commands[cmd].kcList)
 			{
 				if(kc.Context() != ctx)
 					continue;  // Sort by context
 
-				f << ctx << ":"
+				f << ctx << ":"  // Context technically no longer needed here, just kept for backwards compatibility
 					<< m_commands[cmd].ID() << ":"
 					<< static_cast<int>(kc.Modifier().GetRaw()) << ":"
 					<< kc.KeyCode();
@@ -1564,32 +1745,22 @@ ctx:UID:Description:Modifier:Key:EventMask
 }
 
 
-static std::string GetDefaultKeymap()
+bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDescription)
 {
-	return mpt::make_basic_string(mpt::byte_cast<mpt::span<const char>>(GetResource(MAKEINTRESOURCE(IDR_DEFAULT_KEYBINDINGS), TEXT("KEYBINDINGS"))));
-}
-
-
-bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDescription, const bool fillExistingSet)
-{
+	Version keymapVersion;
 	KeyCombination kc;
 	char s[1024];
 	std::string curLine;
 	std::vector<std::string> tokens;
 	int l = 0;
-	m_oldSpecs = nullptr;  // After clearing the key set, need to fix effect letters
 
-	if(!fillExistingSet)
-	{
-		for(auto &cmd : m_commands)
-			cmd.kcList.clear();
-	}
+	for(auto &cmd : m_commands)
+		cmd.kcList.clear();
 
 	CString errText;
 	int errorCount = 0;
 
-	std::vector<HKL> layouts(GetKeyboardLayoutList(0, nullptr));
-	GetKeyboardLayoutList(static_cast<int>(layouts.size()), layouts.data());
+	const std::vector<HKL> layouts = GetKeyboardLayouts();
 
 	const std::string whitespace(" \n\r\t");
 	while(iStrm.getline(s, std::size(s)))
@@ -1612,14 +1783,14 @@ bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDesc
 		if (curLine.empty())
 			continue;
 
-		tokens = mpt::String::Split<std::string>(curLine, ":");
+		tokens = mpt::split(curLine, std::string(":"));
 		if(tokens.size() == 2 && !mpt::CompareNoCaseAscii(tokens[0], "version"))
 		{
-			// This line indicates the version of this keymap file (e.g. "version:1")
-			int fileVersion = ConvertStrTo<int>(tokens[1]);
-			if(fileVersion > KEYMAP_VERSION)
+			// This line indicates the version of this keymap file (e.g. "version:1" on older versions, in newer version the OpenMPT version that was used to save the file)
+			keymapVersion = Version::Parse(mpt::ToUnicode(mpt::Charset::ASCII, tokens[1]));
+			if(keymapVersion > Version::Current())
 			{
-				errText.AppendFormat(_T("File version is %d, but your version of OpenMPT only supports loading files up to version %d.\n"), fileVersion, KEYMAP_VERSION);
+				errText += MPT_CFORMAT("Keymap was saved with OpenMPT {}, but you are running OpenMPT {}.\n")(keymapVersion, Version::Current());
 			}
 			continue;
 		}
@@ -1628,11 +1799,10 @@ bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDesc
 		CommandID cmd = kcNumCommands;
 		if(tokens.size() >= 5)
 		{
-			kc.Context(static_cast<InputTargetContext>(ConvertStrTo<int>(tokens[0])));
-			cmd = FindCmd(ConvertStrTo<uint32>(tokens[1]));
+			cmd = FindCmd(mpt::parse<uint32>(tokens[1]));
 
 			// Modifier
-			kc.Modifier(static_cast<Modifiers>(ConvertStrTo<int>(tokens[2])));
+			kc.Modifier(static_cast<Modifiers>(mpt::parse<int>(tokens[2])));
 
 			// Virtual Key code / Scan code
 			UINT vk = 0;
@@ -1640,7 +1810,7 @@ bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDesc
 			if(scPos != std::string::npos)
 			{
 				// Scan code present
-				UINT sc = ConvertStrTo<UINT>(tokens[3].substr(scPos + 1));
+				UINT sc = mpt::parse<UINT>(tokens[3].substr(scPos + 1));
 				for(auto i = layouts.begin(); i != layouts.end() && vk == 0; i++)
 				{
 					vk = MapVirtualKeyEx(sc, MAPVK_VSC_TO_VK, *i);
@@ -1648,24 +1818,16 @@ bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDesc
 			}
 			if(vk == 0)
 			{
-				vk = ConvertStrTo<UINT>(tokens[3]);
+				vk = mpt::parse<UINT>(tokens[3]);
 			}
 			kc.KeyCode(vk);
 
 			// Event
-			kc.EventType(static_cast<KeyEventType>(ConvertStrTo<int>(tokens[4])));
-
-			if(fillExistingSet && cmd != kcNull && GetKeyListSize(cmd) != 0)
-			{
-				// Do not map shortcuts that already have custom keys assigned.
-				// In particular with default note keys, this can create awkward keymaps when loading
-				// e.g. an IT-style keymap and it contains two keys mapped to the same notes.
-				continue;
-			}
+			kc.EventType(static_cast<KeyEventType>(mpt::parse<int>(tokens[4])));
 		}
 
 		// Error checking
-		if(cmd < 0 || cmd >= kcNumCommands || kc.Context() >= kCtxMaxInputContexts || tokens.size() < 4)
+		if(cmd < kcFirst || cmd >= kcNumCommands || tokens.size() < 4)
 		{
 			errorCount++;
 			if (errorCount < 10)
@@ -1680,20 +1842,11 @@ bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDesc
 			}
 		} else
 		{
-			Add(kc, cmd, !fillExistingSet, -1, !fillExistingSet);
+			Add(kc, cmd, true, -1, true);
 		}
 	}
 
-	if(!fillExistingSet)
-	{
-		// Add the default command set to our freshly loaded command set.
-		std::istringstream ss{ GetDefaultKeymap() };
-		LoadFile(ss, mpt::ustring(), true);
-	} else
-	{
-		// We were just adding stuff to an existing command set - don't delete it!
-		return true;
-	}
+	ApplyDefaultKeybindings(KeyboardPreset::MPT, keymapVersion);
 
 	// Fix up old keymaps containing legacy commands that have been merged into other commands
 	static constexpr std::pair<CommandID, CommandID> MergeCommands[] =
@@ -1715,14 +1868,13 @@ bool CCommandSet::LoadFile(std::istream &iStrm, const mpt::ustring &filenameDesc
 			(mpt::ToCString(filenameDescription), errText));
 	}
 
-	m_oldSpecs = nullptr;
 	return true;
 }
 
 
 bool CCommandSet::LoadFile(const mpt::PathString &filename)
 {
-	mpt::ifstream fin(filename);
+	mpt::IO::ifstream fin(filename);
 	if(fin.fail())
 	{
 		Reporting::Warning(MPT_TFORMAT("Can't open key bindings file {} for reading. Default key bindings will be used.")(filename));
@@ -1734,16 +1886,118 @@ bool CCommandSet::LoadFile(const mpt::PathString &filename)
 }
 
 
-bool CCommandSet::LoadDefaultKeymap()
+void CCommandSet::LoadDefaultKeymap(KeyboardPreset preset)
 {
-	std::istringstream ss{ GetDefaultKeymap() };
-	return LoadFile(ss, U_("\"executable resource\""));
+	for(auto &cmd : m_commands)
+		cmd.kcList.clear();
+	ApplyDefaultKeybindings(KeyboardPreset::MPT);
+
+	if(preset == KeyboardPreset::MPT)
+		return;
+
+	const auto defaults = (preset == KeyboardPreset::IT) ? mpt::as_span(DefaultKeybindingsIT) : mpt::as_span(DefaultKeybindingsFT2);
+	// Remove all pre-populated notes
+	for(CommandID cmd = kcVPStartNotes; cmd <= kcVPEndNotes; cmd = static_cast<CommandID>(cmd + 1))
+	{
+		for(const auto &kc : m_commands[cmd].kcList)
+		{
+			EnforceAll(kc, cmd, false);
+		}
+		m_commands[cmd].kcList.clear();
+	}
+	// Also remove any other keys that are going to be overwritten
+	for (const auto &key : defaults)
+	{
+		for(const auto &kc : m_commands[key.cmd].kcList)
+		{
+			EnforceAll(kc, key.cmd, false);
+		}
+		m_commands[key.cmd].kcList.clear();
+	}
+	ApplyDefaultKeybindings(preset);
+}
+
+
+void CCommandSet::ApplyDefaultKeybindings(KeyboardPreset preset, const Version onlyCommandsAfterVersion)
+{
+	if(m_currentModSpecs)
+	{
+		const auto specs = m_currentModSpecs;
+		m_currentModSpecs = nullptr;
+		QuickChange_SetEffects(*specs);
+	}
+
+	const std::vector<HKL> layouts = GetKeyboardLayouts();
+
+	mpt::span<const DefaultKeybinding> defaults;
+	switch(preset)
+	{
+	case KeyboardPreset::MPT: defaults = DefaultKeybindings; break;
+	case KeyboardPreset::IT: defaults = DefaultKeybindingsIT; break;
+	case KeyboardPreset::FT2: defaults = DefaultKeybindingsFT2; break;
+	}
+
+	const bool onlyNewShortcuts = onlyCommandsAfterVersion != Version{};
+	CommandID lastAdded = kcNull;
+	for(const auto &kb : defaults)
+	{
+		if(onlyNewShortcuts)
+		{
+			if(kb.addedInVersion <= onlyCommandsAfterVersion)
+				continue;
+
+			// Do not map shortcuts that already have custom keys assigned.
+			// In particular with default note keys, this can create awkward keymaps when loading
+			// e.g. an IT-style keymap and it contains two keys mapped to the same notes.
+			if(kb.cmd != lastAdded && GetKeyListSize(kb.cmd) != 0)
+				continue;
+		}
+
+		KeyCombination kc;
+		kc.Context(ContextFromCommand(kb.cmd));
+		kc.Modifier(kb.modifiers);
+		kc.EventType(kb.events);
+
+		if(kb.key & 0x8000)
+		{
+			// Virtual Key code / Scan code
+			UINT vk = 0;
+			for(auto i = layouts.begin(); i != layouts.end() && vk == 0; i++)
+			{
+				vk = MapVirtualKeyEx(kb.key & 0x7FFF, MAPVK_VSC_TO_VK, *i);
+			}
+			if(vk)
+				kc.KeyCode(vk);
+			else
+				kc.KeyCode(kb.key & 0x7FFF);
+		} else
+		{
+			kc.KeyCode(kb.key);
+		}
+
+		if(auto conflictCmd = IsConflicting(kc, kb.cmd, false); conflictCmd.first != kcNull)
+		{
+			if(!onlyNewShortcuts && conflictCmd.second.Context() == kc.Context())
+				continue;
+			// Allow cross-context conflicts in case the newly added shortcut is in a more generic context
+			// - unless the conflicting shortcut is the reserved dummy shortcut (which was used to prevent
+			// default shortcuts from being added back before default key binding versioning was added).
+			if(conflictCmd.first == kcDummyShortcut)
+				continue;
+			if(onlyNewShortcuts && !m_isParentContext[kc.Context()][conflictCmd.second.Context()])
+				continue;
+		}
+
+		m_commands[kb.cmd].kcList.push_back(kc);
+		EnforceAll(kc, kb.cmd, true);
+		lastAdded = kb.cmd;
+	}
 }
 
 
 CommandID CCommandSet::FindCmd(uint32 uid) const
 {
-	for(int i = 0; i < kcNumCommands; i++)
+	for(int i = kcFirst; i < kcNumCommands; i++)
 	{
 		if(m_commands[i].ID() == uid)
 			return static_cast<CommandID>(i);
@@ -1767,6 +2021,7 @@ CString KeyCombination::GetContextText(InputTargetContext ctx)
 		case kCtxViewSamples:			return _T("Sample Context [bottom]");
 		case kCtxViewInstruments:		return _T("Instrument Context [bottom]");
 		case kCtxViewComments:			return _T("Comments Context [bottom]");
+		case kCtxViewTree:				return _T("Tree View");
 		case kCtxCtrlGeneral:			return _T("General Context [top]");
 		case kCtxCtrlPatterns:			return _T("Pattern Context [top]");
 		case kCtxCtrlSamples:			return _T("Sample Context [top]");
@@ -1775,6 +2030,7 @@ CString KeyCombination::GetContextText(InputTargetContext ctx)
 		case kCtxCtrlOrderlist:			return _T("Orderlist");
 		case kCtxVSTGUI:				return _T("Plugin GUI Context");
 		case kCtxChannelSettings:		return _T("Quick Channel Settings Context");
+		case kCtxInsNoteMap:			return _T("Instrument Note Map");
 		case kCtxUnknownContext:
 		default:						return _T("Unknown Context");
 	}
@@ -1847,12 +2103,32 @@ CString KeyCombination::GetKeyText(FlagSet<Modifiers> mod, UINT code)
 }
 
 
+bool KeyCombination::IsModifierCombination() const
+{
+	return Modifier() &&
+		(KeyCode() == VK_SHIFT || KeyCode() == VK_CONTROL || KeyCode() == VK_MENU || KeyCode() == 0
+		|| KeyCode() == VK_LWIN || KeyCode() == VK_RWIN);  // Feature: use Windows keys as modifier keys
+
+}
+
+
 CString CCommandSet::GetKeyTextFromCommand(CommandID c, UINT key) const
 {
-	if (key < m_commands[c].kcList.size())
+	if(key < m_commands[c].kcList.size())
 		return m_commands[c].kcList[0].GetKeyText();
-	else
+	if(key != uint32_max)
 		return CString();
+	CString keys;
+	bool addSeparator = false;
+	for(auto &item : m_commands[c].kcList)
+	{
+		if(addSeparator)
+			keys += _T("; ");
+		else
+			addSeparator = true;
+		keys += item.GetKeyText();
+	}
+	return keys;
 }
 
 
@@ -1877,41 +2153,42 @@ bool CCommandSet::QuickChange_NotesRepeat(bool repeat)
 bool CCommandSet::QuickChange_SetEffects(const CModSpecifications &modSpecs)
 {
 	// Is this already the active key configuration?
-	if(&modSpecs == m_oldSpecs)
+	if(&modSpecs == m_currentModSpecs)
 	{
 		return false;
 	}
-	m_oldSpecs = &modSpecs;
+	m_currentModSpecs = &modSpecs;
 
-	int choices = 0;
 	KeyCombination kc(kCtxViewPatternsFX, ModNone, 0, kKeyEventDown | kKeyEventRepeat);
 
-	for(CommandID cmd = kcFixedFXStart; cmd <= kcFixedFXend; cmd = static_cast<CommandID>(cmd + 1))
+	for(CommandID cmd = kcSetFXStart; cmd <= kcSetFXEnd; cmd = static_cast<CommandID>(cmd + 1))
 	{
-		// Remove all old choices
-		choices = GetKeyListSize(cmd);
-		for(int p = choices; p >= 0; --p)
-		{
-			Remove(p, cmd);
-		}
-
 		char effect = modSpecs.GetEffectLetter(static_cast<ModCommand::COMMAND>(cmd - kcSetFXStart + 1));
 		if(effect >= 'A' && effect <= 'Z')
 		{
 			// VkKeyScanEx needs lowercase letters
 			effect = effect - 'A' + 'a';
-		} else if(effect < '0' || effect > '9')
+		} else if(effect == ' ')
 		{
-			// Don't map effects that use "weird" effect letters (such as # or \)
+			// We don't want to enter "empty" effects in IT / S3M
 			effect = '?';
+		} else if(cmd >= kcSetFXuserBegin && cmd <= kcSetFXuserEnd)
+		{
+			// Don't map effects that use non-alphanumeric effect letters (such as # or \), they are set up manually instead
+			continue;
+		}
+
+		// Remove all old choices
+		for(int p = GetKeyListSize(cmd) - 1; p >= 0; --p)
+		{
+			Remove(p, cmd);
 		}
 
 		if(effect != '?')
 		{
 			// Hack for situations where a non-latin keyboard layout without A...Z key code mapping may the current layout (e.g. Russian),
 			// but a latin layout (e.g. EN-US) is installed as well.
-			std::vector<HKL> layouts(GetKeyboardLayoutList(0, nullptr));
-			GetKeyboardLayoutList(static_cast<int>(layouts.size()), layouts.data());
+			const std::vector<HKL> layouts = GetKeyboardLayouts();
 			SHORT codeNmod = -1;
 			for(auto i = layouts.begin(); i != layouts.end() && codeNmod == -1; i++)
 			{
@@ -2014,5 +2291,43 @@ bool CCommandSet::IsCrossContextConflict(KeyCombination kc1, KeyCombination kc2)
 {
 	return m_isParentContext[kc1.Context()][kc2.Context()] || m_isParentContext[kc2.Context()][kc1.Context()];
 }
+
+
+InputTargetContext CCommandSet::ContextFromCommand(CommandID cmd)
+{
+	static constexpr std::tuple<InputTargetContext, CommandID, CommandID> ContextCommandRanges[] =
+	{
+		{kCtxAllContexts,         kcGlobalStart,              kcGlobalEnd             },
+		{kCtxCtrlOrderlist,       kcStartOrderlistCommands,   kcEndOrderlistCommands  },
+		{kCtxChannelSettings,     kcStartChnSettingsCommands, kcEndChnSettingsCommands},
+		{kCtxViewPatterns,        kcStartPatternGeneral,      kcEndPatternGeneral     },
+		{kCtxViewPatternsNote,    kcStartNoteColumn,          kcEndNoteColumn         },
+		{kCtxViewPatternsIns,     kcSetIns0,                  kcSetIns9               },
+		{kCtxViewPatternsVol,     kcSetVolumeStart,           kcSetVolumeEnd          },
+		{kCtxViewPatternsFX,      kcSetFXStart,               kcSetFXEnd              },
+		{kCtxViewPatternsFXparam, kcSetFXParam0,              kcSetFXParamF           },
+		{kCtxViewSamples,         kcStartSampleView,          kcEndSampleView         },
+		{kCtxCtrlInstruments,     kcStartInstrumentCtrl,      kcEndInstrumentCtrl,    },
+		{kCtxInsNoteMap,          kcStartInsNoteMap,          kcEndInsNoteMap         },
+		{kCtxViewInstruments,     kcStartInsEnvelopeEdit,     kcEndInsEnvelopeEdit    },
+		{kCtxViewComments,        kcStartCommentsCommands,    kcEndCommentsCommands   },
+		{kCtxVSTGUI,              kcStartVSTGUICommands,      kcEndVSTGUICommands     },
+		{kCtxViewTree,            kcStartTreeViewCommands,    kcEndTreeViewCommands   },
+	};
+	for(const auto &[context, first, last] : ContextCommandRanges)
+	{
+		if(mpt::is_in_range(cmd, first, last))
+			return context;
+	}
+	MPT_ASSERT_NOTREACHED();
+	return kCtxUnknownContext;
+}
+
+
+bool CCommandSet::MustBeModifierKey(CommandID id)
+{
+	return mpt::contains(ModifierCommands, id);
+}
+
 
 OPENMPT_NAMESPACE_END

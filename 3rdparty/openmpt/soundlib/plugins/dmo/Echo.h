@@ -8,8 +8,6 @@
  */
 
 
-#ifndef NO_PLUGINS
-
 #include "../PlugInterface.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -42,10 +40,9 @@ protected:
 	bool m_crossEcho;
 
 public:
-	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
-	Echo(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
+	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
+	Echo(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
 
-	void Release() override { delete this; }
 	int32 GetUID() const override { return 0xEF3E932C; }
 	int32 GetVersion() const override { return 0; }
 	void Idle() override { }
@@ -61,7 +58,7 @@ public:
 
 	PlugParamIndex GetNumParameters() const override { return kEchoNumParameters; }
 	PlugParamValue GetParameter(PlugParamIndex index) override;
-	void SetParameter(PlugParamIndex index, PlugParamValue value) override;
+	void SetParameter(PlugParamIndex index, PlugParamValue value, PlayState * = nullptr, CHANNELINDEX = CHANNELINDEX_INVALID) override;
 
 	void Resume() override;
 	void Suspend() override { m_isResumed = false; }
@@ -95,5 +92,3 @@ protected:
 } // namespace DMO
 
 OPENMPT_NAMESPACE_END
-
-#endif // !NO_PLUGINS

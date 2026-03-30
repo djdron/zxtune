@@ -31,15 +31,15 @@ public:
 
 public:
 	template <uint32 targetbits, typename Trng>
-	MPT_FORCEINLINE MixSampleInt process(MixSampleInt sample, Trng &rng)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE MixSampleInt process(MixSampleInt sample, Trng &rng)
 	{
 		if constexpr(targetbits == 0)
 		{
-			MPT_UNREFERENCED_PARAMETER(rng);
+			MPT_UNUSED(rng);
 			return sample;
 		} else if constexpr(targetbits + MixSampleIntTraits::mix_headroom_bits + 1 >= 32)
 		{
-			MPT_UNREFERENCED_PARAMETER(rng);
+			MPT_UNUSED(rng);
 			return sample;
 		} else
 		{
@@ -48,7 +48,7 @@ public:
 		}
 	}
 	template <uint32 targetbits, typename Trng>
-	MPT_FORCEINLINE MixSampleFloat process(MixSampleFloat sample, Trng &prng)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE MixSampleFloat process(MixSampleFloat sample, Trng &prng)
 	{
 		return mix_sample_cast<MixSampleFloat>(process<targetbits>(mix_sample_cast<MixSampleInt>(sample), prng));
 	}

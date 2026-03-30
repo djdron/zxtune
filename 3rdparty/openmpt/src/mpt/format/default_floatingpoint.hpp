@@ -7,23 +7,23 @@
 
 #include "mpt/base/detect.hpp"
 
-#if MPT_MSVC_AT_LEAST(2019, 4) || MPT_GCC_AT_LEAST(11, 1, 0)
-#define MPT_FORMAT_CXX17_FLOAT 1
+#if !defined(MPT_LIBCXX_QUIRK_NO_TO_CHARS_FLOAT)
+#define MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17 1
 #else
-#define MPT_FORMAT_CXX17_FLOAT 0
+#define MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17 0
 #endif
 
-#if MPT_FORMAT_CXX17_FLOAT
+#if MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17
 #include "mpt/base/algorithm.hpp"
 #endif
 #include "mpt/base/namespace.hpp"
 #include "mpt/format/helpers.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 
-#if MPT_FORMAT_CXX17_FLOAT
+#if MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17
 #include <charconv>
 #endif
-#if !MPT_FORMAT_CXX17_FLOAT
+#if !MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17
 #include <iomanip>
 #include <ios>
 #include <limits>
@@ -31,7 +31,7 @@
 #include <sstream>
 #endif
 #include <string>
-#if MPT_FORMAT_CXX17_FLOAT
+#if MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17
 #include <system_error>
 #endif
 #include <type_traits>
@@ -42,7 +42,7 @@ namespace mpt {
 inline namespace MPT_INLINE_NS {
 
 
-#if MPT_FORMAT_CXX17_FLOAT
+#if MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17
 template <typename Tstring, typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
 inline Tstring to_chars_string(const T & x) {
 	std::string str(1, '\0');
@@ -61,12 +61,12 @@ inline Tstring to_chars_string(const T & x) {
 
 template <typename Tstring, typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
 inline Tstring format_value_default(const T & x) {
-	return mpt::convert<Tstring>(mpt::to_chars_string<typename mpt::select_format_string_type<Tstring>::type>(x));
+	return mpt::transcode<Tstring>(mpt::to_chars_string<typename mpt::select_format_string_type<Tstring>::type>(x));
 }
 #endif
 
 
-#if !MPT_FORMAT_CXX17_FLOAT
+#if !MPT_FORMAT_FORMAT_DEFAULT_FLOAT_CXX17
 template <typename Tstring, typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
 inline Tstring to_stream_string(const T & x) {
 	using stream_char_type = typename mpt::select_format_char_type<typename Tstring::value_type>::type;
@@ -78,7 +78,7 @@ inline Tstring to_stream_string(const T & x) {
 
 template <typename Tstring, typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
 inline Tstring format_value_default(const T & x) {
-	return mpt::convert<Tstring>(mpt::to_stream_string<typename mpt::select_format_string_type<Tstring>::type>(x));
+	return mpt::transcode<Tstring>(mpt::to_stream_string<typename mpt::select_format_string_type<Tstring>::type>(x));
 }
 #endif
 

@@ -14,15 +14,15 @@
 
 #include "Sndfile.h"
 #include "../common/misc_util.h"
+#include "../common/mptTime.h"
 #include "Undo.h"
 #include "Notification.h"
-#include "UpdateHints.h"
-#include <time.h>
 
 OPENMPT_NAMESPACE_BEGIN
 
 class EncoderFactoryBase;
 class CChildFrame;
+struct UpdateHint;
 
 /////////////////////////////////////////////////////////////////////////
 // Split Keyboard Settings (pattern editor)
@@ -82,6 +82,7 @@ public:
 
 struct PlayNoteParam
 {
+	std::bitset<128> *m_notesPlaying = nullptr;
 	SmpLength m_loopStart = 0, m_loopEnd = 0, m_sampleOffset = 0;
 	int32 m_volume = -1;
 	SAMPLEINDEX m_sample = 0;
@@ -99,6 +100,8 @@ struct PlayNoteParam
 	PlayNoteParam& Sample(SAMPLEINDEX sample) { m_sample = sample; return *this; }
 	PlayNoteParam& Instrument(INSTRUMENTINDEX instr) { m_instr = instr; return *this; }
 	PlayNoteParam& Channel(CHANNELINDEX channel) { m_currentChannel = channel; return *this; }
+
+	PlayNoteParam& CheckNNA(std::bitset<128> &notesPlaying) { m_notesPlaying = &notesPlaying; return *this; }
 };
 
 
@@ -127,7 +130,7 @@ protected:
 	CSampleUndo m_SampleUndo;
 	CInstrumentUndo m_InstrumentUndo;
 	SplitKeyboardSettings m_SplitKeyboardSettings;	// this is maybe not the best place to keep them, but it should do the job
-	time_t m_creationTime;
+	mpt::chrono::default_system_clock::time_point m_creationTime;
 
 	std::atomic<bool> m_modifiedAutosave = false; // Modified since last autosave?
 
@@ -148,8 +151,7 @@ protected:
 	std::array<std::bitset<128>, 16> m_midiPlayingNotes;
 	std::bitset<16> m_midiSustainActive;
 
-	std::bitset<MAX_BASECHANNELS> m_bsMultiRecordMask;
-	std::bitset<MAX_BASECHANNELS> m_bsMultiSplitRecordMask;
+	std::vector<RecordGroup> m_multiRecordGroup;
 
 protected: // create from serialization only
 	CModDoc();
@@ -174,7 +176,7 @@ public:
 	void PostMessageToAllViews(UINT uMsg, WPARAM wParam = 0, LPARAM lParam = 0);
 	void SendNotifyMessageToAllViews(UINT uMsg, WPARAM wParam = 0, LPARAM lParam = 0);
 	void SendMessageToActiveView(UINT uMsg, WPARAM wParam = 0, LPARAM lParam = 0);
-	MODTYPE GetModType() const { return m_SndFile.m_nType; }
+	MODTYPE GetModType() const noexcept { return m_SndFile.GetType(); }
 	INSTRUMENTINDEX GetNumInstruments() const { return m_SndFile.m_nInstruments; }
 	SAMPLEINDEX GetNumSamples() const { return m_SndFile.m_nSamples; }
 
@@ -218,7 +220,7 @@ public:
 	CInstrumentUndo &GetInstrumentUndo() { return m_InstrumentUndo; }
 	SplitKeyboardSettings &GetSplitKeyboardSettings() { return m_SplitKeyboardSettings; }
 
-	time_t GetCreationTime() const { return m_creationTime; }
+	mpt::chrono::default_system_clock::time_point GetCreationTime() const { return m_creationTime; }
 
 // operations
 public:
@@ -236,6 +238,7 @@ public:
 	bool ConvertInstrumentsToSamples();
 	bool ConvertSamplesToInstruments();
 	PLUGINDEX RemovePlugs(const std::vector<bool> &keepMask);
+	bool RemovePlugin(PLUGINDEX plugin);
 
 	void ClonePlugin(SNDMIXPLUGIN &target, const SNDMIXPLUGIN &source);
 	void AppendModule(const CSoundFile &source);
@@ -252,7 +255,7 @@ public:
 	bool RemoveSample(SAMPLEINDEX nSmp);
 	bool RemoveInstrument(INSTRUMENTINDEX nIns);
 
-	void ProcessMIDI(uint32 midiData, INSTRUMENTINDEX ins, IMixPlugin *plugin, InputTargetContext ctx);
+	void ProcessMIDI(uint32 midiData, SAMPLEINDEX smp, INSTRUMENTINDEX ins, IMixPlugin *plugin, InputTargetContext ctx);
 	CHANNELINDEX PlayNote(PlayNoteParam &params, NoteToChannelMap *noteChannel = nullptr);
 	bool NoteOff(UINT note, bool fade = false, INSTRUMENTINDEX ins = INSTRUMENTINDEX_INVALID, CHANNELINDEX currentChn = CHANNELINDEX_INVALID);
 	void CheckNNA(ModCommand::NOTE note, INSTRUMENTINDEX ins, std::bitset<128> &playingNotes);
@@ -265,9 +268,6 @@ public:
 	bool MuteInstrument(INSTRUMENTINDEX nInstr, bool bMute);
 	// Returns true if toggling the mute status of a channel should set the document as modified given the current module format and settings.
 	bool MuteToggleModifiesDocument() const;
-
-	bool SoloChannel(CHANNELINDEX nChn, bool bSolo);
-	bool IsChannelSolo(CHANNELINDEX nChn) const;
 
 	bool SurroundChannel(CHANNELINDEX nChn, bool bSurround);
 	bool SetChannelGlobalVolume(CHANNELINDEX nChn, uint16 nVolume);
@@ -282,9 +282,9 @@ public:
 	RecordGroup GetChannelRecordGroup(CHANNELINDEX channel) const;
 	void SetChannelRecordGroup(CHANNELINDEX channel, RecordGroup recordGroup);
 	void ToggleChannelRecordGroup(CHANNELINDEX channel, RecordGroup recordGroup);
-	void ReinitRecordState(bool unselect = true);
+	void ReinitRecordState();
 
-	CHANNELINDEX GetNumChannels() const { return m_SndFile.m_nChannels; }
+	CHANNELINDEX GetNumChannels() const noexcept { return m_SndFile.GetNumChannels(); }
 	UINT GetPatternSize(PATTERNINDEX nPat) const;
 	bool IsChildSample(INSTRUMENTINDEX nIns, SAMPLEINDEX nSmp) const;
 	INSTRUMENTINDEX FindSampleParent(SAMPLEINDEX sample) const;
@@ -293,7 +293,9 @@ public:
 	BOOL ExpandPattern(PATTERNINDEX nPattern);
 	BOOL ShrinkPattern(PATTERNINDEX nPattern);
 
-	bool SetDefaultChannelColors();
+	bool SetDefaultChannelColors() { return SetDefaultChannelColors(0, GetNumChannels()); }
+	bool SetDefaultChannelColors(CHANNELINDEX channel) { return SetDefaultChannelColors(channel, channel + 1u); }
+	bool SetDefaultChannelColors(CHANNELINDEX minChannel, CHANNELINDEX maxChannel);
 	bool SupportsChannelColors() const { return GetModType() & (MOD_TYPE_XM | MOD_TYPE_IT | MOD_TYPE_MPT); }
 
 	bool CopyEnvelope(INSTRUMENTINDEX nIns, EnvelopeType nEnv);
@@ -334,6 +336,8 @@ public:
 	// [in] bIncludeIndex: True to include instrument index in front of the instrument name, false otherwise.
 	CString GetPatternViewInstrumentName(INSTRUMENTINDEX nInstr, bool bEmptyInsteadOfNoName = false, bool bIncludeIndex = true) const;
 
+	mpt::tstring FormatSubsongName(const std::vector<SubSong> &songs, size_t subSong);
+
 	// Check if a given channel contains data.
 	bool IsChannelUnused(CHANNELINDEX nChn) const;
 	// Check whether a sample is used.
@@ -343,7 +347,9 @@ public:
 	// Check whether an instrument is used (only for instrument mode).
 	bool IsInstrumentUsed(INSTRUMENTINDEX instr, bool searchInMutedChannels = true) const;
 
-// protected members
+	void InitChannel(CHANNELINDEX chn);
+	
+	// protected members
 protected:
 
 	void InitializeMod();
@@ -353,7 +359,7 @@ protected:
 // Overrides
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CModDoc)
-	public:
+public:
 	BOOL OnNewDocument() override;
 	BOOL OnOpenDocument(LPCTSTR lpszPathName) override;
 	BOOL OnSaveDocument(LPCTSTR lpszPathName) override
@@ -363,6 +369,7 @@ protected:
 	void OnCloseDocument() override;
 	void SafeFileClose();
 	bool OnSaveDocument(const mpt::PathString &filename, const bool setPath = true);
+	bool SaveFile(const mpt::PathString &filename, bool allowRelativeSamplePaths);
 
 #if MPT_COMPILER_CLANG
 #pragma clang diagnostic push
@@ -396,9 +403,36 @@ protected:
 	SAMPLEINDEX GetSampleIndex(const ModCommand &m, ModCommand::INSTR lastInstr = 0) const;
 	// Get group (octave) size from given instrument (or sample in sample mode)
 	int GetInstrumentGroupSize(INSTRUMENTINDEX instr) const;
+	int GetBaseNote(INSTRUMENTINDEX instr) const;
+	ModCommand::NOTE GetNoteWithBaseOctave(int noteOffset, INSTRUMENTINDEX instr) const;
+	INSTRUMENTINDEX GetParentInstrumentWithSameName(SAMPLEINDEX smp) const;
 
+	size_t GetSubsongForCurrentEditPos(const std::vector<SubSong> &subsongs) const;
+
+	// Convert a linear volume property to decibels, and format the value as a readable string
+	static CString LinearToDecibelsString(double value, double valueAtZeroDB);
+	inline static CString LinearToDecibelsString(float value, float valueAtZeroDB)
+	{
+		return LinearToDecibelsString(static_cast<double>(value), static_cast<double>(valueAtZeroDB));
+	}
 	// Convert a linear volume property to decibels
-	static CString LinearToDecibels(double value, double valueAtZeroDB);
+	static double LinearToDecibels(double value, double valueAtZeroDB);
+	inline static float LinearToDecibels(float value, float valueAtZeroDB)
+	{
+		return static_cast<float>(LinearToDecibels(static_cast<double>(value), static_cast<double>(valueAtZeroDB)));
+	}
+	// Convert a decibels value to linear volume
+	static double DecibelsToLinear(double value, double valueAtZeroDB);
+	inline static float DecibelsToLinear(float value, float valueAtZeroDB)
+	{
+		return static_cast<float>(DecibelsToLinear(static_cast<double>(value), static_cast<double>(valueAtZeroDB)));
+	}
+	// Format a decibel value as a readable string
+	static CString DecibelsToStrings(double dB);
+	inline static CString DecibelsToStrings(float dB)
+	{
+		return DecibelsToStrings(static_cast<double>(dB));
+	}
 	// Convert a panning value to a more readable string
 	static CString PanningToString(int32 value, int32 valueAtCenter);
 
@@ -417,6 +451,7 @@ public:
 	//{{AFX_MSG(CModDoc)
 	afx_msg void OnFileWaveConvert();
 	afx_msg void OnFileMidiConvert();
+	afx_msg void OnFileOPLExport();
 	afx_msg void OnFileCompatibilitySave();
 	afx_msg void OnPlayerPlay();
 	afx_msg void OnPlayerStop();

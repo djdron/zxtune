@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/vc2010/test_globals.lua
 -- Validate generation of the Globals property group.
--- Copyright (c) 2011-2014 Jason Perkins and the Premake project
+-- Copyright (c) 2011-2014 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -61,7 +61,7 @@
 
 
 --
--- Ensure custom target framework version correct for Managed C++ projects.
+-- Ensure custom target framework version correct for Managed C++ projects on .NET Framework.
 --
 
 	function suite.frameworkVersionIsCorrect_onSpecificVersion()
@@ -94,6 +94,24 @@
 	end
 
 --
+-- Ensure custom target framework version correct for Managed C++ projects on .NET 5.0+.
+--
+
+function suite.frameworkVersionIsCorrectNetCore_onSpecificVersion()
+	clr "NetCore"
+	dotnetframework "net5.0"
+	prepare()
+	test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<TargetFramework>net5.0</TargetFramework>
+	<Keyword>ManagedCProj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+</PropertyGroup>
+	]]
+end
+
+--
 -- Omit Keyword and RootNamespace for non-Windows projects.
 --
 
@@ -103,6 +121,12 @@
 		test.capture [[
 <PropertyGroup Label="Globals">
 	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<Keyword>Linux</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+	<MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+	<ApplicationType>Linux</ApplicationType>
+	<TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+	<ApplicationTypeRevision>1.0</ApplicationTypeRevision>
 </PropertyGroup>
 		]]
 	end
@@ -290,6 +314,42 @@ end
 	end
 
 
+	function suite.canSetXPDeprecationWarningToFalse_withV141XP()
+		toolset "v141_xp"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Globals">
+	<XPDeprecationWarning>false</XPDeprecationWarning>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Globals">
+	<XPDeprecationWarning>false</XPDeprecationWarning>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.canSetXPDeprecationWarningToFalse_perConfig_withV141XP()
+		filter "Release"
+			toolset "v141_xp"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Globals">
+	<XPDeprecationWarning>false</XPDeprecationWarning>
+</PropertyGroup>
+		]]
+	end
+
+
 	function suite.windowsTargetPlatformVersion_latest_on2019()
 		p.action.set("vs2019")
 		systemversion "latest"
@@ -301,6 +361,56 @@ end
 	<Keyword>Win32Proj</Keyword>
 	<RootNamespace>MyProject</RootNamespace>
 	<WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.windowsTargetPlatformVersion_latest_on2019_onUWP()
+		system "uwp"
+		p.action.set("vs2019")
+		systemversion "latest"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+	<AppContainerApplication>true</AppContainerApplication>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.windowsTargetPlatformVersion_latestToLatest_on2019_onUWP()
+		system "uwp"
+		p.action.set("vs2019")
+		systemversion "latest:latest"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<WindowsTargetPlatformMinVersion>10.0</WindowsTargetPlatformMinVersion>
+	<WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+	<AppContainerApplication>true</AppContainerApplication>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.windowsTargetPlatformVersion_versionToVersion_on2019_onUWP()
+		system "uwp"
+		p.action.set("vs2019")
+		systemversion "10.0.10240.0:10.0.10240.1"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<WindowsTargetPlatformMinVersion>10.0.10240.0</WindowsTargetPlatformMinVersion>
+	<WindowsTargetPlatformVersion>10.0.10240.1</WindowsTargetPlatformVersion>
+	<AppContainerApplication>true</AppContainerApplication>
 </PropertyGroup>
 		]]
 	end
@@ -362,3 +472,167 @@ end
 		]]
 	end
 
+
+	function suite.windowsTargetPlatformVersion_perConfig_on2019_onUWP()
+		system "uwp"
+		p.action.set("vs2019")
+		systemversion "10.0.10240.0"
+		filter "Debug"
+			systemversion "10.0.10240.0:latest"
+		filter "Release"
+			systemversion "10.0.10240.0:10.0.10240.1"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<WindowsTargetPlatformVersion>10.0.10240.0</WindowsTargetPlatformVersion>
+	<AppContainerApplication>true</AppContainerApplication>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Globals">
+	<WindowsTargetPlatformMinVersion>10.0.10240.0</WindowsTargetPlatformMinVersion>
+	<WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Globals">
+	<WindowsTargetPlatformMinVersion>10.0.10240.0</WindowsTargetPlatformMinVersion>
+	<WindowsTargetPlatformVersion>10.0.10240.1</WindowsTargetPlatformVersion>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.additionalProps()
+		p.action.set("vs2022")
+
+		vsprops {
+			-- https://devblogs.microsoft.com/directx/gettingstarted-dx12agility/#2-set-agility-sdk-parameters
+			Microsoft_Direct3D_D3D12_D3D12SDKPath = "custom_path",
+			ValueRequiringEscape = "if (age > 3 && age < 8)",
+		}
+		filter "Debug"
+			vsprops {
+				CustomParam = "DebugParam",
+			}
+		filter "Release"
+			vsprops {
+				CustomParam = "ReleaseParam",
+			}
+		filter {}
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Globals">
+	<Microsoft_Direct3D_D3D12_D3D12SDKPath>custom_path</Microsoft_Direct3D_D3D12_D3D12SDKPath>
+	<ValueRequiringEscape>if (age &gt; 3 &amp;&amp; age &lt; 8)</ValueRequiringEscape>
+	<CustomParam>DebugParam</CustomParam>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Globals">
+	<Microsoft_Direct3D_D3D12_D3D12SDKPath>custom_path</Microsoft_Direct3D_D3D12_D3D12SDKPath>
+	<ValueRequiringEscape>if (age &gt; 3 &amp;&amp; age &lt; 8)</ValueRequiringEscape>
+	<CustomParam>ReleaseParam</CustomParam>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.additionalPropsNested()
+		p.action.set("vs2022")
+		filter "Debug"
+			vsprops {
+				Key3 = {
+					NestedKey = "NestedValue"
+				}
+			}
+		filter "Release"
+			vsprops {
+				Key1 = "Value1",
+				Key2 = {
+					NestedKey = "NestedValue"
+				}
+			}
+		filter {}
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Globals">
+	<Key3>
+		<NestedKey>NestedValue</NestedKey>
+	</Key3>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Globals">
+	<Key1>Value1</Key1>
+	<Key2>
+		<NestedKey>NestedValue</NestedKey>
+	</Key2>
+</PropertyGroup>
+		]]
+	end
+
+	function suite.disableFastUpToDateCheck()
+		fastuptodate "Off"
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+	<DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.setToolsVersion2015()
+		toolsversion "14.27.29110"
+		p.action.set("vs2015")
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.setToolsVersion2017()
+		toolsversion "14.27.29110"
+		p.action.set("vs2017")
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<Keyword>Win32Proj</Keyword>
+	<RootNamespace>MyProject</RootNamespace>
+	<LatestTargetPlatformVersion>$([Microsoft.Build.Utilities.ToolLocationHelper]::GetLatestSDKTargetPlatformVersion('Windows', '10.0'))</LatestTargetPlatformVersion>
+	<VCToolsVersion>14.27.29110</VCToolsVersion>
+</PropertyGroup>
+		]]
+	end
+
+
+	function suite.appContainerApplication2019UWP()
+		system "uwp"
+		p.action.set("vs2019")
+		prepare()
+		test.capture [[
+<PropertyGroup Label="Globals">
+	<ProjectGuid>{42B5DBC6-AE1F-903D-F75D-41E363076E92}</ProjectGuid>
+	<IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
+	<AppContainerApplication>true</AppContainerApplication>
+</PropertyGroup>
+		]]
+	end

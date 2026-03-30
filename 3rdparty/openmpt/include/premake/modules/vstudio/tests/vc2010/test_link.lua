@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/vc2010/test_link.lua
 -- Validate linking and project references in Visual Studio 2010 C/C++ projects.
--- Copyright (c) 2011-2013 Jason Perkins and the Premake project
+-- Copyright (c) 2011-2013 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -126,7 +126,7 @@
 -- Test the handling of the NoImplicitLink flag.
 --
 
-	function suite.linkDependencies_onNoImplicitLink()
+	function suite.linkDependencies_onNoImplicitLink_ViaFlag()
 		flags "NoImplicitLink"
 		prepare()
 		test.capture [[
@@ -136,6 +136,34 @@
 </Link>
 <ProjectReference>
 	<LinkLibraryDependencies>false</LinkLibraryDependencies>
+</ProjectReference>
+		]]
+	end
+
+	function suite.linkDependencies_onNoImplicitLink_ViaAPI()
+		implicitlink "Off"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+</Link>
+<ProjectReference>
+	<LinkLibraryDependencies>false</LinkLibraryDependencies>
+</ProjectReference>
+		]]
+	end
+
+	function suite.linkDependencies_onImplicitLink_ViaAPI()
+		implicitlink "On"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+</Link>
+<ProjectReference>
+	<LinkLibraryDependencies>true</LinkLibraryDependencies>
 </ProjectReference>
 		]]
 	end
@@ -513,7 +541,7 @@
 -- If the NoImplicitLink flag is set, all dependencies should be listed explicitly.
 --
 
-	function suite.includeSiblings_onNoImplicitLink()
+	function suite.includeSiblings_onNoImplicitLink_ViaFlag()
 		flags { "NoImplicitLink" }
 		links { "MyProject2" }
 		test.createproject(wks)
@@ -527,6 +555,41 @@
 </Link>
 <ProjectReference>
 	<LinkLibraryDependencies>false</LinkLibraryDependencies>
+</ProjectReference>
+		]]
+	end
+
+	function suite.includeSiblings_onNoImplicitLink_ViaAPI()
+		implicitlink "Off"
+		links { "MyProject2" }
+		test.createproject(wks)
+		kind "SharedLib"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<AdditionalDependencies>bin\Debug\MyProject2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+</Link>
+<ProjectReference>
+	<LinkLibraryDependencies>false</LinkLibraryDependencies>
+</ProjectReference>
+		]]
+	end
+
+	function suite.includeSiblings_onImplicitLink_ViaAPI()
+		implicitlink "On"
+		links { "MyProject2" }
+		test.createproject(wks)
+		kind "SharedLib"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+</Link>
+<ProjectReference>
+	<LinkLibraryDependencies>true</LinkLibraryDependencies>
 </ProjectReference>
 		]]
 	end
@@ -615,6 +678,31 @@
 
 
 --
+-- Test if LinkTimeOptimization API correctly specifies LinkTimeCodeGeneration
+--
+
+	function suite.linkTimeOptimization_onEnableLinkTimeOptimization()
+		linktimeoptimization "On"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+		]]
+	end
+
+	function suite.linkTimeOptimization_onFastLinkTimeOptimization()
+		linktimeoptimization "Fast"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+		]]
+	end
+
+
+--
 -- Correctly handle module definition (.def) files.
 --
 
@@ -651,7 +739,7 @@
 
 	function suite.fatalWarnings_onDynamicLink()
 		kind "ConsoleApp"
-		flags { "FatalLinkWarnings" }
+		linkerfatalwarnings "All"
 		prepare()
 		test.capture [[
 <Link>
@@ -662,7 +750,7 @@
 
 	function suite.fatalWarnings_onStaticLink()
 		kind "StaticLib"
-		flags { "FatalLinkWarnings" }
+		linkerfatalwarnings "All"
 		prepare()
 		test.capture [[
 <Link>
@@ -687,6 +775,32 @@
 	<SubSystem>Windows</SubSystem>
 	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
 	<GenerateMapFile>true</GenerateMapFile>
+</Link>
+		]]
+	end
+
+	function suite.generateMapFile_onMapFileAPI()
+		mapfile "On"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+	<GenerateMapFile>true</GenerateMapFile>
+</Link>
+		]]
+	end
+
+		function suite.generateMapFile_onMapFileWithPathAPI()
+		mapfile "On"
+		mapfilepath "bin/Debug/MyProject.map"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+	<GenerateMapFile>true</GenerateMapFile>
+	<MapFileName>bin\Debug\MyProject.map</MapFileName>
 </Link>
 		]]
 	end
@@ -723,7 +837,7 @@
 		]]
 	end
 
-	--
+--
 -- Test ignoring default libraries with extensions specified.
 --
 
@@ -737,4 +851,63 @@
 	<AssemblyDebug>true</AssemblyDebug>
 </Link>
 		]]
+	end
+
+--
+-- Test for not including additional dependencies.
+--
+
+	function suite.inheritDependenciesOff()
+		inheritdependencies "Off"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<AdditionalDependencies></AdditionalDependencies>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+</Link>
+		]]
+	end
+
+	function suite.inheritDependenciesOn()
+		inheritdependencies "On"
+		links { "kernel32" }
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<AdditionalDependencies>kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+</Link>
+		]]
+	end
+
+
+--
+-- Test for the Profile flag.
+--
+
+	function suite.profileOn()
+		profile "On"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+	<Profile>true</Profile>
+</Link>
+	]]
+	end
+
+
+	function suite.profileOff()
+		profile "Off"
+		prepare()
+		test.capture [[
+<Link>
+	<SubSystem>Windows</SubSystem>
+	<ImportLibrary>bin\Debug\MyProject.lib</ImportLibrary>
+	<Profile>false</Profile>
+</Link>
+	]]
 	end

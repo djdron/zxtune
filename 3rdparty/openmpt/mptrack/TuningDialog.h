@@ -12,12 +12,10 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#include "tuningRatioMapWnd.h"
-#include "tuningcollection.h"
-#include <vector>
-#include <string>
-#include "resource.h"
 #include "CDecimalSupport.h"
+#include "ResizableDialog.h"
+#include "tuningcollection.h"
+#include "tuningRatioMapWnd.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -113,13 +111,12 @@ class CTuningDialog;
 class CTuningTreeCtrl : public CTreeCtrl
 {
 private:
-	CTuningDialog& m_rParentDialog;
-	bool m_Dragging;
+	CTuningDialog &m_rParentDialog;
+	bool m_Dragging = false;
 
 public:
 	CTuningTreeCtrl(CTuningDialog* parent)
 		: m_rParentDialog(*parent)
-		, m_Dragging(false)
 	{}
 	//Note: Parent address may be given in its initializer list.
 
@@ -134,21 +131,19 @@ public:
 class CTuningTreeItem
 {
 private:
-	CTuning* m_pTuning;
-	CTuningCollection* m_pTuningCollection;
+	CTuning *m_pTuning = nullptr;
+	CTuningCollection *m_pTuningCollection = nullptr;
 
 public:
-	CTuningTreeItem() : m_pTuning(NULL),
-						m_pTuningCollection(NULL)
-	{}
+	CTuningTreeItem() = default;
 
 	CTuningTreeItem(CTuning* pT) :
 					m_pTuning(pT),
-					m_pTuningCollection(NULL)
+					m_pTuningCollection(nullptr)
 	{}
 
 	CTuningTreeItem(CTuningCollection* pTC) :
-					m_pTuning(NULL),
+					m_pTuning(nullptr),
 					m_pTuningCollection(pTC)
 	{}
 
@@ -161,18 +156,18 @@ public:
 			return false;
 	}
 
-	void Reset() {m_pTuning = NULL; m_pTuningCollection = NULL;}
+	void Reset() {m_pTuning = nullptr; m_pTuningCollection = nullptr;}
 
 
 	void Set(CTuning* pT)
 	{
 		m_pTuning = pT;
-		m_pTuningCollection = NULL;
+		m_pTuningCollection = nullptr;
 	}
 
 	void Set(CTuningCollection* pTC)
 	{
-		m_pTuning = NULL;
+		m_pTuning = nullptr;
 		m_pTuningCollection = pTC;
 	}
 
@@ -192,7 +187,7 @@ public:
 
 // CTuningDialog dialog
 
-class CTuningDialog : public CDialog
+class CTuningDialog : public ResizableDialog
 {
 	friend class CTuningTreeCtrl;
 
@@ -213,20 +208,17 @@ public:
 	using TUNINGVECTOR = std::vector<CTuningCollection*>;
 
 public:
-	CTuningDialog(CWnd* pParent, INSTRUMENTINDEX inst, CSoundFile &csf);
-	virtual ~CTuningDialog();
+	CTuningDialog(CWnd *pParent, INSTRUMENTINDEX inst, CSoundFile &csf);
+	~CTuningDialog() override;
 
-	BOOL OnInitDialog();
+	BOOL OnInitDialog() override;
 
 	void UpdateRatioMapEdits(const Tuning::NOTEINDEXTYPE&);
 
 	bool GetModifiedStatus(const CTuningCollection* const pTc) const;
 
-// Dialog Data
-	enum { IDD = IDD_TUNING };
-
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	void DoDataExchange(CDataExchange* pDX) override;    // DDX/DDV support
 
 private:
 
@@ -273,8 +265,8 @@ private:
 	std::map<const CTuningCollection*, CString> m_TuningCollectionsNames;
 	std::map<const CTuningCollection*, mpt::PathString> m_TuningCollectionsFilenames;
 
-	CTuning* m_pActiveTuning;
-	CTuningCollection* m_pActiveTuningCollection;
+	CTuning *m_pActiveTuning = nullptr;
+	CTuningCollection *m_pActiveTuningCollection = nullptr;
 
 	CComboBox m_CombobTuningType;
 
@@ -326,8 +318,8 @@ private:
 	//those edit boxes(they are modified by certain activities
 	//in case which the modifications should not be applied to
 	//tuning data.
-	bool m_NoteEditApply;
-	bool m_RatioEditApply;
+	bool m_NoteEditApply = true;
+	bool m_RatioEditApply = true;
 
 	enum
 	{
@@ -342,11 +334,11 @@ private:
 	bool AddTuning(CTuningCollection*, Tuning::Type type);
 
 	//Flag to prevent multiple exit error-messages.
-	bool m_DoErrorExit;
+	bool m_DoErrorExit = false;
 
 	void DoErrorExit();
 
-	virtual void OnOK();
+	void OnOK() override;
 
 //Treectrl context menu functions.
 public:

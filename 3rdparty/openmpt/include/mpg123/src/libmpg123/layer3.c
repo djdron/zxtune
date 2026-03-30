@@ -1,7 +1,7 @@
 /*
 	layer3.c: the layer 3 decoder
 
-	copyright 1995-2017 by the mpg123 project - free software under the terms of the LGPL 2.1
+	copyright 1995-2021 by the mpg123 project - free software under the terms of the LGPL 2.1
 	see COPYING and AUTHORS files in distribution or http://mpg123.org
 	initially written by Michael Hipp
 
@@ -21,9 +21,17 @@
 #include "huffman.h"
 #endif
 #include "getbits.h"
-#include "debug.h"
+#include "../common/debug.h"
 
 
+/* Predeclare the assembly routines, only called from wrappers here. */
+void INT123_dct36_3dnow   (real *,real *,real *,const real *,real *);
+void INT123_dct36_3dnowext(real *,real *,real *,const real *,real *);
+void INT123_dct36_x86_64  (real *,real *,real *,const real *,real *);
+void INT123_dct36_sse     (real *,real *,real *,const real *,real *);
+void INT123_dct36_avx     (real *,real *,real *,const real *,real *);
+void INT123_dct36_neon    (real *,real *,real *,const real *,real *);
+void INT123_dct36_neon64  (real *,real *,real *,const real *,real *);
 
 /* define CUT_SFB21 if you want to cut-off the frequency above 16kHz */
 #if 0
@@ -31,8 +39,13 @@
 #endif
 
 #include "l3tabs.h"
+#include "l3bandgain.h"
 
-/* Decoder state data, living on the stack of do_layer3. */
+#ifdef RUNTIME_TABLES
+#include "init_layer3.h"
+#endif
+
+/* Decoder state data, living on the stack of INT123_do_layer3. */
 
 struct gr_info_s
 {
@@ -69,22 +82,20 @@ struct III_sideinfo
 	struct { struct gr_info_s gr[2]; } ch[2];
 };
 
-#include "l3bandgain.h"
-
 #ifdef OPT_MMXORSSE
-real init_layer3_gainpow2_mmx(mpg123_handle *fr, int i)
+real INT123_init_layer3_gainpow2_mmx(mpg123_handle *fr, int i)
 {
 	if(!fr->p.down_sample) return DOUBLE_TO_REAL(16384.0 * pow((double)2.0,-0.25 * (double) (i+210) ));
 	else return DOUBLE_TO_REAL(pow((double)2.0,-0.25 * (double) (i+210)));
 }
 #endif
 
-real init_layer3_gainpow2(mpg123_handle *fr, int i)
+real INT123_init_layer3_gainpow2(mpg123_handle *fr, int i)
 {
 	return DOUBLE_TO_REAL_SCALE_LAYER3(pow((double)2.0,-0.25 * (double) (i+210)),i+256);
 }
 
-void init_layer3_stuff(mpg123_handle *fr, real (*gainpow2_func)(mpg123_handle *fr, int i))
+void INT123_init_layer3_stuff(mpg123_handle *fr, real (*gainpow2_func)(mpg123_handle *fr, int i))
 {
 	int i,j;
 
@@ -124,16 +135,16 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 	int powdiff = (single == SINGLE_MIX) ? 4 : 0;
 
 	const int tabs[2][5] = { { 2,9,5,3,4 } , { 1,8,1,2,9 } };
-	const int *tab = tabs[fr->lsf];
+	const int *tab = tabs[fr->hdr.lsf];
 
 	{ /* First ensure we got enough bits available. */
 		unsigned int needbits = 0;
 		needbits += tab[1]; /* main_data_begin */
 		needbits += stereo == 1 ? tab[2] : tab[3]; /* private */
-		if(!fr->lsf)
+		if(!fr->hdr.lsf)
 			needbits += stereo*4; /* scfsi */
 		/* For each granule for each channel ... */
-		needbits += tab[0]*stereo*(29+tab[4]+1+22+(!fr->lsf?1:0)+2);
+		needbits += tab[0]*stereo*(29+tab[4]+1+22+(!fr->hdr.lsf?1:0)+2);
 		if(fr->bits_avail < needbits) \
 		{
 			if(NOQUIET)
@@ -151,7 +162,7 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 
 		/*  overwrite main_data_begin for the really available bit reservoir */
 		backbits(fr, tab[1]);
-		if(fr->lsf == 0)
+		if(fr->hdr.lsf == 0)
 		{
 			fr->wordpointer[0] = (unsigned char) (fr->bitreservoir >> 1);
 			fr->wordpointer[1] = (unsigned char) ((fr->bitreservoir & 1) << 7);
@@ -160,7 +171,7 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 
 		/* zero "side-info" data for a silence-frame
 		without touching audio data used as bit reservoir for following frame */
-		memset(fr->wordpointer+2, 0, fr->ssize-2);
+		memset(fr->wordpointer+2, 0, fr->hdr.ssize-2);
 
 		/* reread the new bit reservoir offset */
 		si->main_data_begin = getbits(fr, tab[1]);
@@ -168,11 +179,11 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 
 	/* Keep track of the available data bytes for the bit reservoir.
 	   CRC is included in ssize already. */
-	fr->bitreservoir = fr->bitreservoir + fr->framesize - fr->ssize;
+	fr->bitreservoir = fr->bitreservoir + fr->hdr.framesize - fr->hdr.ssize;
 
 	/* Limit the reservoir to the max for MPEG 1.0 or 2.x . */
-	if(fr->bitreservoir > (unsigned int) (fr->lsf == 0 ? 511 : 255))
-	fr->bitreservoir = (fr->lsf == 0 ? 511 : 255);
+	if(fr->bitreservoir > (unsigned int) (fr->hdr.lsf == 0 ? 511 : 255))
+	fr->bitreservoir = (fr->hdr.lsf == 0 ? 511 : 255);
 
 	/* Now back into less commented territory. It's code. It works. */
 
@@ -181,7 +192,7 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 	else 
 	si->private_bits = getbits(fr, tab[3]);
 
-	if(!fr->lsf) for(ch=0; ch<stereo; ch++)
+	if(!fr->hdr.lsf) for(ch=0; ch<stereo; ch++)
 	{
 		si->ch[ch].gr[0].scfsi = -1;
 		si->ch[ch].gr[1].scfsi = getbits(fr, 4);
@@ -246,14 +257,14 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 			}
 
 			/* region_count/start parameters are implicit in this case. */       
-			if( (!fr->lsf || (gr_info->block_type == 2)) && !fr->mpeg25)
+			if( (!fr->hdr.lsf || (gr_info->block_type == 2)) && !fr->hdr.mpeg25)
 			{
 				gr_info->region1start = 36>>1;
 				gr_info->region2start = 576>>1;
 			}
 			else
 			{
-				if(fr->mpeg25)
+				if(fr->hdr.mpeg25)
 				{ 
 					int r0c,r1c;
 					if((gr_info->block_type == 2) && (!gr_info->mixed_block_flag) ) r0c = 5;
@@ -288,7 +299,7 @@ static int III_get_side_info(mpg123_handle *fr, struct III_sideinfo *si,int ster
 			gr_info->block_type = 0;
 			gr_info->mixed_block_flag = 0;
 		}
-		if(!fr->lsf) gr_info->preflag = get1bit(fr);
+		if(!fr->hdr.lsf) gr_info->preflag = get1bit(fr);
 
 		gr_info->scalefac_scale = get1bit(fr);
 		gr_info->count1table_select = get1bit(fr);
@@ -411,7 +422,7 @@ static int III_get_scale_factors_2(mpg123_handle *fr, int *scf,struct gr_info_s 
 		}
 	}; 
 
-	if(i_stereo) /* i_stereo AND second channel -> do_layer3() checks this */
+	if(i_stereo) /* i_stereo AND second channel -> INT123_do_layer3() checks this */
 	slen = i_slen2[gr_info->scalefac_compress>>1];
 	else
 	slen = n_slen2[gr_info->scalefac_compress];
@@ -496,7 +507,10 @@ static unsigned char pretab_choice[2][22] =
 static int III_dequantize_sample(mpg123_handle *fr, real xr[SBLIMIT][SSLIMIT],int *scf, struct gr_info_s *gr_info,int sfreq,int part2bits)
 {
 	int shift = 1 + gr_info->scalefac_scale;
-	real *xrpnt = (real *) xr;
+	// Pointer cast to make pedantic compilers happy.
+	real *xrpnt = (real*)xr;
+	// Some compiler freaks out over &xr[SBLIMIT][0], which is the same.
+	real *xrpntlimit = (real*)xr+SBLIMIT*SSLIMIT;
 	int l[3],l3;
 	int part2remain = gr_info->part2_3_length - part2bits;
 	const short *me;
@@ -549,10 +563,10 @@ static int III_dequantize_sample(mpg123_handle *fr, real xr[SBLIMIT][SSLIMIT],in
 		}
 	}
 
-#define CHECK_XRPNT if(xrpnt >= &xr[SBLIMIT][0]) \
+#define CHECK_XRPNT if(xrpnt >= xrpntlimit) \
 { \
 	if(NOQUIET) \
-		error2("attempted xrpnt overflow (%p !< %p)", (void*) xrpnt, (void*) &xr[SBLIMIT][0]); \
+		error2("attempted xrpnt overflow (%p !< %p)", (void*) xrpnt, (void*) xrpntlimit); \
 	return 1; \
 }
 
@@ -989,7 +1003,7 @@ static int III_dequantize_sample(mpg123_handle *fr, real xr[SBLIMIT][SSLIMIT],in
 		gr_info->maxb       = 1;
 	}
 
-	while(xrpnt < &xr[SBLIMIT][0]) 
+	while(xrpnt < xrpntlimit)
 	*xrpnt++ = DOUBLE_TO_REAL(0.0);
 
 	while( part2remain > 16 )
@@ -1250,10 +1264,7 @@ static void III_antialias(real xr[SBLIMIT][SSLIMIT],struct gr_info_s *gr_info)
 	    Mathematics of Computation, Volume 32, Number 141, January 1978,
 	    Pages 175-199
 */
-
-/* Calculation of the inverse MDCT
-   used to be static without 3dnow - does that really matter? */
-void dct36(real *inbuf,real *o1,real *o2,const real *wintab,real *tsbuf)
+static void INT123_dct36(real *inbuf,real *o1,real *o2,const real *wintab,real *tsbuf)
 {
 	real tmp[18];
 
@@ -1385,7 +1396,7 @@ void dct36(real *inbuf,real *o1,real *o2,const real *wintab,real *tsbuf)
 			t0 = REAL_MUL(cos9[0], (in[5] + in[9]));
 			t1 = REAL_MUL(cos9[1], (in[9] - in[17]));
 
-			tmp[13] = REAL_MUL((t4 + t2 + t2), tfcos36[17-13]);
+			tmp[13] = REAL_MUL((t4 + t2 + t2), INT123_tfcos36[17-13]);
 			t2 = REAL_MUL(cos9[2], (in[5] + in[17]));
 
 			t6 = t3 - t0 - t2;
@@ -1397,21 +1408,21 @@ void dct36(real *inbuf,real *o1,real *o2,const real *wintab,real *tsbuf)
 			t7 = REAL_MUL(COS6_1, in[7]);
 
 			t1 = t2 + t4 + t7;
-			tmp[17] = REAL_MUL((t0 + t1), tfcos36[17-17]);
-			tmp[9]  = REAL_MUL((t0 - t1), tfcos36[17-9]);
+			tmp[17] = REAL_MUL((t0 + t1), INT123_tfcos36[17-17]);
+			tmp[9]  = REAL_MUL((t0 - t1), INT123_tfcos36[17-9]);
 			t1 = REAL_MUL(cos18[2], (in[3] + in[15]));
 			t2 += t1 - t7;
 
-			tmp[14] = REAL_MUL((t3 + t2), tfcos36[17-14]);
+			tmp[14] = REAL_MUL((t3 + t2), INT123_tfcos36[17-14]);
 			t0 = REAL_MUL(COS6_1, (in[11] + in[15] - in[3]));
-			tmp[12] = REAL_MUL((t3 - t2), tfcos36[17-12]);
+			tmp[12] = REAL_MUL((t3 - t2), INT123_tfcos36[17-12]);
 
 			t4 -= t1 + t7;
 
-			tmp[16] = REAL_MUL((t5 - t0), tfcos36[17-16]);
-			tmp[10] = REAL_MUL((t5 + t0), tfcos36[17-10]);
-			tmp[15] = REAL_MUL((t6 + t4), tfcos36[17-15]);
-			tmp[11] = REAL_MUL((t6 - t4), tfcos36[17-11]);
+			tmp[16] = REAL_MUL((t5 - t0), INT123_tfcos36[17-16]);
+			tmp[10] = REAL_MUL((t5 + t0), INT123_tfcos36[17-10]);
+			tmp[15] = REAL_MUL((t6 + t4), INT123_tfcos36[17-15]);
+			tmp[11] = REAL_MUL((t6 - t4), INT123_tfcos36[17-11]);
 		}
 
 #define MACRO(v) { \
@@ -1443,6 +1454,105 @@ void dct36(real *inbuf,real *o1,real *o2,const real *wintab,real *tsbuf)
 	}
 }
 
+// Wrap the assembly routine calls into C functions that serve as jump target to satisfy
+// indirect branch protection if the toolchain enables that. Otherwise, we'd need to anticipate
+// that in the assembly (and ensure assemblers support endbr64 and friends).
+// Loss of efficiency:
+
+// In the case of one static optimization choice, we do not have that problem.
+
+#ifdef OPT_THE_DCT36
+
+#define DCT36_WRAP(asmfunc) \
+static void asmfunc ## _wrap(real *inbuf,real *o1,real *o2,const real *wintab,real *tsbuf) \
+{ \
+	asmfunc(inbuf, o1, o2, wintab, tsbuf); \
+}
+
+#ifdef OPT_SSE
+DCT36_WRAP(INT123_dct36_sse)
+#endif
+#ifdef OPT_3DNOWEXT_VINTAGE
+DCT36_WRAP(INT123_dct36_3dnowext)
+#endif
+#ifdef OPT_3DNOW_VINTAGE
+DCT36_WRAP(INT123_dct36_3dnow)
+#endif
+#ifdef OPT_X86_64
+DCT36_WRAP(INT123_dct36_x86_64)
+#endif
+#ifdef OPT_AVX
+DCT36_WRAP(INT123_dct36_avx)
+#endif
+#ifdef OPT_NEON
+DCT36_WRAP(INT123_dct36_neon)
+#endif
+#ifdef OPT_NEON64
+DCT36_WRAP(INT123_dct36_neon64)
+#endif
+
+int INT123_dct36_match(mpg123_handle *fr, enum optdec t)
+{
+#ifdef OPT_SSE
+	if(t == sse && fr->cpu_opts.the_dct36 == INT123_dct36_sse_wrap)
+		return 1;
+#endif
+#ifdef OPT_3DNOWEXT_VINTAGE
+	if(t == dreidnowext_vintage && fr->cpu_opts.the_dct36 == INT123_dct36_3dnowext_wrap)
+		return 1;
+#endif
+#ifdef OPT_3DNOW_VINTAGE
+	if(t == dreidnow_vintage && fr->cpu_opts.the_dct36 == INT123_dct36_3dnow_wrap)
+		return 1;
+#endif
+	return 0;
+}
+
+void INT123_dct36_choose(mpg123_handle *fr)
+{
+	switch(fr->cpu_opts.type)
+	{
+#ifdef OPT_SSE
+	case sse:
+		fr->cpu_opts.the_dct36 = INT123_dct36_sse_wrap;
+	break;
+#endif
+#ifdef OPT_3DNOWEXT_VINTAGE
+	case dreidnowext_vintage:
+		fr->cpu_opts.the_dct36 = INT123_dct36_3dnowext_wrap;
+	break;
+#endif
+#ifdef OPT_3DNOW_VINTAGE
+	case dreidnow_vintage:
+		fr->cpu_opts.the_dct36 = INT123_dct36_3dnow_wrap;
+	break;
+#endif
+#ifdef OPT_AVX
+	case avx:
+		fr->cpu_opts.the_dct36 = INT123_dct36_avx_wrap;
+	break;
+#endif
+#ifdef OPT_X86_64
+	case x86_64:
+		fr->cpu_opts.the_dct36 = INT123_dct36_x86_64_wrap;
+	break;
+#endif
+#ifdef OPT_NEON
+	case neon:
+		fr->cpu_opts.the_dct36 = INT123_dct36_neon_wrap;
+	break;
+#endif
+#ifdef OPT_NEON64
+	case neon:
+		fr->cpu_opts.the_dct36 = INT123_dct36_neon64_wrap;
+	break;
+#endif
+	default:
+		fr->cpu_opts.the_dct36 = INT123_dct36;
+	}
+}
+
+#endif
 
 /* new DCT12 */
 static void dct12(real *in,real *rawout1,real *rawout2,register const real *wi,register real *ts)
@@ -1706,7 +1816,7 @@ static void fill_pinfo_side(mpg123_handle *fr, struct III_sideinfo *si, int gr, 
 #endif
 
 /* And at the end... the main layer3 handler */
-int do_layer3(mpg123_handle *fr)
+int INT123_do_layer3(mpg123_handle *fr)
 {
 	int gr, ch, ss,clip=0;
 	int scalefacs[2][39]; /* max 39 for short[13][3] mode, mixed: 38, long: 22 */
@@ -1714,7 +1824,7 @@ int do_layer3(mpg123_handle *fr)
 	int stereo = fr->stereo;
 	int single = fr->single;
 	int ms_stereo,i_stereo;
-	int sfreq = fr->sampling_frequency;
+	int sfreq = fr->hdr.sampling_frequency;
 	int stereo1,granules;
 
 	if(stereo == 1)
@@ -1727,14 +1837,14 @@ int do_layer3(mpg123_handle *fr)
 	else
 	stereo1 = 2;
 
-	if(fr->mode == MPG_MD_JOINT_STEREO)
+	if(fr->hdr.mode == MPG_MD_JOINT_STEREO)
 	{
-		ms_stereo = (fr->mode_ext & 0x2)>>1;
-		i_stereo  = fr->mode_ext & 0x1;
+		ms_stereo = (fr->hdr.mode_ext & 0x2)>>1;
+		i_stereo  = fr->hdr.mode_ext & 0x1;
 	}
 	else ms_stereo = i_stereo = 0;
 
-	granules = fr->lsf ? 1 : 2;
+	granules = fr->hdr.lsf ? 1 : 2;
 
 	/* quick hack to keep the music playing */
 	/* after having seen this nasty test file... */
@@ -1744,12 +1854,12 @@ int do_layer3(mpg123_handle *fr)
 		return clip;
 	}
 
-	set_pointer(fr, 1, sideinfo.main_data_begin);
+	INT123_set_pointer(fr, 1, sideinfo.main_data_begin);
 #ifndef NO_MOREINFO
 	if(fr->pinfo)
 	{
 		fr->pinfo->maindata = sideinfo.main_data_begin;
-		fr->pinfo->padding  = fr->padding;
+		fr->pinfo->padding  = fr->hdr.padding;
 	}
 #endif
 	for(gr=0;gr<granules;gr++)
@@ -1770,7 +1880,7 @@ int do_layer3(mpg123_handle *fr)
 					,	gr_info->part2_3_length, fr->bits_avail );
 				return clip;
 			}
-			if(fr->lsf)
+			if(fr->hdr.lsf)
 			part2bits = III_get_scale_factors_2(fr, scalefacs[0],gr_info,0);
 			else
 			part2bits = III_get_scale_factors_1(fr, scalefacs[0],gr_info,0,gr);
@@ -1810,7 +1920,7 @@ int do_layer3(mpg123_handle *fr)
 		{
 			struct gr_info_s *gr_info = &(sideinfo.ch[1].gr[gr]);
 			long part2bits;
-			if(fr->lsf) 
+			if(fr->hdr.lsf) 
 			part2bits = III_get_scale_factors_2(fr, scalefacs[1],gr_info,i_stereo);
 			else
 			part2bits = III_get_scale_factors_1(fr, scalefacs[1],gr_info,1,gr);
@@ -1860,7 +1970,7 @@ int do_layer3(mpg123_handle *fr)
 				}
 			}
 
-			if(i_stereo) III_i_stereo(hybridIn,scalefacs[1],gr_info,sfreq,ms_stereo,fr->lsf);
+			if(i_stereo) III_i_stereo(hybridIn,scalefacs[1],gr_info,sfreq,ms_stereo,fr->hdr.lsf);
 
 			if(ms_stereo || i_stereo || (single == SINGLE_MIX) )
 			{
@@ -1927,8 +2037,8 @@ int do_layer3(mpg123_handle *fr)
 				if(n > (SSLIMIT-ss)) n=SSLIMIT-ss;
 
 				/* Clip counting makes no sense with this function. */
-				absynth_1to1_i486(hybridOut[0][ss], 0, fr, n);
-				absynth_1to1_i486(hybridOut[1][ss], 1, fr, n);
+				INT123_absynth_1to1_i486(hybridOut[0][ss], 0, fr, n);
+				INT123_absynth_1to1_i486(hybridOut[1][ss], 1, fr, n);
 				ss+=n;
 				fr->buffer.fill+=(2*2*32)*n;
 			}

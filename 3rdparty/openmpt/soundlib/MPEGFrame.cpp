@@ -10,6 +10,7 @@
 
 #include "stdafx.h"
 #include "MPEGFrame.h"
+#include "mpt/io_read/filereader.hpp"
 #include "../common/FileReader.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -58,7 +59,7 @@ static constexpr uint8 sideInfoSize[2][2] =
 };
 
 
-bool MPEGFrame::IsMPEGHeader(const uint8 (&header)[3])
+static inline bool IsMPEGHeaderImpl(const uint8 * header)
 {
 	return header[0] == 0xFF && (header[1] & 0xE0) == 0xE0	// Sync
 		&& (header[1] & 0x18) != 0x08	// Invalid MPEG version
@@ -67,19 +68,38 @@ bool MPEGFrame::IsMPEGHeader(const uint8 (&header)[3])
 		&& (header[2] & 0xF0) != 0xF0;	// Invalid bitrate
 }
 
+template <std::size_t N>
+static inline bool IsMPEGHeaderTemplate(const uint8 (&header)[N])
+{
+	static_assert(N >= 3);
+	return IsMPEGHeaderImpl(header);
+}
 
-MPEGFrame::MPEGFrame(FileReader &file)
+bool MPEGFrame::IsMPEGHeader(const uint8 (&header)[3])
+{
+	return IsMPEGHeaderTemplate(header);
+}
+
+bool MPEGFrame::IsMPEGHeader(const uint8 (&header)[4])
+{
+	return IsMPEGHeaderTemplate(header);
+}
+
+
+MPEGFrame::MPEGFrame(FileCursor &file)
 	: frameSize(0)
 	, numSamples(0)
 	, isValid(false)
 	, isLAME(false)
 {
-	uint8 header[4];
-	file.ReadArray(header);
+	uint8 header[4] = {};
+	mpt::FR::ReadArray(file, header);
 	
-	if(!IsMPEGHeader(reinterpret_cast<const uint8(&)[3]>(header)))
+	if(!IsMPEGHeader(header))
+	{
 		return;
-		
+	}
+
 	uint8 version = (header[1] & 0x18) >> 3;
 	uint8 mpeg1 = (version == 3) ? 0 : 1;
 	uint8 layer = 3 - ((header[1] & 0x06) >> 1);
@@ -89,25 +109,32 @@ MPEGFrame::MPEGFrame(FileReader &file)
 	bool stereo = ((header[3] & 0xC0) >> 6) != 3;
 
 	isValid = true;
-	frameSize = (((mpegCoefficients[mpeg1][layer] * (bitRates[mpeg1][layer][bitRate] * 1000) / samplingRates[version][sampleRate]) + padding)) * (layer == 0 ? 4 : 1);
+	frameSize = static_cast<uint16>((((mpegCoefficients[mpeg1][layer] * (bitRates[mpeg1][layer][bitRate] * 1000) / samplingRates[version][sampleRate]) + padding)) * (layer == 0 ? uint16(4u) : uint16(1u)));
 	numSamples = samplesPerFrame[mpeg1][layer];
-	if(stereo) numSamples *= 2u;
+	if(stereo)
+	{
+		numSamples *= 2u;
+	}
 
 	uint32 lameOffset = sideInfoSize[mpeg1][stereo ? 1 : 0];
 	if(frameSize < lameOffset + 8)
+	{
 		return;
+	}
 
-	uint8 frame[36];
-	file.ReadStructPartial(frame, lameOffset + 4);
+	uint8 frame[36] = {};
+	mpt::FR::ReadStructPartial(file, frame, lameOffset + 4);
 	// Don't check first two bytes, might be CRC
 	for(uint32 i = 2; i < lameOffset; i++)
 	{
 		if(frame[i] != 0)
+		{
 			return;
+		}
 	}
 
 	// This is all we really need to know for our purposes in the MO3 decoder.
-	isLAME = !memcmp(frame + lameOffset, "Info", 4) || !memcmp(frame + lameOffset, "Xing", 4);
+	isLAME = !std::memcmp(frame + lameOffset, "Info", 4) || !std::memcmp(frame + lameOffset, "Xing", 4);
 }
 
 OPENMPT_NAMESPACE_END

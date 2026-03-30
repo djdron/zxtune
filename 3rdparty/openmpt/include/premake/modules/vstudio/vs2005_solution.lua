@@ -1,7 +1,7 @@
 --
 -- vs2005_solution.lua
 -- Generate a Visual Studio 2005+ solution.
--- Copyright (c) Jason Perkins and the Premake project
+-- Copyright (c) Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -197,6 +197,7 @@
 		return {
 			sln2005.activeCfg,
 			sln2005.build0,
+			sln2005.deploy0,
 		}
 	end
 
@@ -220,7 +221,7 @@
 					-- to closest available project configuration instead.
 					context.prj = prj
 					context.prjCfg = project.getconfig(prj, cfg.buildcfg, cfg.platform)
-					context.excluded = (context.prjCfg == nil or context.prjCfg.flags.ExcludeFromBuild)
+					context.excluded = (context.prjCfg == nil or context.prjCfg.excludefrombuild)
 
 					if context.prjCfg == nil then
 						context.prjCfg = project.findClosestMatch(prj, cfg.buildcfg, cfg.platform)
@@ -248,6 +249,29 @@
 	function sln2005.build0(cfg, context)
 		if not context.excluded and context.prjCfg.kind ~= p.NONE then
 			p.w('{%s}.%s.Build.0 = %s|%s', context.prj.uuid, context.descriptor, context.platform, context.architecture)
+		end
+	end
+
+	function sln2005.allowDeployment(cfg, context)
+
+		if not context.excluded then
+
+			if context.prjCfg.system == p.UWP and (context.prjCfg.kind == p.WINDOWEDAPP or context.prjCfg.kind == p.CONSOLEAPP) then
+				return true
+			elseif cfg.system == p.ANDROID and context.prjCfg.kind == p.PACKAGING then
+				return true
+			end
+
+		end
+
+		return false
+
+	end
+
+	function sln2005.deploy0(cfg, context)
+
+		if sln2005.allowDeployment(cfg, context) then
+			p.w('{%s}.%s.Deploy.0 = %s|%s', context.prj.uuid, context.descriptor, context.platform, context.architecture)
 		end
 	end
 

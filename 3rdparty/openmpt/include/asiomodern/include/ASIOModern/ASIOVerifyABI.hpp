@@ -8,8 +8,6 @@
 #include "ASIOConfig.hpp"
 #include "ASIOCore.hpp"
 
-#include "ASIOConfig.hpp"
-
 #if __has_include(<iasiodrv.h>)
 #define ASIO_ABI_VERIFIED 1
 #include <iasiodrv.h>
@@ -24,13 +22,15 @@ namespace ASIO {
 
 
 
+inline namespace ASIO_VERSION_NAMESPACE {
+
+
+
 #if ASIO_ABI_VERIFIED
 
+
+
 inline namespace VerifyABI {
-
-
-
-inline namespace ASIO_VERSION_NAMESPACE {
 
 
 
@@ -112,13 +112,15 @@ static_assert(alignof(ASIO::ISystemDriver) == alignof(::IASIO));
 
 
 
-} // namespace ASIO_VERSION_NAMESPACE
-
-
-
 } // namespace VerifyABI
 
+
+
 #endif // ASIO_ABI_VERIFIED
+
+
+
+} // namespace ASIO_VERSION_NAMESPACE
 
 
 

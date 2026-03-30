@@ -1,28 +1,20 @@
-  
+
+include_dependency "ext-ogg.lua"
+
  project "vorbis"
   -- NOTE: Unlike the official libvorbis, we built everything into a single library instead of the vorbis, vorbisenc, vorbisfile split.
   uuid "b544dcb7-16e5-41bc-b51b-7ead8cfdfa05"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "vorbis"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-vorbis"
-  local extincludedirs = {
-   "../../include/ogg/include",
-	}
-	filter { "action:vs*" }
-		includedirs ( extincludedirs )
-	filter { "not action:vs*" }
-		sysincludedirs ( extincludedirs )
-	filter {}
+	
+	mpt_use_ogg()
+	
   includedirs {
    "../../include/vorbis/include",
    "../../include/vorbis/lib",
   }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   files {
    "../../include/vorbis/include/vorbis/codec.h",
@@ -98,15 +90,31 @@
    "../../include/vorbis/lib/modes/setup_44u.h",
    "../../include/vorbis/lib/modes/setup_X.h",
   }
-  filter { "action:vs*" }
-    buildoptions { "/wd4101", "/wd4244", "/wd4267", "/wd4305" }
-  filter {}
-  filter { "action:vs*" }
-    buildoptions { "/wd6001", "/wd6011", "/wd6255", "/wd6262", "/wd6263", "/wd6297", "/wd6308", "/wd6385", "/wd6386", "/wd6387", "/wd28182" } -- /analyze
-  filter {}
-
-  links { "ogg" }
-  filter {}
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd4101", "/wd4244", "/wd4267", "/wd4305", "/wd4703" }
+		buildoptions { "/wd6001", "/wd6011", "/wd6255", "/wd6262", "/wd6263", "/wd6297", "/wd6308", "/wd6385", "/wd6386", "/wd6387", "/wd28182" } -- /analyze
+	end
+	filter {}
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+		buildoptions {
+			"-Wno-unused-but-set-variable",
+			"-Wno-unused-variable",
+		}
+	end
+	filter {}
   filter { "kind:SharedLib" }
    files { "../../build/premake/def/ext-vorbis.def" }
   filter {}
+
+function mpt_use_vorbis ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/vorbis/include",
+	}
+	filter {}
+	links {
+		"vorbis",
+	}
+	filter {}
+end

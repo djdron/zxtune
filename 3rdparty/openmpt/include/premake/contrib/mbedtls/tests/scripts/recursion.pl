@@ -1,12 +1,15 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # Find functions making recursive calls to themselves.
 # (Multiple recursion where a() calls b() which calls a() not covered.)
 #
 # When the recursion depth might depend on data controlled by the attacker in
-# an unbounded way, those functions should use interation instead.
+# an unbounded way, those functions should use iteration instead.
 #
 # Typical usage: scripts/recursion.pl library/*.c
+#
+# Copyright The Mbed TLS Contributors
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
 
 use warnings;
 use strict;

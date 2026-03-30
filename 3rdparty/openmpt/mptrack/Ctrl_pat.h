@@ -13,13 +13,14 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#include "AccessibleControls.h"
 #include "Globals.h"
-#include "PatternCursor.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
 class COrderList;
 class CCtrlPatterns;
+class ModSequence;
 
 struct OrdSelection
 {
@@ -33,45 +34,50 @@ class COrderList: public CWnd
 protected:
 	HFONT m_hFont = nullptr;
 	int m_cxFont = 0, m_cyFont = 0;
-	//m_nXScroll  : The order at the beginning of shown orderlist
-	//m_nScrollPos: The same as order
-	//m_nScrollPos2nd: 2nd selection point if multiple orders are selected
-	//                 (not neccessarily the higher order - GetCurSel() is taking care of that.)
-	ORDERINDEX m_nXScroll = 0, m_nScrollPos = 0, m_nScrollPos2nd = ORDERINDEX_INVALID, m_nDropPos, m_nMouseDownPos, m_playPos = ORDERINDEX_INVALID;
-	ORDERINDEX m_nDragOrder;
-	//To tell how many orders('orderboxes') to show at least
-	//on both sides of current order(when updating orderslist position).
-	int m_nOrderlistMargins;
+
 	CModDoc &m_modDoc;
 	CCtrlPatterns &m_pParent;
+
+	ORDERINDEX m_nXScroll = 0;                        // Index of the leftmost displayed order list item
+	ORDERINDEX m_nScrollPos = 0;                      // First selection point / selected order
+	ORDERINDEX m_nScrollPos2nd = ORDERINDEX_INVALID;  // 2nd selection point if multiple orders are selected (not neccessarily the higher order - GetCurSel() is taking care of that.)
+	ORDERINDEX m_nDropPos = ORDERINDEX_INVALID, m_nMouseDownPos = ORDERINDEX_INVALID, m_playPos = ORDERINDEX_INVALID;
+	ORDERINDEX m_nDragOrder = ORDERINDEX_INVALID, m_menuOrder = ORDERINDEX_INVALID;
+	//To tell how many orders('orderboxes') to show at least
+	//on both sides of current order(when updating orderslist position).
+	int m_nOrderlistMargins = 0;
 	bool m_bScrolling = false, m_bDragging = false;
 
 public:
 	COrderList(CCtrlPatterns &parent, CModDoc &document);
 
 public:
-	BOOL Init(const CRect&, HFONT hFont);
+	BOOL Init(const CRect &);
 	void UpdateView(UpdateHint hint, CObject *pObj = nullptr);
 	void InvalidateSelection();
 	PATTERNINDEX GetCurrentPattern() const;
 	// make the current selection the secondary selection (used for keyboard orderlist navigation)
 	inline void SetCurSelTo2ndSel(bool isSelectionKeyPressed)
 	{
-		if(isSelectionKeyPressed && m_nScrollPos2nd == ORDERINDEX_INVALID) m_nScrollPos2nd = m_nScrollPos;
-		else if(!isSelectionKeyPressed && m_nScrollPos2nd != ORDERINDEX_INVALID) m_nScrollPos2nd = ORDERINDEX_INVALID;
+		if(isSelectionKeyPressed && m_nScrollPos2nd == ORDERINDEX_INVALID)
+			m_nScrollPos2nd = m_nScrollPos;
+		else if(!isSelectionKeyPressed && m_nScrollPos2nd != ORDERINDEX_INVALID)
+			m_nScrollPos2nd = ORDERINDEX_INVALID;
 	};
 	void SetSelection(ORDERINDEX firstOrd, ORDERINDEX lastOrd = ORDERINDEX_INVALID);
 	// Why VC wants to inline this huge function is beyond my understanding...
-	MPT_NOINLINE bool SetCurSel(ORDERINDEX sel, bool setPlayPos = true, bool shiftClick = false, bool ignoreCurSel = false);
+	MPT_ATTR_NOINLINE MPT_DECL_NOINLINE bool SetCurSel(ORDERINDEX sel, bool setPlayPos = true, bool shiftClick = false, bool ignoreCurSel = false);
 	void UpdateScrollInfo();
 	void UpdateInfoText();
 	int GetFontWidth();
-	void QueuePattern(CPoint pt);
+
+	void QueuePattern(ORDERINDEX order, OrderTransitionMode transitionMode);
 
 	// Check if this module is currently playing
 	bool IsPlaying() const;
 
-	ORDERINDEX GetOrderFromPoint(const CRect& rect, const CPoint& pt) const;
+	ORDERINDEX GetOrderFromPoint(const CPoint &pt) const;
+	CRect GetRectFromOrder(ORDERINDEX ord) const;
 
 	// Get the currently selected pattern(s).
 	// Set ignoreSelection to true if only the first selected point is important.
@@ -135,13 +141,14 @@ protected:
 	bool EnsureEditable(ORDERINDEX ord);
 
 	//{{AFX_MSG(COrderList)
+	afx_msg LRESULT OnDPIChangedAfterParent(WPARAM, LPARAM);
 	afx_msg void OnPaint();
 	afx_msg BOOL OnEraseBkgnd(CDC *) { return TRUE; }
 	afx_msg void OnSetFocus(CWnd *);
 	afx_msg void OnKillFocus(CWnd *);
 	afx_msg void OnLButtonDown(UINT, CPoint);
 	afx_msg void OnLButtonDblClk(UINT, CPoint);
-	afx_msg void OnRButtonDown(UINT, CPoint);
+	afx_msg void OnRButtonUp(UINT, CPoint);
 	afx_msg void OnLButtonUp(UINT, CPoint);
 	afx_msg void OnMButtonDown(UINT, CPoint);
 	afx_msg void OnMouseMove(UINT, CPoint);
@@ -167,28 +174,17 @@ protected:
 	afx_msg void OnEditCopyOrders() { OnCopy(true); }
 	afx_msg void OnEditCut();
 	afx_msg LRESULT OnDragonDropping(WPARAM bDoDrop, LPARAM lParam);
-	afx_msg LRESULT OnHelpHitTest(WPARAM, LPARAM lParam);
 	afx_msg void OnSelectSequence(UINT nid);
 	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM);
 	afx_msg void OnLockPlayback();
 	afx_msg void OnUnlockPlayback();
+	afx_msg void OnQueueAtPatternEnd() { QueuePattern(m_menuOrder, OrderTransitionMode::AtPatternEnd); }
+	afx_msg void OnQueueAtMeasureEnd() { QueuePattern(m_menuOrder, OrderTransitionMode::AtMeasureEnd); }
+	afx_msg void OnQueueAtBeatEnd() { QueuePattern(m_menuOrder, OrderTransitionMode::AtBeatEnd); }
+	afx_msg void OnQueueAtRowEnd() { QueuePattern(m_menuOrder, OrderTransitionMode::AtRowEnd); }
 	afx_msg BOOL OnToolTipText(UINT, NMHDR *pNMHDR, LRESULT *pResult);
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
-};
-
-
-// CPatEdit: Edit control that switches back to the pattern view if Tab key is pressed.
-
-class CPatEdit: public CEdit
-{
-protected:
-	CCtrlPatterns *m_pParent = nullptr;
-
-public:
-	CPatEdit() = default;
-	void SetParent(CCtrlPatterns *parent) { m_pParent = parent; }
-	BOOL PreTranslateMessage(MSG *pMsg) override;
 };
 
 
@@ -197,18 +193,17 @@ class CCtrlPatterns: public CModControlDlg
 	friend class COrderList;
 protected:
 	COrderList m_OrderList;
-	CButton m_BtnPrev, m_BtnNext;
+	AccessibleButton m_BtnPrev, m_BtnNext;
 	CComboBox m_CbnInstrument;
-	CPatEdit m_EditSpacing, m_EditPatName, m_EditSequence;
+	CEdit m_EditSpacing, m_EditPatName, m_EditSequence;
 	CSpinButtonCtrl m_SpinInstrument, m_SpinSpacing, m_SpinSequence;
 	CModControlBar m_ToolBar;
 	INSTRUMENTINDEX m_nInstrument = 0;
-	PatternCursor::Columns m_nDetailLevel = PatternCursor::lastColumn;  // Visible Columns
 	bool m_bRecord = false, m_bVUMeters = false, m_bPluginNames = false;
+	bool m_instrDropdownOpen = false;
 
 public:
 	CCtrlPatterns(CModControlView &parent, CModDoc &document);
-	Setting<LONG> &GetSplitPosRef() override { return TrackerSettings::Instance().glPatternWindowHeight; }
 
 public:
 	const ModSequence &Order() const;
@@ -216,10 +211,11 @@ public:
 
 	void SetCurrentPattern(PATTERNINDEX nPat);
 	BOOL SetCurrentInstrument(UINT nIns);
-	BOOL GetFollowSong() { return IsDlgButtonChecked(IDC_PATTERN_FOLLOWSONG); }
-	BOOL GetLoopPattern() {return IsDlgButtonChecked(IDC_PATTERN_LOOP);}
+	BOOL GetFollowSong() const;
+	BOOL GetLoopPattern() const;
 	COrderList &GetOrderList() { return m_OrderList; }
 	//{{AFX_VIRTUAL(CCtrlPatterns)
+	Setting<LONG> &GetSplitPosRef() override;
 	BOOL OnInitDialog() override;
 	void DoDataExchange(CDataExchange* pDX) override;	// DDX/DDV support
 	void RecalcLayout() override;
@@ -228,11 +224,13 @@ public:
 	LRESULT OnModCtrlMsg(WPARAM wParam, LPARAM lParam) override;
 	void OnActivatePage(LPARAM) override;
 	void OnDeactivatePage() override;
-	BOOL GetToolTipText(UINT, LPTSTR) override;
+	CString GetToolTipText(UINT id, HWND hwnd) const override;
+	void OnDPIChanged() override;
 	//}}AFX_VIRTUAL
 protected:
 	//{{AFX_MSG(CCtrlPatterns)
-	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
+	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar);
+	afx_msg void OnTbnDropDownToolBar(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnSequenceNext();
 	afx_msg void OnSequencePrev();
 	afx_msg void OnChannelManager();
@@ -243,7 +241,6 @@ protected:
 	afx_msg void OnPatternMerge();
 	afx_msg void OnPatternStop();
 	afx_msg void OnPatternPlay();
-	afx_msg void OnPatternPlayNoLoop();
 	afx_msg void OnPatternPlayRow();
 	afx_msg void OnPatternPlayFromStart();
 	afx_msg void OnPatternRecord();
@@ -253,10 +250,12 @@ protected:
 	afx_msg void OnPatternExpand();
 	afx_msg void OnPatternShrink();
 	afx_msg void OnPatternAmplify();
-	afx_msg void OnPatternCopy();
 	afx_msg void OnPatternPaste();
+	afx_msg void OnToggleMetronome();
+	afx_msg void OnMetronomeSettings();
 	afx_msg void OnFollowSong();
 	afx_msg void OnChangeLoopStatus();
+	// cppcheck-suppress duplInheritedMember
 	afx_msg void OnSwitchToView();
 	afx_msg void OnInstrumentChanged();
 	afx_msg void OnPrevInstrument();
@@ -265,15 +264,17 @@ protected:
 	afx_msg void OnPatternNameChanged();
 	afx_msg void OnSequenceNameChanged();
 	afx_msg void OnChordEditor();
-	afx_msg void OnDetailLo();
-	afx_msg void OnDetailMed();
-	afx_msg void OnDetailHi();
+	afx_msg void OnDetailSwitch();
+	afx_msg void OnDetailInstr();
+	afx_msg void OnDetailVolume();
+	afx_msg void OnDetailEffect();
 	afx_msg void OnEditUndo();
 	afx_msg void OnUpdateRecord(CCmdUI *pCmdUI);
 	afx_msg void TogglePluginEditor();
 	afx_msg void OnToggleOverflowPaste();
 	afx_msg void OnSequenceNumChanged();
-	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM);
+	afx_msg void OnOpenInstrumentDropdown() { m_instrDropdownOpen = true; }
+	afx_msg void OnCancelInstrumentDropdown() { m_instrDropdownOpen = false; }
 
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
@@ -282,7 +283,6 @@ private:
 public:
 	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
 	afx_msg void OnXButtonUp(UINT nFlags, UINT nButton, CPoint point);
-	afx_msg BOOL OnToolTip(UINT id, NMHDR *pTTTStruct, LRESULT *pResult);
 };
 
 OPENMPT_NAMESPACE_END

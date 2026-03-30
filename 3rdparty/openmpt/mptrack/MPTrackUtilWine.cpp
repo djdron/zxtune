@@ -9,8 +9,10 @@
 
 
 #include "stdafx.h"
+#include "DialogBase.h"
 #include "MPTrackUtilWine.h"
 #include "Mptrack.h"
+#include "resource.h"
 #include "../common/misc_util.h"
 #include "../misc/mptWine.h"
 
@@ -26,8 +28,7 @@ namespace Wine
 {
 
 
-class CExecutePosixShellScriptProgressDialog
-	: public CDialog
+class CExecutePosixShellScriptProgressDialog : public DialogBase
 {
 
 protected:
@@ -35,7 +36,7 @@ protected:
 	mpt::Wine::Context & wine;
 	std::string m_Title;
 	std::string m_Status;
-	bool m_bAbort;
+	bool m_bAbort = false;
 	std::string m_script;
 	FlagSet<mpt::Wine::ExecFlags> m_Flags;
 	std::map<std::string, std::vector<char> > m_Filetree;
@@ -46,9 +47,9 @@ public:
 
 	CExecutePosixShellScriptProgressDialog(mpt::Wine::Context & wine, std::string script, FlagSet<mpt::Wine::ExecFlags> flags, std::map<std::string, std::vector<char> > filetree, std::string title, std::string status, CWnd *parent = NULL);
 
-	BOOL OnInitDialog();
+	BOOL OnInitDialog() override;
 
-	void OnCancel();
+	void OnCancel() override;
 
 	afx_msg void OnButton1();
 
@@ -70,17 +71,16 @@ private:
 };
 
 
-BEGIN_MESSAGE_MAP(CExecutePosixShellScriptProgressDialog, CDialog)
+BEGIN_MESSAGE_MAP(CExecutePosixShellScriptProgressDialog, DialogBase)
 	ON_COMMAND(IDC_BUTTON1,	&CExecutePosixShellScriptProgressDialog::OnButton1)
 END_MESSAGE_MAP()
 
 
 CExecutePosixShellScriptProgressDialog::CExecutePosixShellScriptProgressDialog(mpt::Wine::Context & wine, std::string script, FlagSet<mpt::Wine::ExecFlags> flags, std::map<std::string, std::vector<char> > filetree, std::string title, std::string status, CWnd *parent)
-	: CDialog(IDD_PROGRESS, parent)
+	: DialogBase(IDD_PROGRESS, parent)
 	, wine(wine)
 	, m_Title(title)
 	, m_Status(status)
-	, m_bAbort(false)
 	, m_script(script)
 	, m_Flags(flags)
 	, m_Filetree(filetree)
@@ -98,13 +98,13 @@ void CExecutePosixShellScriptProgressDialog::OnCancel()
 
 mpt::Wine::ExecuteProgressResult CExecutePosixShellScriptProgressDialog::ProgressCancelCallback(void *userdata)
 {
-	return reinterpret_cast<CExecutePosixShellScriptProgressDialog*>(userdata)->Progress(true);
+	return mpt::void_ptr<CExecutePosixShellScriptProgressDialog>(userdata)->Progress(true);
 }
 
 
 void CExecutePosixShellScriptProgressDialog::ProgressCallback(void *userdata)
 {
-	reinterpret_cast<CExecutePosixShellScriptProgressDialog*>(userdata)->Progress(false);
+	mpt::void_ptr<CExecutePosixShellScriptProgressDialog>(userdata)->Progress(false);
 }
 
 
@@ -133,7 +133,7 @@ std::string CExecutePosixShellScriptProgressDialog::GetExceptionString() const
 
 BOOL CExecutePosixShellScriptProgressDialog::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+	DialogBase::OnInitDialog();
 	SetWindowText(mpt::ToCString(mpt::Charset::UTF8, m_Title));
 	SetDlgItemText(IDCANCEL, _T("Cancel"));
 	SetWindowLong(::GetDlgItem(m_hWnd, IDC_PROGRESS1), GWL_STYLE, GetWindowLong(::GetDlgItem(m_hWnd, IDC_PROGRESS1), GWL_STYLE) | PBS_MARQUEE);

@@ -1,15 +1,18 @@
 --
 -- _premake_main.lua
 -- Script-side entry point for the main program logic.
--- Copyright (c) 2002-2015 Jason Perkins and the Premake project
+-- Copyright (c) 2002-2024 Jess Perkins and the Premake project
 --
 
 	local shorthelp     = "Type 'premake5 --help' for help"
 	local versionhelp   = "premake5 (Premake Build Script Generator) %s"
 	local startTime     = os.clock()
 
--- set a global.
+-- set main globals.
 	_PREMAKE_STARTTIME = startTime
+
+	-- default the target OS to the host OS
+	_TARGET_OS = os.host()
 
 -- Load the collection of core scripts, required for everything else to work
 
@@ -68,6 +71,12 @@
 			name .. ".lua"
 		}
 
+		-- If this module is being requested by an embedded script, favor embedded modules.
+		-- This helps prevent local scripts from interfering with release build bootstrapping.
+		if string.startswith(_SCRIPT_DIR, '$/') then
+			table.insert(paths, 1, '$/' .. full)
+		end
+
 		-- try to locate the module
 		for _, p in ipairs(paths) do
 			local file = os.locate(p)
@@ -118,8 +127,9 @@
 			local preloader = name .. "/_preload.lua"
 			preloader = os.locate("modules/" .. preloader) or os.locate(preloader)
 			if preloader then
-				m._preloaded[name] = include(preloader)
-				if not m._preloaded[name] then
+				local modulePath = path.getdirectory(preloader)
+				m._preloaded[modulePath] = include(preloader)
+				if not m._preloaded[modulePath] then
 					p.warn("module '%s' should return function from _preload.lua", name)
 				end
 			else
@@ -172,11 +182,6 @@
 ---
 
 	function m.prepareAction()
-		-- The "next-gen" actions have now replaced their deprecated counterparts.
-		-- Provide a warning for a little while before I remove them entirely.
-		if _ACTION and _ACTION:endswith("ng") then
-			p.warnOnce(_ACTION, "'%s' has been deprecated; use '%s' instead", _ACTION, _ACTION:sub(1, -3))
-		end
 		p.action.set(_ACTION)
 
 		-- Allow the action to initialize stuff.
@@ -311,9 +316,11 @@
 		end
 
 		-- any modules need to load to support this project?
-		for module, func in pairs(m._preloaded) do
-			if not package.loaded[module] and shouldLoad(func) then
-				require(module)
+		for modulePath, func in pairs(m._preloaded) do
+			local moduleName = path.getbasename(modulePath)
+			if not package.loaded[moduleName] and shouldLoad(func) then
+				_SCRIPT_DIR = modulePath
+				require(moduleName)
 			end
 		end
 	end
@@ -329,6 +336,13 @@
 		end
 	end
 
+---
+-- Run git integration part.
+---
+
+	function m.gitHookInstallation()
+		p.git_integration.gitHookInstallation()
+	end
 
 ---
 -- Override point, for logic that should run after validation and
@@ -383,6 +397,7 @@
 		m.bake,
 		m.postBake,
 		m.validate,
+		m.gitHookInstallation,
 		m.preAction,
 		m.callAction,
 		m.postAction,

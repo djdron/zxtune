@@ -8,8 +8,6 @@
  */
 
 
-#ifndef NO_PLUGINS
-
 #include "PlugInterface.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -65,10 +63,9 @@ public:
 	PluginChunk m_chunk;
 
 public:
-	static IMixPlugin* Create(VSTPluginLib& factory, CSoundFile& sndFile, SNDMIXPLUGIN* mixStruct);
-	SymMODEcho(VSTPluginLib& factory, CSoundFile& sndFile, SNDMIXPLUGIN* mixStruct);
+	static IMixPlugin* Create(VSTPluginLib& factory, CSoundFile& sndFile, SNDMIXPLUGIN &mixStruct);
+	SymMODEcho(VSTPluginLib& factory, CSoundFile& sndFile, SNDMIXPLUGIN &mixStruct);
 
-	void Release() override { delete this; }
 	void SaveAllParameters() override;
 	void RestoreAllParameters(int32 program) override;
 	int32 GetUID() const override { int32le id; memcpy(&id, "Echo", 4); return id; }
@@ -86,7 +83,7 @@ public:
 
 	PlugParamIndex GetNumParameters() const override { return kEchoNumParameters; }
 	PlugParamValue GetParameter(PlugParamIndex index) override;
-	void SetParameter(PlugParamIndex index, PlugParamValue value) override;
+	void SetParameter(PlugParamIndex index, PlugParamValue value, PlayState * = nullptr, CHANNELINDEX = CHANNELINDEX_INVALID) override;
 
 	void Resume() override;
 	void Suspend() override { m_isResumed = false; }
@@ -127,5 +124,3 @@ MPT_BINARY_STRUCT(SymMODEcho::PluginChunk, 7)
 
 
 OPENMPT_NAMESPACE_END
-
-#endif // NO_PLUGINS

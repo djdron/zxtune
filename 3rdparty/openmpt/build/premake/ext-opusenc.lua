@@ -1,28 +1,21 @@
-  
+
+include_dependency "ext-ogg.lua"
+include_dependency "ext-opus.lua"
+
  project "opusenc"
   uuid "290bbf89-2572-4291-9d9c-ff021d4fd313"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "opusenc"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-opusenc"
-  local extincludedirs = {
-   "../../include/ogg/include",
-   "../../include/opus/include",
-	}
-	filter { "action:vs*" }
-		includedirs ( extincludedirs )
-	filter { "not action:vs*" }
-		sysincludedirs ( extincludedirs )
-	filter {}
+	
+	mpt_use_ogg()
+	mpt_use_opus()
+	
   includedirs {
    "../../include/opusenc/include",
    "../../include/opusenc/win32",
   }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   files {
    "../../include/opusenc/include/opusenc.h",
@@ -35,9 +28,9 @@
   }
 	defines { "HAVE_CONFIG_H" }
 	defines { "OUTSIDE_SPEEX", "RANDOM_PREFIX=libopusenc" }
-  links { "ogg", "opus" }
-  filter { "action:vs*" }
-    buildoptions {
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions {
 			"/wd4018",
 			"/wd4100",
 			"/wd4101",
@@ -47,14 +40,29 @@
 			"/wd4456",
 			"/wd4706",
 		}
-  filter {}
-	filter { "action:vs*" }
 		buildoptions {
 			"/wd6262",
 		} -- analyze
+	end
 	filter {}
-  filter { "kind:StaticLib" }
-   defines { }
-  filter { "kind:SharedLib" }
-   defines { "DLL_EXPORT" }
-  filter {}
+	if MPT_OS_WINDOWS then
+		filter {}
+		filter { "kind:StaticLib" }
+			defines { }
+		filter { "kind:SharedLib" }
+			defines { "DLL_EXPORT" }
+		filter {}
+	end
+	filter {}
+
+function mpt_use_opusenc ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/opusenc/include",
+	}
+	filter {}
+	links {
+		"opusenc",
+	}
+	filter {}
+end

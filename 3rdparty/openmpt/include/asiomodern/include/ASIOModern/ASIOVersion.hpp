@@ -17,7 +17,7 @@ namespace ASIO {
 
 #define ASIO_MODERNSDK_VERSION_MAJOR 0
 #define ASIO_MODERNSDK_VERSION_MINOR 12
-#define ASIO_MODERNSDK_VERSION_PATCH 0
+#define ASIO_MODERNSDK_VERSION_PATCH 11
 #define ASIO_MODERNSDK_VERSION_BUILD 0
 
 
@@ -31,11 +31,11 @@ namespace ASIO {
 
 
 
-inline namespace Version {
-
-
-
 inline namespace ASIO_VERSION_NAMESPACE {
+
+
+
+inline namespace Version {
 
 
 
@@ -105,17 +105,23 @@ constexpr bool operator>=(VersionInfo a, VersionInfo b) noexcept {
 
 
 
-constexpr inline VersionInfo Version = {{ASIO_VERSION_MAJOR, ASIO_VERSION_MINOR, ASIO_VERSION_PATCH}, ASIO_VERSION_BUILD};
+constexpr inline VersionInfo Version = {
+	{ASIO_VERSION_MAJOR, ASIO_VERSION_MINOR, ASIO_VERSION_PATCH},
+	ASIO_VERSION_BUILD
+};
 
-constexpr inline VersionInfo ModernSDKVersion = {{ASIO_MODERNSDK_VERSION_MAJOR, ASIO_MODERNSDK_VERSION_MINOR, ASIO_MODERNSDK_VERSION_PATCH}, ASIO_MODERNSDK_VERSION_BUILD};
-
-
-
-} // namespace ASIO_VERSION_NAMESPACE
+constexpr inline VersionInfo ModernSDKVersion = {
+	{ASIO_MODERNSDK_VERSION_MAJOR, ASIO_MODERNSDK_VERSION_MINOR, ASIO_MODERNSDK_VERSION_PATCH},
+	ASIO_MODERNSDK_VERSION_BUILD
+};
 
 
 
 } // namespace Version
+
+
+
+} // namespace ASIO_VERSION_NAMESPACE
 
 
 

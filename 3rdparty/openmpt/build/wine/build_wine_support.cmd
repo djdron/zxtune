@@ -12,7 +12,7 @@ cd %BATCH_DIR%
 cd ..\..
 
 del /f /q "%OUTDIR%\openmpt-wine-support.zip"
-"C:\Program Files\7-Zip\7z.exe" a -tzip -mm=Deflate -mx=9 openmpt-wine-support.zip ^
+"build\tools\7zip\7z.exe" a -tzip -mm=Deflate -mx=9 openmpt-wine-support.zip ^
  LICENSE ^
  include\nlohmann-json\LICENSE.MIT ^
  include\nlohmann-json\include\nlohmann\*.hpp ^
@@ -21,16 +21,19 @@ del /f /q "%OUTDIR%\openmpt-wine-support.zip"
  include\nlohmann-json\include\nlohmann\detail\input\*.hpp ^
  include\nlohmann-json\include\nlohmann\detail\iterators\*.hpp ^
  include\nlohmann-json\include\nlohmann\detail\meta\*.hpp ^
+ include\nlohmann-json\include\nlohmann\detail\meta\call_std\*.hpp ^
  include\nlohmann-json\include\nlohmann\detail\output\*.hpp ^
  include\nlohmann-json\include\nlohmann\thirdparty\hedley\*.hpp ^
  include\rtkit\rtkit.c ^
  include\rtkit\rtkit.h ^
+ src\mpt\arch\*.hpp ^
  src\mpt\audio\*.hpp ^
  src\mpt\base\*.hpp ^
  src\mpt\base\tests\*.hpp ^
  src\mpt\binary\*.hpp ^
  src\mpt\binary\tests\*.hpp ^
  src\mpt\check\*.hpp ^
+ src\mpt\chrono\*.hpp ^
  src\mpt\crc\*.hpp ^
  src\mpt\crc\tests\*.hpp ^
  src\mpt\crypto\*.hpp ^
@@ -39,17 +42,22 @@ del /f /q "%OUTDIR%\openmpt-wine-support.zip"
  src\mpt\endian\*.hpp ^
  src\mpt\endian\tests\*.hpp ^
  src\mpt\environment\*.hpp ^
- src\mpt\exception_text\*.hpp ^
+ src\mpt\exception\*.hpp ^
  src\mpt\format\*.hpp ^
  src\mpt\format\test\*.hpp ^
+ src\mpt\fs\*.hpp ^
  src\mpt\io\*.hpp ^
  src\mpt\io\tests\*.hpp ^
+ src\mpt\io_file\*.hpp ^
+ src\mpt\io_file_read\*.hpp ^
  src\mpt\io_read\*.hpp ^
  src\mpt\io_write\*.hpp ^
  src\mpt\json\*.hpp ^
  src\mpt\library\*.hpp ^
  src\mpt\mutex\*.hpp ^
  src\mpt\osinfo\*.hpp ^
+ src\mpt\osinfo_hx\*.hpp ^
+ src\mpt\osinfo_wine\*.hpp ^
  src\mpt\parse\*.hpp ^
  src\mpt\parse\tests\*.hpp ^
  src\mpt\path\*.hpp ^
@@ -58,8 +66,8 @@ del /f /q "%OUTDIR%\openmpt-wine-support.zip"
  src\mpt\random\tests\*.hpp ^
  src\mpt\string\*.hpp ^
  src\mpt\string\tests\*.hpp ^
- src\mpt\string_convert\*.hpp ^
- src\mpt\string_convert\tests\*.hpp ^
+ src\mpt\string_transcode\*.hpp ^
+ src\mpt\string_transcode\tests\*.hpp ^
  src\mpt\system_error\*.hpp ^
  src\mpt\test\*.hpp ^
  src\mpt\uuid\*.hpp ^
@@ -93,6 +101,7 @@ del /f /q "%OUTDIR%\openmpt-wine-support.zip"
  || goto error
 
 cd %BATCH_DIR%
+mkdir "%OUTDIR%"
 move ..\..\openmpt-wine-support.zip "%OUTDIR%\" || goto error
 
 goto noerror

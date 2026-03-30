@@ -31,8 +31,8 @@ class BufferIO
 {
 
 private:
-	mpt::audio_span_interleaved<const Tsample> const m_src;
-	mpt::audio_span_interleaved<Tsample> const m_dst;
+	const mpt::audio_span_interleaved<const Tsample> m_src;
+	const mpt::audio_span_interleaved<Tsample> m_dst;
 	std::size_t m_countFramesReadProcessed;
 	std::size_t m_countFramesWriteProcessed;
 	const BufferFormat m_bufferFormat;
@@ -144,7 +144,7 @@ public:
 		std::visit(
 			[&](auto &bufferIO)
 			{
-				bufferIO.Read(dst);
+			bufferIO.Read(dst);
 			},
 			m_BufferIO);
 	}
@@ -155,7 +155,7 @@ public:
 		std::visit(
 			[&](auto &bufferIO)
 			{
-				bufferIO.template ReadFixedPoint<fractionalBits>(dst);
+			bufferIO.template ReadFixedPoint<fractionalBits>(dst);
 			},
 			m_BufferIO);
 	}
@@ -166,12 +166,12 @@ public:
 		std::visit(
 			[&](auto &bufferIO)
 			{
-				std::visit(
-					[&](auto &ditherInstance)
-					{
-						bufferIO.Write(src, ditherInstance);
-					},
-					m_Dithers.Variant());
+			std::visit(
+				[&](auto &ditherInstance)
+				{
+				bufferIO.Write(src, ditherInstance);
+				},
+				m_Dithers.Variant());
 			},
 			m_BufferIO);
 	}
@@ -182,12 +182,12 @@ public:
 		std::visit(
 			[&](auto &bufferIO)
 			{
-				std::visit(
-					[&](auto &ditherInstance)
-					{
-						bufferIO.template WriteFixedPoint<fractionalBits>(src, ditherInstance);
-					},
-					m_Dithers.Variant());
+			std::visit(
+				[&](auto &ditherInstance)
+				{
+				bufferIO.template WriteFixedPoint<fractionalBits>(src, ditherInstance);
+				},
+				m_Dithers.Variant());
 			},
 			m_BufferIO);
 	}

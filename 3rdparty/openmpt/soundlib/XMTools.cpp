@@ -9,10 +9,11 @@
 
 
 #include "stdafx.h"
-#include "Loaders.h"
 #include "XMTools.h"
+#include "Loaders.h"
 #include "Sndfile.h"
 #include "../common/version.h"
+
 #include <algorithm>
 
 
@@ -54,31 +55,16 @@ void XMInstrument::ConvertEnvelopeToXM(const InstrumentEnvelope &mptEnv, uint8le
 
 
 // Convert OpenMPT's internal sample representation to an XMInstrument.
-uint16 XMInstrument::ConvertToXM(const ModInstrument &mptIns, bool compatibilityExport)
+XMInstrument::SampleList XMInstrument::ConvertToXM(const ModInstrument &mptIns, bool compatibilityExport)
 {
 	MemsetZero(*this);
 
 	// FFF is maximum in the FT2 GUI, but it can also accept other values. MilkyTracker just allows 0...4095 and 32767 ("cut")
-	volFade = static_cast<uint16>(std::min(mptIns.nFadeOut, uint32(32767)));
+	volFade = std::min(mptIns.nFadeOut, uint16(32767));
 
 	// Convert envelopes
 	ConvertEnvelopeToXM(mptIns.VolEnv, volPoints, volFlags, volSustain, volLoopStart, volLoopEnd, EnvTypeVol);
 	ConvertEnvelopeToXM(mptIns.PanEnv, panPoints, panFlags, panSustain, panLoopStart, panLoopEnd, EnvTypePan);
-
-	// Create sample assignment table
-	auto sampleList = GetSampleList(mptIns, compatibilityExport);
-	for(std::size_t i = 0; i < std::size(sampleMap); i++)
-	{
-		if(mptIns.Keyboard[i + 12] > 0)
-		{
-			auto sample = std::find(sampleList.begin(), sampleList.end(), mptIns.Keyboard[i + 12]);
-			if(sample != sampleList.end())
-			{
-				// Yep, we want to export this sample.
-				sampleMap[i] = static_cast<uint8>(sample - sampleList.begin());
-			}
-		}
-	}
 
 	if(mptIns.nMidiChannel != MidiNoChannel)
 	{
@@ -88,36 +74,50 @@ uint16 XMInstrument::ConvertToXM(const ModInstrument &mptIns, bool compatibility
 	midiProgram = (mptIns.nMidiProgram != 0 ? mptIns.nMidiProgram - 1 : 0);
 	pitchWheelRange = std::min(mptIns.midiPWD, int8(36));
 
-	return static_cast<uint16>(sampleList.size());
+	// Create sample assignment table
+	const auto sampleList = GetSampleList(mptIns, compatibilityExport);
+	for(std::size_t i = 0; i < std::size(sampleMap); i++)
+	{
+		if(mptIns.Keyboard[i + 12] > 0)
+		{
+			auto sample = std::find(sampleList.samples.begin(), sampleList.samples.end(), mptIns.Keyboard[i + 12]);
+			if(sample != sampleList.samples.end())
+			{
+				// Yep, we want to export this sample.
+				sampleMap[i] = static_cast<uint8>(std::distance(sampleList.samples.begin(), sample));
+			}
+		}
+	}
+
+	return sampleList;
 }
 
 
 // Get a list of samples that should be written to the file.
-std::vector<SAMPLEINDEX> XMInstrument::GetSampleList(const ModInstrument &mptIns, bool compatibilityExport) const
+XMInstrument::SampleList XMInstrument::GetSampleList(const ModInstrument &mptIns, bool compatibilityExport) const
 {
-	std::vector<SAMPLEINDEX> sampleList;		// List of samples associated with this instrument
-	std::vector<bool> addedToList;			// Which samples did we already add to the sample list?
+	SampleList sampleList;          // List of samples associated with this instrument
+	std::vector<bool> addedToList;  // Which samples did we already add to the sample list?
 
-	uint8 numSamples = 0;
 	for(std::size_t i = 0; i < std::size(sampleMap); i++)
 	{
 		const SAMPLEINDEX smp = mptIns.Keyboard[i + 12];
-		if(smp > 0)
-		{
-			if(smp > addedToList.size())
-			{
-				addedToList.resize(smp, false);
-			}
-
-			if(!addedToList[smp - 1] && numSamples < (compatibilityExport ? 16 : 32))
-			{
-				// We haven't considered this sample yet.
-				addedToList[smp - 1] = true;
-				numSamples++;
-				sampleList.push_back(smp);
-			}
-		}
+		if(smp == 0)
+			continue;
+		if(smp > addedToList.size())
+			addedToList.resize(smp, false);
+		if(addedToList[smp - 1])
+			continue;
+		// We haven't considered this sample yet.
+		addedToList[smp - 1] = true;
+		if(sampleList.samples.size() < (compatibilityExport ? 16u : 32u))
+			sampleList.samples.push_back(smp);
+		else
+			sampleList.tooManySamples = true;
 	}
+	// FT2 completely ignores MIDI settings (and also the less important stuff) if not at least one (empty) sample is assigned to this instrument!
+	if(sampleList.samples.empty() && compatibilityExport && midiEnabled)
+		sampleList.samples.assign(1, 0);
 	return sampleList;
 }
 
@@ -148,7 +148,7 @@ void XMInstrument::ConvertEnvelopeToMPT(InstrumentEnvelope &mptEnv, uint8 numPoi
 			// value. Try to compensate by adding the missing high byte."
 			// Note: MPT 1.07's XI instrument saver omitted the high byte of envelope nodes.
 			// This might be the source for some broken envelopes in IT and XM files.
-			mptEnv[i].tick |= mptEnv[i - 1].tick & 0xFF00;
+			mptEnv[i].tick |= static_cast<uint16>(mptEnv[i - 1].tick & 0xFF00u);
 			if(mptEnv[i].tick < mptEnv[i - 1].tick)
 				mptEnv[i].tick += 0x100;
 		}
@@ -236,20 +236,22 @@ void XMInstrumentHeader::Finalise()
 		sampleHeaderSize = sizeof(XMSample);
 	} else
 	{
-		// TODO: FT2 completely ignores MIDI settings (and also the less important stuff) if not at least one (empty) sample is assigned to this instrument!
-		size -= sizeof(XMInstrument);
+		if(!instrument.midiEnabled)
+			size -= sizeof(XMInstrument);
 		sampleHeaderSize = 0;
 	}
 }
 
 
 // Convert OpenMPT's internal sample representation to an XMInstrumentHeader.
-void XMInstrumentHeader::ConvertToXM(const ModInstrument &mptIns, bool compatibilityExport)
+XMInstrument::SampleList XMInstrumentHeader::ConvertToXM(const ModInstrument &mptIns, bool compatibilityExport)
 {
-	numSamples = instrument.ConvertToXM(mptIns, compatibilityExport);
+	const auto sampleList = instrument.ConvertToXM(mptIns, compatibilityExport);
+	numSamples = static_cast<uint16>(sampleList.samples.size());
 	mpt::String::WriteBuf(mpt::String::spacePadded, name) = mptIns.name;
 
 	type = mptIns.nMidiProgram;	// If FT2 writes crap here, we can do so, too! (we probably shouldn't, though. This is just for backwards compatibility with old MPT versions.)
+	return sampleList;
 }
 
 
@@ -281,9 +283,10 @@ void XMInstrumentHeader::ConvertToMPT(ModInstrument &mptIns) const
 
 
 // Convert OpenMPT's internal sample representation to an XIInstrumentHeader.
-void XIInstrumentHeader::ConvertToXM(const ModInstrument &mptIns, bool compatibilityExport)
+XMInstrument::SampleList XIInstrumentHeader::ConvertToXM(const ModInstrument &mptIns, bool compatibilityExport)
 {
-	numSamples = instrument.ConvertToXM(mptIns, compatibilityExport);
+	const auto sampleList = instrument.ConvertToXM(mptIns, compatibilityExport);
+	numSamples = static_cast<uint16>(sampleList.samples.size());
 
 	memcpy(signature, "Extended Instrument: ", 21);
 	mpt::String::WriteBuf(mpt::String::spacePadded, name) = mptIns.name;
@@ -293,6 +296,7 @@ void XIInstrumentHeader::ConvertToXM(const ModInstrument &mptIns, bool compatibi
 	mpt::String::WriteBuf(mpt::String::spacePadded, trackerName) = openMptTrackerName;
 
 	version = 0x102;
+	return sampleList;
 }
 
 

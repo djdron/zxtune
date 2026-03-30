@@ -10,9 +10,12 @@
 #include "SoundDeviceCallback.hpp"
 
 #include "mpt/base/detect.hpp"
+#include "mpt/base/pointer.hpp"
 #include "mpt/base/saturate_round.hpp"
 #include "mpt/osinfo/class.hpp"
+#include "mpt/osinfo/windows_hx_version.hpp"
 #include "mpt/osinfo/windows_version.hpp"
+#include "mpt/osinfo/windows_wine_version.hpp"
 #include "mpt/string/types.hpp"
 #include "openmpt/base/FlagSet.hpp"
 #include "openmpt/base/Types.hpp"
@@ -309,14 +312,15 @@ struct SysInfo
 public:
 	mpt::osinfo::osclass SystemClass = mpt::osinfo::osclass::Unknown;
 	mpt::osinfo::windows::Version WindowsVersion = mpt::osinfo::windows::Version::NoWindows();
-	bool IsWine = false;
+	std::optional<mpt::osinfo::windows::hx::version> HXVersion;
+	std::optional<mpt::osinfo::windows::wine::version> WineVersion;
 	mpt::osinfo::osclass WineHostClass = mpt::osinfo::osclass::Unknown;
-	mpt::osinfo::windows::wine::version WineVersion;
 
 public:
-	bool IsOriginal() const { return !IsWine; }
-	bool IsWindowsOriginal() const { return !IsWine; }
-	bool IsWindowsWine() const { return IsWine; }
+	bool IsOriginal() const { return !HXVersion.has_value() && !WineVersion.has_value(); }
+	bool IsWindowsOriginal() const { return !HXVersion.has_value() && !WineVersion.has_value(); }
+	bool IsWindowsHX() const { return HXVersion.has_value(); }
+	bool IsWindowsWine() const { return WineVersion.has_value(); }
 
 public:
 	SysInfo() = delete;
@@ -332,12 +336,18 @@ public:
 	{
 		return;
 	}
-	SysInfo(mpt::osinfo::osclass systemClass, mpt::osinfo::windows::Version windowsVersion, bool isWine, mpt::osinfo::osclass wineHostClass, mpt::osinfo::windows::wine::version wineVersion)
+	SysInfo(mpt::osinfo::osclass systemClass, mpt::osinfo::windows::Version windowsVersion, mpt::osinfo::windows::hx::version hxVersion)
 		: SystemClass(systemClass)
 		, WindowsVersion(windowsVersion)
-		, IsWine(isWine)
-		, WineHostClass(wineHostClass)
+		, HXVersion(hxVersion)
+	{
+		return;
+	}
+	SysInfo(mpt::osinfo::osclass systemClass, mpt::osinfo::windows::Version windowsVersion, mpt::osinfo::windows::wine::version wineVersion, mpt::osinfo::osclass wineHostClass)
+		: SystemClass(systemClass)
+		, WindowsVersion(windowsVersion)
 		, WineVersion(wineVersion)
+		, WineHostClass(wineHostClass)
 	{
 		return;
 	}
@@ -376,14 +386,20 @@ struct AppInfo
 		Name = name;
 		return *this;
 	}
-	mpt::ustring GetName() const { return Name; }
+	mpt::ustring GetName() const
+	{
+		return Name;
+	}
 #if MPT_OS_WINDOWS
 	AppInfo &SetHWND(HWND hwnd)
 	{
-		UIHandle = reinterpret_cast<uintptr_t>(hwnd);
+		UIHandle = mpt::pointer_cast<std::uintptr_t>(hwnd);
 		return *this;
 	}
-	HWND GetHWND() const { return reinterpret_cast<HWND>(UIHandle); }
+	HWND GetHWND() const
+	{
+		return mpt::pointer_cast<HWND>(UIHandle);
+	}
 #endif  // MPT_OS_WINDOWS
 };
 

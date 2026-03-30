@@ -14,6 +14,7 @@
 #include "Mainfrm.h"
 #include "Moddoc.h"
 #include "ProgressDialog.h"
+#include "Reporting.h"
 #include "../tracklib/SampleEdit.h"
 #include "../soundlib/OPL.h"
 
@@ -34,8 +35,8 @@ public:
 	std::vector<SmpLength> m_SamplePlayLengths;
 
 	CRenderProgressDlg(CWnd *parent, CSoundFile &sndFile)
-		: CProgressDialog(parent)
-		, m_SndFile(sndFile)
+		: CProgressDialog{parent}
+		, m_SndFile{sndFile}
 	{
 		m_SndFile.m_SamplePlayLengths = &m_SamplePlayLengths;
 	}
@@ -57,52 +58,51 @@ public:
 
 		m_SamplePlayLengths.assign(m_SndFile.GetNumSamples() + 1, 0);
 
-		auto prevTime = timeGetTime();
-		auto currentSeq = m_SndFile.Order.GetCurrentSequenceIndex();
-		auto currentRepeatCount = m_SndFile.GetRepeatCount();
+		const auto origSequence = m_SndFile.Order.GetCurrentSequenceIndex();
+		const auto origRepeatCount = m_SndFile.GetRepeatCount();
 		auto opl = std::move(m_SndFile.m_opl);
 		m_SndFile.SetRepeatCount(0);
 		m_SndFile.m_bIsRendering = true;
-		for(SEQUENCEINDEX seq = 0; seq < m_SndFile.Order.GetNumSequences() && !m_abort; seq++)
+
+		auto prevTime = timeGetTime();
+		const auto subSongs = m_SndFile.GetAllSubSongs();
+		SetRange(0, mpt::saturate_round<uint64>(std::accumulate(subSongs.begin(), subSongs.end(), 0.0, [](double acc, const auto& song) { return acc + song.duration; }) * m_SndFile.GetSampleRate()));
+		size_t totalSamples = 0;
+		for(size_t i = 0; i < subSongs.size() && !m_abort; i++)
 		{
-			SetWindowText(MPT_CFORMAT("Automatic Sample Trimmer - Sequence {} / {}")(seq + 1, m_SndFile.Order.GetNumSequences()));
+			SetWindowText(MPT_CFORMAT("Automatic Sample Trimmer - Song {} / {}")(i + 1, subSongs.size()));
 
-			m_SndFile.Order.SetSequence(seq);
+			const auto &song = subSongs[i];
 			m_SndFile.ResetPlayPos();
-			const auto subSongs = m_SndFile.GetLength(eNoAdjust, GetLengthTarget(true));
-			SetRange(0, mpt::saturate_round<uint32>(std::accumulate(subSongs.begin(), subSongs.end(), 0.0, [](double acc, const GetLengthType &glt) { return acc + glt.duration; }) * m_SndFile.GetSampleRate()));
+			m_SndFile.GetLength(eAdjust, GetLengthTarget(song.startOrder, song.startRow).StartPos(song.sequence, 0, 0));
+			m_SndFile.m_PlayState.m_flags.reset();
 
-			size_t totalSamples = 0;
+			size_t subsongSamples = 0;
 			DummyAudioTarget target;
-			for(const auto &subSong : subSongs)
+			while(!m_abort)
 			{
-				m_SndFile.GetLength(eAdjust, GetLengthTarget(subSong.startOrder, subSong.startRow));
-				m_SndFile.m_SongFlags.reset(SONG_PLAY_FLAGS);
-				while(!m_abort)
-				{
-					size_t count = m_SndFile.Read(MIXBUFFERSIZE, target);
-					if(count == 0)
-					{
-						break;
-					}
-					totalSamples += count;
+				auto count = m_SndFile.Read(MIXBUFFERSIZE, target);
+				if(count == 0)
+					break;
 
-					auto currentTime = timeGetTime();
-					if(currentTime - prevTime >= 16)
-					{
-						prevTime = currentTime;
-						auto timeSec = totalSamples / m_SndFile.GetSampleRate();
-						SetText(MPT_CFORMAT("Analyzing... {}:{}:{}")(timeSec / 3600, mpt::cfmt::dec0<2>((timeSec / 60) % 60), mpt::cfmt::dec0<2>(timeSec % 60)));
-						SetProgress(mpt::saturate_cast<uint32>(totalSamples));
-						ProcessMessages();
-					}
+				totalSamples += count;
+				subsongSamples += count;
+
+				auto currentTime = timeGetTime();
+				if(currentTime - prevTime >= 16)
+				{
+					prevTime = currentTime;
+					auto timeSec = subsongSamples / m_SndFile.GetSampleRate();
+					SetText(MPT_CFORMAT("Analyzing... {}:{}:{}")(timeSec / 3600, mpt::cfmt::dec0<2>((timeSec / 60) % 60), mpt::cfmt::dec0<2>(timeSec % 60)));
+					SetProgress(totalSamples);
+					ProcessMessages();
 				}
 			}
 		}
 
 		// Reset globals to previous values
-		m_SndFile.Order.SetSequence(currentSeq);
-		m_SndFile.SetRepeatCount(currentRepeatCount);
+		m_SndFile.Order.SetSequence(origSequence);
+		m_SndFile.SetRepeatCount(origRepeatCount);
 		m_SndFile.ResetPlayPos();
 		m_SndFile.StopAllVsti();
 		m_SndFile.m_bIsRendering = false;
@@ -129,10 +129,19 @@ void CModDoc::OnShowSampleTrimmer()
 	for(SAMPLEINDEX smp = 1; smp <= GetNumSamples(); smp++)
 	{
 		ModSample &sample = m_SndFile.GetSample(smp);
-		if(dlg.m_SamplePlayLengths[smp] != 0 && sample.nLength > dlg.m_SamplePlayLengths[smp])
+		auto &newLength = dlg.m_SamplePlayLengths[smp];
+		if(newLength == 0)
+			continue;
+		// Take interpolation look-ahead into account
+		if((!sample.uFlags[CHN_LOOP] || newLength != sample.nLoopEnd)
+		   && (!sample.uFlags[CHN_SUSTAINLOOP] || newLength != sample.nSustainEnd))
+		{
+			newLength = std::min(newLength + InterpolationMaxLookahead, sample.nLength);
+		}
+		if(sample.nLength > newLength)
 		{
 			numTrimmed++;
-			numBytes += (sample.nLength - dlg.m_SamplePlayLengths[smp]) * sample.GetBytesPerSample();
+			numBytes += (sample.nLength - newLength) * sample.GetBytesPerSample();
 		}
 	}
 	if(numTrimmed == 0)
@@ -141,7 +150,7 @@ void CModDoc::OnShowSampleTrimmer()
 		return;
 	}
 
-	mpt::ustring s = MPT_UFORMAT("{} sample{} can be trimmed, saving {} bytes.")(numTrimmed, (numTrimmed == 1) ? U_("") : U_("s"), mpt::ufmt::dec(3, ',', numBytes));
+	mpt::ustring s = MPT_UFORMAT("{} sample{} can be trimmed, saving {} byte{}.")(numTrimmed, (numTrimmed == 1) ? U_("") : U_("s"), mpt::ufmt::dec(3, U_(","), numBytes), numBytes != 1 ? U_("s") : U_(""));
 	if(dlg.m_abort)
 	{
 		s += U_("\n\nWARNING: Only partial results are available, possibly causing used sample parts to be trimmed.\nContinue anyway?");

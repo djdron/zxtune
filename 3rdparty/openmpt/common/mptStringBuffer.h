@@ -180,7 +180,7 @@ template <std::size_t len, mpt::String::ReadWriteMode mode>
 struct modecharbuf
 {
 public:
-	typedef char Tchar;
+	using Tchar = char;
 	using char_type = Tchar;
 	using string_type = std::basic_string<Tchar>;
 public:
@@ -284,41 +284,6 @@ namespace String
 
 #endif // !MPT_COMPILER_QUIRK_NO_WCHAR
 
-
-	// Remove any chars after the first null char
-	template <size_t size>
-	void FixNullString(char (&buffer)[size])
-	{
-		static_assert(size > 0);
-		SetNullTerminator(buffer);
-		size_t pos = 0;
-		// Find the first null char.
-		while(pos < size && buffer[pos] != '\0')
-		{
-			pos++;
-		}
-		// Remove everything after the null char.
-		while(pos < size)
-		{
-			buffer[pos++] = '\0';
-		}
-	}
-
-	inline void FixNullString(std::string & str)
-	{
-		for(std::size_t i = 0; i < str.length(); ++i)
-		{
-			if(str[i] == '\0')
-			{
-				// if we copied \0 in the middle of the buffer, terminate std::string here
-				str.resize(i);
-				break;
-			}
-		}
-	}
-
-
-
 #if MPT_COMPILER_MSVC
 #pragma warning(pop)
 #endif // MPT_COMPILER_MSVC
@@ -332,3 +297,26 @@ namespace String
 
 
 OPENMPT_NAMESPACE_END
+
+
+
+template <typename Tchar>
+struct mpt::make_string_type<OPENMPT_NAMESPACE::mpt::StringModeBufRefImpl<Tchar>> {
+	using type = std::basic_string<typename std::remove_const<Tchar>::type>;
+};
+
+template <typename Tchar>
+struct mpt::make_string_view_type<OPENMPT_NAMESPACE::mpt::StringModeBufRefImpl<Tchar>> {
+	using type = std::basic_string_view<typename std::remove_const<Tchar>::type>;
+};
+
+
+template <std::size_t len, OPENMPT_NAMESPACE::mpt::String::ReadWriteMode mode>
+struct mpt::make_string_type<OPENMPT_NAMESPACE::mpt::modecharbuf<len, mode>> {
+	using type = std::string;
+};
+
+template <std::size_t len, OPENMPT_NAMESPACE::mpt::String::ReadWriteMode mode>
+struct mpt::make_string_view_type<OPENMPT_NAMESPACE::mpt::modecharbuf<len, mode>> {
+	using type = std::string_view;
+};

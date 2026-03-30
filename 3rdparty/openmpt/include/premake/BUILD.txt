@@ -18,7 +18,7 @@ BUILDING FROM A SOURCE PACKAGE
  officially supported toolsets in the build/ folder. Build the release
  configuration and you will be ready to go. For makefiles:
 
-    $ cd build/gmake2.unix
+    $ cd build/gmake.unix
     $ make config=release
 
  The binaries will be placed in the ./bin/release directory.
@@ -27,11 +27,27 @@ BUILDING FROM A SOURCE PACKAGE
 BUILDING FROM THE REPOSITORY
 
  If you have pulled sources from the Premake source repository, you can
- use `Bootstrap.mak` to generate your first premake executable:
+ use `Bootstrap.sh` or `Bootstrap.bat` to generate your first premake executable:
 
-    $ make -f Bootstrap.mak PLATFORM
+ On Windows:
 
- Where PLATFORM can be osx or linux.
+    $ ./Bootstrap.bat
+
+ On other platforms:
+
+    $ ./Bootstrap.sh
+
+Alternatively, you may call the Makefile directly:
+
+    $ make -f Bootstrap.mak HOST_PLATFORM
+
+ Where HOST_PLATFORM can be osx or linux.
+
+ The target architecture for the Makefile defaults to x86. If you are building
+ for something else you can set PLATFORM explicitly e.g. for Apple Silicon:
+
+    $ make -f Bootstrap.mak osx PLATFORM=ARM64
+
  On Windows with Visual Studio use nmake:
 
     $ nmake -f Bootstrap.mak windows
@@ -54,7 +70,7 @@ BUILDING FROM THE REPOSITORY
  files for your toolset by running a command like the following in the
  top-level Premake directory:
 
-    $ premake5 gmake2  # for makefiles
+    $ premake5 gmake  # for makefiles
     $ premake5 vs2012 # for a Visual Studio 2012 solution
     $ premake --help  # to see a list of supported toolsets
 
@@ -99,3 +115,12 @@ RUNTIME SCRIPT LOADING
  able to find other, custom scripts, you can also set a search path with the
  PREMAKE_PATH environment variable. Set it just like you would set your
  system PATH variable.
+
+BUILDING deb BINARY PACKAGE
+
+ 0. sudo apt install devscripts
+ 1. bootstrap the premake
+ 2. ./bin/release/premake5 gmake
+ 3. cp ./packages/debian ./debian
+ 4. debuild --no-lintian --no-sign
+ 5. the built package should appear in the parent dir.

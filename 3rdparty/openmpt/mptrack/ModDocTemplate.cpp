@@ -9,12 +9,14 @@
 
 
 #include "stdafx.h"
+#include "ModDocTemplate.h"
 #include "FolderScanner.h"
 #include "Mainfrm.h"
 #include "Moddoc.h"
-#include "ModDocTemplate.h"
+#include "Mptrack.h"
 #include "Reporting.h"
 #include "SelectPluginDialog.h"
+#include "TrackerSettings.h"
 #include "../soundlib/plugins/PluginManager.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -96,6 +98,7 @@ void CModDocTemplate::AddDocument(CDocument *doc)
 {
 	CMultiDocTemplate::AddDocument(doc);
 	m_documents.insert(static_cast<CModDoc *>(doc));
+	// At this point we don't know yet if opening the document is going to be successful, so don't call UpdateDocumentCount()
 }
 
 
@@ -103,6 +106,7 @@ void CModDocTemplate::RemoveDocument(CDocument *doc)
 {
 	CMultiDocTemplate::RemoveDocument(doc);
 	m_documents.erase(static_cast<CModDoc *>(doc));
+	CMainFrame::GetMainFrame()->UpdateDocumentCount();
 }
 
 
@@ -116,7 +120,7 @@ CDocument *CModDocManager::OpenDocumentFile(LPCTSTR lpszFileName, BOOL bAddToMRU
 {
 	const mpt::PathString filename = (lpszFileName ? mpt::PathString::FromCString(lpszFileName) : mpt::PathString());
 
-	if(filename.IsDirectory())
+	if(mpt::native_fs{}.is_directory(filename))
 	{
 		FolderScanner scanner(filename, FolderScanner::kOnlyFiles | FolderScanner::kFindInSubDirectories);
 		mpt::PathString file;
@@ -128,25 +132,26 @@ CDocument *CModDocManager::OpenDocumentFile(LPCTSTR lpszFileName, BOOL bAddToMRU
 		return pDoc;
 	}
 
-	if(const auto fileExt = filename.GetFileExt(); !mpt::PathString::CompareNoCase(fileExt, P_(".dll")) || !mpt::PathString::CompareNoCase(fileExt, P_(".vst3")))
+	if(const auto fileExt = filename.GetFilenameExtension(); !mpt::PathCompareNoCase(fileExt, P_(".dll")) || !mpt::PathCompareNoCase(fileExt, P_(".vst3")))
 	{
 		if(auto plugManager = theApp.GetPluginManager(); plugManager != nullptr)
 		{
-			if(auto plugLib = plugManager->AddPlugin(filename, TrackerSettings::Instance().BrokenPluginsWorkaroundVSTMaskAllCrashes); plugLib != nullptr)
+			bool isPlugin = false;
+			for(VSTPluginLib *plugLib : plugManager->AddPlugin(filename, TrackerSettings::Instance().BrokenPluginsWorkaroundVSTMaskAllCrashes))
 			{
+				isPlugin = true;
 				if(!CSelectPluginDlg::VerifyPlugin(plugLib, nullptr))
-				{
 					plugManager->RemovePlugin(plugLib);
-				}
-				return nullptr;
 			}
+			if(isPlugin)
+				return nullptr;
 		}
 	}
 
 	CDocument *pDoc = CDocManager::OpenDocumentFile(lpszFileName, bAddToMRU);
 	if(pDoc == nullptr && !filename.empty())
 	{
-		if(!filename.IsFile())
+		if(!mpt::native_fs{}.is_file(filename))
 		{
 			Reporting::Error(MPT_CFORMAT("Unable to open \"{}\": file does not exist.")(filename.ToCString()));
 			theApp.RemoveMruItem(filename);

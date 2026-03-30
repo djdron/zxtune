@@ -85,6 +85,8 @@ struct MMCMPSubBlock
 			return false;
 		if(size > unpackedSize - position)
 			return false;
+		if(size == 0)
+			return false;
 		if(unpackedData.size() < position + size)
 			unpackedData.resize(position + size);
 		return true;
@@ -185,7 +187,7 @@ bool UnpackMMCMP(std::vector<ContainerItem> &containerItems, FileReader &file, C
 
 		if(blkPos + sizeof(MMCMPBlock) + blk.sub_blk * sizeof(MMCMPSubBlock) >= file.GetLength())
 			return false;
-		uint32 memPos = blkPos + sizeof(MMCMPBlock) + blk.sub_blk * sizeof(MMCMPSubBlock);
+		uint32 memPos = blkPos + static_cast<uint32>(sizeof(MMCMPBlock)) + blk.sub_blk * static_cast<uint32>(sizeof(MMCMPSubBlock));
 
 #ifdef MMCMP_LOG
 		MPT_LOG_GLOBAL(LogDebug, "MMCMP", MPT_UFORMAT("block {}: flags={} sub_blocks={}")(nBlock, mpt::ufmt::HEX0<4>(static_cast<uint16>(blk.flags)), static_cast<uint16>(blk.sub_blk)));
@@ -219,7 +221,9 @@ bool UnpackMMCMP(std::vector<ContainerItem> &containerItems, FileReader &file, C
 			if(!psubblk[subblk].Validate(unpackedData, unpackedSize))
 				return false;
 			char *pDest = &(unpackedData[psubblk[subblk].position]);
-			uint32 dwSize = psubblk[subblk].size;
+			uint32 dwSize = psubblk[subblk].size & ~1u;
+			if(!dwSize)
+				return false;
 			uint32 dwPos = 0;
 			uint32 numbits = blk.num_bits;
 			uint32 oldval = 0;
@@ -227,6 +231,7 @@ bool UnpackMMCMP(std::vector<ContainerItem> &containerItems, FileReader &file, C
 #ifdef MMCMP_LOG
 			MPT_LOG_GLOBAL(LogDebug, "MMCMP", MPT_UFORMAT("  16-bit block: pos={} size={} {} {}")(psubblk->position, psubblk->size, (blk.flags & MMCMP_DELTA) ? U_("DELTA ") : U_(""), (blk.flags & MMCMP_ABS16) ? U_("ABS16 ") : U_("")));
 #endif
+			if(numbits > 15) return false;
 			if(!file.Seek(memPos + blk.tt_entries)) return false;
 			if(!file.CanRead(blk.pk_size - blk.tt_entries)) return false;
 			BitReader bitFile{ file.GetChunk(blk.pk_size - blk.tt_entries) };
@@ -289,7 +294,9 @@ bool UnpackMMCMP(std::vector<ContainerItem> &containerItems, FileReader &file, C
 							break;
 						if(!psubblk[subblk].Validate(unpackedData, unpackedSize))
 							return false;
-						dwSize = psubblk[subblk].size;
+						dwSize = psubblk[subblk].size & ~1u;
+						if(!dwSize)
+							return false;
 						pDest = &(unpackedData[psubblk[subblk].position]);
 					}
 				}
@@ -310,6 +317,7 @@ bool UnpackMMCMP(std::vector<ContainerItem> &containerItems, FileReader &file, C
 			uint32 numbits = blk.num_bits;
 			uint32 oldval = 0;
 			if(blk.tt_entries > sizeof(ptable)
+				|| numbits > 7
 				|| !file.Seek(memPos)
 				|| file.ReadRaw(mpt::span(ptable, blk.tt_entries)).size() < blk.tt_entries)
 				return false;

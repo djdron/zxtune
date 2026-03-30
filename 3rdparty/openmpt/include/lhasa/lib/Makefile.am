@@ -27,6 +27,7 @@ SRC =                                                   \
 	lh6_decoder.c                                   \
 	lh7_decoder.c                                   \
 	lhx_decoder.c                                   \
+	lk7_decoder.c                                   \
 	lz5_decoder.c                                   \
 	lzs_decoder.c                                   \
 	pm1_decoder.c                                   \
@@ -37,7 +38,7 @@ liblhasatest_a_SOURCES=$(SRC) $(HEADER_FILES)
 
 liblhasa_la_CFLAGS=$(MAIN_CFLAGS)
 liblhasa_la_SOURCES=$(SRC) $(HEADER_FILES)
+liblhasa_la_LDFLAGS=-no-undefined -version-info $(LT_LIBRARY_VERSION)
 
 clean-local:
 	rm -f *.gcno *.gcda *.c.gcov
-

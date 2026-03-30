@@ -18,7 +18,24 @@
 #if defined(MPT_WITH_ZLIB) && defined(MPT_WITH_MINIZIP)
 #include <contrib/minizip/unzip.h>
 #elif defined(MPT_WITH_MINIZ)
+#if MPT_COMPILER_MSVC
+#pragma warning(push)
+#pragma warning(disable : 4505) // unreferenced function with internal linkage has been removed
+#elif MPT_COMPILER_GCC
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#elif MPT_COMPILER_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+#endif
 #include <miniz/miniz.h>
+#if MPT_COMPILER_MSVC
+//#pragma warning(pop)
+#elif MPT_COMPILER_GCC
+#pragma GCC diagnostic pop
+#elif MPT_COMPILER_CLANG
+#pragma clang diagnostic pop
+#endif
 #endif
 
 
@@ -79,11 +96,11 @@ struct ZipFileAbstraction
 		default:
 			return -1;
 		}
-		if(!mpt::in_range<FileReader::off_t>(destination))
+		if(!mpt::in_range<FileReader::pos_type>(destination))
 		{
 			return 1;
 		}
-		return (file.Seek(static_cast<FileReader::off_t>(destination)) ? 0 : 1);
+		return (file.Seek(static_cast<FileReader::pos_type>(destination)) ? 0 : 1);
 	}
 
 	static int ZCALLBACK fclose_mem(voidpf, voidpf)
@@ -136,7 +153,7 @@ CZipArchive::CZipArchive(FileReader &file)
 				if(unzGetGlobalComment(zipFile, commentData.data(), info.size_comment) >= 0)
 				{
 					commentData[info.size_comment - 1] = '\0';
-					comment = mpt::ToUnicode(mpt::IsUTF8(commentData.data()) ? mpt::Charset::UTF8 : mpt::Charset::CP437, commentData.data());
+					comment = mpt::ToUnicode(mpt::is_utf8(commentData.data()) ? mpt::Charset::UTF8 : mpt::Charset::CP437, commentData.data());
 				}
 			}
 		}
@@ -217,6 +234,21 @@ bool CZipArchive::ExtractFile(std::size_t index)
 #elif defined(MPT_WITH_MINIZ)
 
 
+static size_t miniz_user_read(void *pOpaque, mz_uint64 file_ofs, void *pBuf, size_t n)
+{
+	FileReader &file = *mpt::void_ptr<FileReader>(pOpaque);
+	if(!mpt::in_range<FileReader::pos_type>(file_ofs))
+	{
+		return 0;
+	}
+	if(!file.Seek(static_cast<FileReader::pos_type>(file_ofs)))
+	{
+		return 0;
+	}
+	return file.ReadRaw(mpt::as_span(mpt::void_cast<std::byte*>(pBuf), n)).size();
+}
+
+
 CZipArchive::CZipArchive(FileReader &file) : ArchiveBase(file)
 {
 	zipFile = new mz_zip_archive();
@@ -224,8 +256,9 @@ CZipArchive::CZipArchive(FileReader &file) : ArchiveBase(file)
 	mz_zip_archive *zip = static_cast<mz_zip_archive*>(zipFile);
 	
 	(*zip) = {};
-	const auto fileData = file.GetRawData();
-	if(!mz_zip_reader_init_mem(zip, fileData.data(), fileData.size(), 0))
+	zip->m_pIO_opaque = mpt::void_ptr<FileReader>(&file);
+	zip->m_pRead = &miniz_user_read;
+	if(!mz_zip_reader_init(zip, file.GetLength(), 0))
 	{
 		delete zip;
 		zip = nullptr;

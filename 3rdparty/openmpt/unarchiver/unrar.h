@@ -11,6 +11,13 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#ifdef MPT_WITH_UNRAR
+
+#include "mpt/io_file_adapter/fileadapter.hpp"
+#include "../common/FileReader.h"
+
+#endif // MPT_WITH_UNRAR
+
 #include "archive.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -23,7 +30,7 @@ class CRarArchive
 
 protected:
 
-	std::unique_ptr<OnDiskFileWrapper> diskFile;
+	std::unique_ptr<mpt::IO::FileAdapter<FileCursor>> diskFile;
 	bool captureCurrentFile = false;
 
 public:

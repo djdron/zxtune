@@ -996,7 +996,211 @@ namespace Module::Mpt
       ,
       "Symphonie"sv
       //, "SYMMOD"
-    }
+    },
+    {
+      "667"_id
+      ,
+      "'g'f"              //magic
+      "(20-ff{8}){64}"    //instruments
+      "01-0f"             //speed
+      "00-80"             //orders
+      ""sv
+      ,
+      "Composer 667"sv
+    },
+    {
+      "CBA"_id
+      ,
+      "'C'B'A f9"         //magic
+      "?{32}"             //title
+      "1a"                //eof
+      "??"                //messagelength
+      "01-20"             //numChannels
+      "? ? ?"             //lastPattern, numOrders, numSamples
+      "01-ff"             //speed
+      "20-ff"             //tempo
+      ""sv
+      ,
+      "Chuck Biscuits / Black Artist"sv
+    },
+    {
+      "ETX"_id
+      ,
+      "'E'A'S'Y'T'R'A'X' '1'.'0 01 00" //magic
+      "01-ff"                          //tempo
+      "00-1f"                          //lastPattern
+      "(??00-7f00){4}"                 //le offsets up to 0x800000
+      ""sv
+      ,
+      "EasyTrax"sv
+    },
+    {
+      "FC"_id
+      ,
+      "'S|'F"                  //magic
+      "'M|'C"
+      "'O|'1"
+      "'D|'4"
+      "????"                   //sequenceSize
+      "("
+      "00 00-08 ??"            //be offset up to 0x80000
+      "0000 00-40 %xx000000"   //be size up to 0x4000, multiple of 0x40
+      "){3}"                   //
+      "(00 00-08 ? ?){2}"       //be offsets up to 0x80000
+      ""sv
+      ,
+      "Future Composer 1.0 - 1.4"sv
+    },
+    {
+      "FTM"_id
+      ,
+      "'F'T'M'N"              //magic
+      "03"                    //version
+      "00-3f"                 //numSamples
+      "??"                    //numMeasures
+      "10-4f?"                //be tempo 0x1000..0x4fff
+      "00-0b"                 //tonality
+      "?"                     //muteStatus
+      "00-3f"                 //globalVolume
+      "%000000xx"             //flags
+      "01-18"                 //tickperrow
+      "04-60"                 //rowspermeasure
+      "?{64}"                 //title+author
+      "00-40"                 //numEffects
+      "00"                    //padding
+      ""sv
+      ,
+      "Face The Music"sv
+    },
+    {
+      "GMC"_id
+      ,
+      "("
+      "00 00-1f ? %xxxxxxx0"  //be offset 0..0x1fffff, even
+      "00-7f ?"               //be length up to 0x7fff
+      "00"                    //zero
+      "00-40"                 //volume
+      "00 00-1f ? %xxxxxxx0"  //be address 0..0x1fffff, even
+      "??"                    //loop length
+      "00-7f ?"               //be data start up to 0x7fff
+      "){15}"                 //samples
+      "00 00 00"              //zeroes
+      "01-64"                 //orders count 1..100
+      "(%xxxxxx00 00){100}"   //orders, be multiple of 1024
+      ""sv
+      ,
+      "Game Music Creator"sv
+    },
+    {
+      "GTK"_id
+      ,
+      "'G'T'K"                //magic
+      "01-04"                 //version
+      "?{32}?{160}"           //name+comment
+      "00 ?"                  //be samples up to 0xff
+      "00-01 ?"               //be rows up to 0x100
+      "00 01-20"              //be channels 1..0x20
+      "00-01 ?"               //be orders up to 0x100
+      ""sv
+      ,
+      "Graoumf Tracker 1/2"sv
+    },
+    {
+      "IMS"_id
+      ,
+      "(00 | 20-ff){20}"       // song name
+      "("
+      "?{22}"                  //name
+      "00-80 ?"                //be length
+      "00"                     //finetune
+      "?"                      //volume
+      "?? ??"                  //loop start+length
+      "){31}"                  //samples
+      "01-80"                  //numOrders
+      ""sv
+      ,
+      "Images Music System"sv
+    },
+    {
+      "KRIS"_id
+      ,
+      "?{952}"
+      "'K'R'I'S"              //magic
+      "00-80"                 //numOrders
+      "00-7f"                 //restartPos
+      ""sv
+      ,
+      "ChipTracker"sv
+    },
+    /*{
+      "NRU"_id
+      ,
+      "("
+      "00 00-40"              //be volume
+      "00 00-1f ? %xxxxxxx0"  //be addr up to 0x1fffff, even
+      "00-7f ?"               //be length up to 0x7fff
+      "?{4} ?{2} ?{2}"        //be loop addr,len, finetune
+      "){31}"
+      "?{454}"
+      ""sv
+      ,
+      "NoiseRunner"sv
+    },*/
+    {
+      "PUMA"_id
+      ,
+      "(00 | 20-ff){12}"      //songName
+      "00 ?"                  //be lastOrder up to 0xff
+      "00 01-80"              //be numPatterns 1..0x80
+      "00 01-1f"              //be numInstruments 1..0x1f
+      "00 00"                 //unknown
+      "(00 00-10 ? ?){10}"    //be sampleOffset up to 0x10'0000
+      ""sv
+      ,
+      "PumaTracker"sv
+    },
+    {
+      "RTM"_id
+      ,
+      "'R'T'M'M"           //magic
+      "20"                 //space
+      "?{32}"              //name
+      "1a"                 //eof
+      "00-12 01"           //le version 0x100..0x112
+      ""sv
+      ,
+      "Real Tracker 2"sv
+    },
+    /*{
+      "SS"_id
+      ,
+      "'S|'I|'I"
+      "'O|'A|'A"
+      "'N|'N|'N"
+      "'G|'9|'9"
+      "'O|'O|'2"
+      "'K|'K|'a"          //magic
+      "03-ff %xx000000"   //be multiple of 64, from 14*64
+      "00 00-1f"          //be speed up to 15
+      "? 00-80"           //be numOrders with lo word up to 128
+      ""sv
+      ,
+      "Apple IIgs SoundSmith / MegaTracker"sv
+    },*/ // only w/external samples
+    {
+      "TCB"_id
+      ,
+      "'A'N' 'C'O'O'L '.|'!"  //magic
+      "00 00 00 00-7f"        //be numPatterns up to 127
+      "00-0e"                 //tempo
+      "00"                    //unused
+      "(00-7f){128}"          //orders
+      "00-7f"                 //numOrders
+      "00"                    //unused
+      ""sv
+      ,
+      "TCB Tracker"sv
+    },
   };
   // clang-format on
 }  // namespace Module::Mpt

@@ -12,40 +12,65 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#include "dlg_misc.h"	// for keyboard control
+#include "DialogBase.h"
+#include "dlg_misc.h"  // for keyboard control
+#include "ColorPickerButton.h"
 #include "EffectInfo.h"
 #include "PatternCursor.h"
-#include "TrackerSettings.h"
+#include "PluginComboBox.h"
 #include "ResizableDialog.h"
-#include "ColorPickerButton.h"
+#include "TrackerSettings.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
 class CModDoc;
 struct SplitKeyboardSettings;
 
-class CPatternPropertiesDlg: public CDialog
+class CPatternPropertiesDlg : public DialogBase
 {
-protected:
-	CModDoc &modDoc;
-	TempoSwing m_tempoSwing;
-	PATTERNINDEX m_nPattern;
-
 public:
-	CPatternPropertiesDlg(CModDoc &modParent, PATTERNINDEX nPat, CWnd *parent=NULL)
-		: CDialog(IDD_PATTERN_PROPERTIES, parent)
-		, modDoc(modParent)
-		, m_nPattern(nPat)
-	{ }
+	CPatternPropertiesDlg(CModDoc &modParent, PATTERNINDEX nPat, CWnd *parent = nullptr);
 
 protected:
+	void DoDataExchange(CDataExchange *pDX) override;
 	BOOL OnInitDialog() override;
 	void OnOK() override;
+
+	afx_msg void OnChangeColor();
+	afx_msg void OnResetColor();
 	afx_msg void OnHalfRowNumber();
 	afx_msg void OnDoubleRowNumber();
 	afx_msg void OnOverrideSignature();
 	afx_msg void OnTempoSwing();
+	afx_msg void OnPatternChanged();
+	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar);
+
 	DECLARE_MESSAGE_MAP()
+
+	struct PatternProperties
+	{
+		std::string name;
+		TempoSwing tempoSwing;
+		ROWINDEX numRows = 0, rowsPerBeat = 0, rowsPerMeasure = 0;
+		ROWINDEX resizeWarningShown = 0;
+		uint32 color = CPattern::INVALID_COLOR;
+		bool resizeWarningAtEnd = false;
+		bool resizeAtEnd = true, repeatContents = false;
+	};
+
+	PatternProperties& GetPatternProperties(PATTERNINDEX pat);
+	PatternProperties& GetPatternProperties() { return GetPatternProperties(m_nPattern); }
+	void StorePatternProperties();
+	void SetCurrentPattern(PATTERNINDEX pat);
+	bool ValidatePatternProperties();
+
+	CModDoc &m_modDoc;
+	std::map<PATTERNINDEX, PatternProperties> m_properties;
+	PATTERNINDEX m_nPattern;
+	CSpinButtonCtrl m_spinPattern, m_spinRPB, m_spinRPM;
+	CComboBox m_numRows;
+	ColorPickerButton m_colorBtn;
+	bool m_locked = true;
 };
 
 
@@ -53,10 +78,11 @@ protected:
 // Command Editing
 
 
-class CEditCommand: public CDialog
+class CEditCommand : public DialogBase
 {
 protected:
-	CComboBox cbnNote, cbnInstr, cbnVolCmd, cbnCommand, cbnPlugParam;
+	CComboBox cbnNote, cbnVolCmd, cbnCommand, cbnPlugParam;
+	PluginComboBox cbnInstr;
 	CSliderCtrl sldVolParam, sldParam;
 	CSoundFile &sndFile;
 	const CModSpecifications *oldSpecs = nullptr;
@@ -116,7 +142,7 @@ protected:
 	CComboBox m_CbnShortcut, m_CbnBaseNote, m_CbnNote[MPTChord::notesPerChord - 1];
 	MPTChords m_chords;
 	MPTChord::NoteType m_mouseDownKey = MPTChord::noNote, m_dragKey = MPTChord::noNote;
-	
+
 	static constexpr MPTChord::NoteType CHORD_MIN = -24;
 	static constexpr MPTChord::NoteType CHORD_MAX = 24;
 
@@ -129,6 +155,7 @@ protected:
 	void DoDataExchange(CDataExchange* pDX) override;
 	BOOL OnInitDialog() override;
 	void OnOK() override;
+	void OnDPIChanged() override;
 
 	void UpdateKeyboard();
 	afx_msg LRESULT OnKeyboardNotify(WPARAM, LPARAM);
@@ -145,7 +172,7 @@ protected:
 /////////////////////////////////////////////////////////////////////////
 // Keyboard Split Settings (pattern editor)
 
-class CSplitKeyboardSettings : public CDialog
+class CSplitKeyboardSettings : public DialogBase
 {
 protected:
 	CComboBox m_CbnSplitInstrument, m_CbnSplitNote, m_CbnOctaveModifier, m_CbnSplitVolume;
@@ -154,7 +181,7 @@ protected:
 public:
 	SplitKeyboardSettings &m_Settings;
 
-	CSplitKeyboardSettings(CWnd *parent, CSoundFile &sf, SplitKeyboardSettings &settings) : CDialog(IDD_KEYBOARD_SPLIT, parent), sndFile(sf), m_Settings(settings) { }
+	CSplitKeyboardSettings(CWnd *parent, CSoundFile &sf, SplitKeyboardSettings &settings);
 
 protected:
 	void DoDataExchange(CDataExchange* pDX) override;
@@ -171,7 +198,7 @@ protected:
 /////////////////////////////////////////////////////////////////////////
 // Show channel properties from pattern editor
 
-class QuickChannelProperties : public CDialog
+class QuickChannelProperties : public DialogBase
 {
 protected:
 	CModDoc *m_document = nullptr;
@@ -212,11 +239,43 @@ protected:
 	afx_msg void OnPickPrevColor();
 	afx_msg void OnPickNextColor();
 	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM);
-	afx_msg BOOL OnToolTipText(UINT, NMHDR *pNMHDR, LRESULT *pResult);
 
-	BOOL PreTranslateMessage(MSG *pMsg);
+	BOOL PreTranslateMessage(MSG *pMsg) override;
+	CString GetToolTipText(UINT id, HWND hwnd) const override;
 
 	DECLARE_MESSAGE_MAP();
 };
+
+
+class MetronomeSettingsDlg : public DialogBase
+{
+public:
+	MetronomeSettingsDlg(CWnd *parent = nullptr);
+
+protected:
+	void DoDataExchange(CDataExchange *pDX) override;
+	BOOL OnInitDialog() override;
+	CString GetToolTipText(UINT id, HWND hwnd) const override;
+
+	CString GetVolumeString() const;
+	void SetSampleInfo(const mpt::PathString &path, CComboBox &combo, CEdit &edit, CButton &browseButton);
+	bool GetSampleInfo(Setting<mpt::PathString> &path, CComboBox &combo, CEdit &edit, CButton &browseButton);
+	mpt::PathString BrowseForSample(const mpt::PathString &path);
+
+	afx_msg void OnHScroll(UINT, UINT, CScrollBar *);
+	afx_msg void OnToggleMetronome();
+	afx_msg void OnSampleChanged();
+	afx_msg void OnBrowseMeasure();
+	afx_msg void OnBrowseBeat();
+
+	DECLARE_MESSAGE_MAP();
+
+protected:
+	CSliderCtrl m_volumeSlider;
+	CComboBox m_measureCombo, m_beatCombo;
+	CEdit m_measureEdit, m_beatEdit;
+	CButton m_measureButton, m_beatButton;
+};
+
 
 OPENMPT_NAMESPACE_END

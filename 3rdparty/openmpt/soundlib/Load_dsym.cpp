@@ -11,18 +11,20 @@
 #include "stdafx.h"
 #include "Loaders.h"
 #include "BitReader.h"
+#include "mpt/endian/int24.hpp"
 
 OPENMPT_NAMESPACE_BEGIN
 
 struct DSymFileHeader
 {
+	using uint24le = mpt::uint24le;
+
 	char     magic[8];
 	uint8le  version;      // 0 / 1
 	uint8le  numChannels;  // 1...8
 	uint16le numOrders;    // 0...4096
 	uint16le numTracks;    // 0...4096
-	uint16le infoLenLo;
-	uint8le  infoLenHi;
+	uint24le infoLen;
 
 	bool Validate() const
 	{
@@ -112,7 +114,7 @@ static std::vector<std::byte> DecompressDSymLZW(FileReader &file, uint32 size)
 
 			dictionary[nextIndex].value = match[writeOffset];
 			dictionary[nextIndex].prev = prevCode;
-			
+
 			nextIndex++;
 			if(nextIndex != MaxNodes && nextIndex == (1u << codeSize))
 				codeSize++;
@@ -123,14 +125,16 @@ static std::vector<std::byte> DecompressDSymLZW(FileReader &file, uint32 size)
 	MPT_ASSERT(output.size() == size);
 
 	// Align length to 4 bytes
-	file.Seek(startPos + ((bitFile.GetPosition() - startPos + 3u) & ~FileReader::off_t(3)));
+	file.Seek(startPos + ((bitFile.GetPosition() - startPos + 3u) & ~FileReader::pos_type(3)));
+	// cppcheck false-positive
+	// cppcheck-suppress returnDanglingLifetime
 	return output;
 }
 
 
 static std::vector<std::byte> DecompressDSymSigmaDelta(FileReader &file, uint32 size)
 {
-	const uint8 maxRunLength = file.ReadUint8();
+	const uint8 maxRunLength = std::max(file.ReadUint8(), uint8(1));
 
 	BitReader bitFile(file);
 	const auto startPos = bitFile.GetPosition();
@@ -141,7 +145,7 @@ static std::vector<std::byte> DecompressDSymSigmaDelta(FileReader &file, uint32 
 	std::vector<std::byte> output(size);
 
 	uint32 pos = 0;
-	uint8 runLength = 0;
+	uint8 runLength = maxRunLength;
 	uint8 numBits = 8;
 	uint8 accum = static_cast<uint8>(bitFile.ReadBits(numBits));
 	output[pos++] = mpt::byte_cast<std::byte>(accum);
@@ -155,7 +159,7 @@ static std::vector<std::byte> DecompressDSymSigmaDelta(FileReader &file, uint32 
 			if(numBits >= 9)
 				break;
 			numBits++;
-			runLength = 0;
+			runLength = maxRunLength;
 			continue;
 		}
 
@@ -165,22 +169,23 @@ static std::vector<std::byte> DecompressDSymSigmaDelta(FileReader &file, uint32 
 			accum += static_cast<uint8>(value >> 1);
 		output[pos++] = mpt::byte_cast<std::byte>(accum);
 
-		if((value << 1) >= (1u << numBits))
+		// Reset run length if high bit is set
+		if((value >> (numBits - 1u)) != 0)
 		{
-			runLength = 0;
+			runLength = maxRunLength;
 			continue;
 		}
 		// Decrease bit width
-		if(++runLength >= maxRunLength)
+		if(--runLength == 0)
 		{
 			if(numBits > 1)
 				numBits--;
-			runLength = 0;
+			runLength = maxRunLength;
 		}
 	}
 
 	// Align length to 4 bytes
-	file.Seek(startPos + ((bitFile.GetPosition() - startPos + 3u) & ~FileReader::off_t(3)));
+	file.Seek(startPos + ((bitFile.GetPosition() - startPos + 3u) & ~FileReader::pos_type(3)));
 	return output;
 }
 
@@ -227,24 +232,22 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 	file.Rewind();
 	if(!file.ReadStruct(fileHeader) || !fileHeader.Validate())
 		return false;
-	if(!file.CanRead(mpt::saturate_cast<FileReader::off_t>(fileHeader.GetHeaderMinimumAdditionalSize())))
+	if(!file.CanRead(mpt::saturate_cast<FileReader::pos_type>(fileHeader.GetHeaderMinimumAdditionalSize())))
 		return false;
 	if(loadFlags == onlyVerifyHeader)
 		return true;
 
-	InitializeGlobals(MOD_TYPE_MOD);
+	InitializeGlobals(MOD_TYPE_MOD, fileHeader.numChannels);
 	m_SongFlags.set(SONG_IMPORTED | SONG_AMIGALIMITS);
 	m_SongFlags.reset(SONG_ISAMIGA);
-	m_nChannels = fileHeader.numChannels;
 	m_nSamples = 63;
 
-	for(CHANNELINDEX chn = 0; chn < m_nChannels; chn++)
+	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 	{
-		InitChannel(chn);
 		ChnSettings[chn].nPan = (((chn & 3) == 1) || ((chn & 3) == 2)) ? 64 : 192;
 	}
 
-	uint8 sampleNameLength[64];
+	uint8 sampleNameLength[64] = {};
 	for(SAMPLEINDEX smp = 1; smp <= m_nSamples; smp++)
 	{
 		Samples[smp].Initialize(MOD_TYPE_MOD);
@@ -257,28 +260,27 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 
 	const auto allowedCommands = file.ReadArray<uint8, 8>();
 
-	std::vector<std::byte> sequenceData;
+	std::vector<uint16le> sequence;
 	if(fileHeader.numOrders)
 	{
+		std::vector<std::byte> sequenceData;
 		const uint32 sequenceSize = fileHeader.numOrders * fileHeader.numChannels * 2u;
 		if(!ReadDSymChunk(file, sequenceData, sequenceSize))
 			return false;
+		FileReader sequenceChunk = FileReader(mpt::as_span(sequenceData));
+		sequenceChunk.ReadVector(sequence, sequenceData.size() / 2u);
 	}
-	const auto sequence = mpt::as_span(reinterpret_cast<uint16le *>(sequenceData.data()), sequenceData.size() / 2u);
 
 	std::vector<std::byte> trackData;
-	if(fileHeader.numTracks)
+	trackData.reserve(fileHeader.numTracks * 256u);
+	// For some reason, patterns are stored in 512K chunks
+	for(uint16 offset = 0; offset < fileHeader.numTracks; offset += 2000)
 	{
-		trackData.reserve(fileHeader.numTracks * 256u);
-		// For some reason, patterns are stored in 512K chunks
-		for(uint16 offset = 0; offset < fileHeader.numTracks; offset += 2000)
-		{
-			const uint32 chunkSize = std::min(fileHeader.numTracks - offset, 2000) * 256;
-			std::vector<std::byte> chunk;
-			if(!ReadDSymChunk(file, chunk, chunkSize))
-				return false;
-			trackData.insert(trackData.end(), chunk.begin(), chunk.end());
-		}
+		const uint32 chunkSize = std::min(fileHeader.numTracks - offset, 2000) * 256;
+		std::vector<std::byte> chunk;
+		if(!ReadDSymChunk(file, chunk, chunkSize))
+			return false;
+		trackData.insert(trackData.end(), chunk.begin(), chunk.end());
 	}
 	const auto tracks = mpt::byte_cast<mpt::span<uint8>>(mpt::as_span(trackData));
 
@@ -289,14 +291,14 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 		if(!(loadFlags & loadPatternData) || !Patterns.Insert(pat, 64))
 			continue;
 
-		for(CHANNELINDEX chn = 0; chn < m_nChannels; chn++)
+		for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 		{
-			const uint16 track = sequence[pat * m_nChannels + chn];
+			const uint16 track = sequence[pat * GetNumChannels() + chn];
 			if(track >= fileHeader.numTracks)
 				continue;
 
 			ModCommand *m = Patterns[pat].GetpModCommand(0, chn);
-			for(ROWINDEX row = 0; row < 64; row++, m += m_nChannels)
+			for(ROWINDEX row = 0; row < 64; row++, m += GetNumChannels())
 			{
 				const auto data = tracks.subspan(track * 256 + row * 4, 4);
 				m->note = data[0] & 0x3F;
@@ -314,10 +316,9 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 				if(command == 0 && param == 0)
 					continue;
 
-				m->command = command;
 				m->param = static_cast<uint8>(param);
 				m->vol = static_cast<ModCommand::VOL>(param >> 8);
-				
+
 				switch(command)
 				{
 					case 0x00:  // 00 xyz Normal play or Arpeggio + Volume Slide Up
@@ -326,8 +327,7 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 					case 0x20:  // 20 xyz Normal play or Arpeggio + Volume Slide Down
 					case 0x21:  // 21 xyy Slide Up + Volume Slide Down
 					case 0x22:  // 22 xyy Slide Down + Volume Slide Down
-						m->command &= 0x0F;
-						ConvertModCommand(*m);
+						ConvertModCommand(*m, command & 0x0F, m->param);
 						if(m->vol)
 							m->volcmd = (command < 0x20) ? VOLCMD_VOLSLIDEUP : VOLCMD_VOLSLIDEDOWN;
 						break;
@@ -337,18 +337,22 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 					case 0x06:  // 06 xyz Vibrato + Volume Slide
 					case 0x07:  // 07 xyz Tremolo
 					case 0x0C:  // 0C xyy Set Volume
-						ConvertModCommand(*m);
+						ConvertModCommand(*m, command, m->param);
 						break;
 					case 0x09:  // 09 xxx Set Sample Offset
 						m->command = CMD_OFFSET;
-						m->param = mpt::saturate_cast<ModCommand::PARAM>(param >> 1);
+						m->param = static_cast<ModCommand::PARAM>(param >> 1);
+						if(param >= 0x200)
+						{
+							m->volcmd = VOLCMD_OFFSET;
+							m->vol >>= 1;
+						}
 						break;
 					case 0x0A:  // 0A xyz Volume Slide + Fine Slide Up
 					case 0x2A:  // 2A xyz Volume Slide + Fine Slide Down
 						if(param < 0xFF)
 						{
-							m->command &= 0x0F;
-							ConvertModCommand(*m);
+							ConvertModCommand(*m, command & 0x0F, m->param);
 						} else
 						{
 							m->command = CMD_MODCMDEX;
@@ -411,6 +415,9 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 						{
 							m->command = CMD_TEMPO;
 							m->param = mpt::saturate_cast<ModCommand::PARAM>(std::max(8, param + 4) / 8);
+#ifdef MODPLUG_TRACKER
+							m->param = std::max(m->param, ModCommand::PARAM(0x20));
+#endif
 						} else
 						{
 							m->command = CMD_NONE;
@@ -418,7 +425,7 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 						break;
 					case 0x2B:  // 2B xyy Line Jump
 						m->command = CMD_PATTERNBREAK;
-						for(CHANNELINDEX brkChn = 0; brkChn < m_nChannels; brkChn++)
+						for(CHANNELINDEX brkChn = 0; brkChn < GetNumChannels(); brkChn++)
 						{
 							ModCommand &cmd = *(m - chn + brkChn);
 							if(cmd.command != CMD_NONE)
@@ -476,8 +483,9 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 			mptSmp.nSustainEnd = mptSmp.nSustainStart + loopLen;
 			mptSmp.uFlags.set(CHN_SUSTAINLOOP);
 		}
-		mptSmp.nVolume = file.ReadUint8() * 4u;
+		mptSmp.nVolume = std::min(file.ReadUint8(), uint8(64)) * 4u;
 		mptSmp.nFineTune = MOD2XMFineTune(file.ReadUint8());
+		mptSmp.Set16BitCuePoints();
 
 		if(!mptSmp.nLength)
 			continue;
@@ -585,7 +593,7 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 		}
 	}
 
-	if(const uint32 infoLen = fileHeader.infoLenLo | (fileHeader.infoLenHi << 16); infoLen > 0)
+	if(const uint32 infoLen = fileHeader.infoLen.get(); infoLen > 0)
 	{
 		std::vector<std::byte> infoData;
 		if(!ReadDSymChunk(file, infoData, infoLen))
@@ -595,12 +603,13 @@ bool CSoundFile::ReadDSym(FileReader &file, ModLoadingFlags loadFlags)
 	}
 
 	m_modFormat.formatName = MPT_UFORMAT("Digital Symphony v{}")(fileHeader.version);
-	m_modFormat.type = U_("dsym");  // RISC OS doesn't use file extensions but this is a common abbreviation used for this tracker
-	m_modFormat.madeWithTracker = U_("Digital Symphony");
-	m_modFormat.charset = mpt::Charset::ISO8859_1;  // Close enough (RISC OS uses slightly customized variant)
+	m_modFormat.type = UL_("dsym");  // RISC OS doesn't use file extensions but this is a common abbreviation used for this tracker
+	m_modFormat.madeWithTracker = UL_("Digital Symphony");
+	m_modFormat.charset = mpt::Charset::RISC_OS;
 
 	return true;
 }
 
 
 OPENMPT_NAMESPACE_END
+

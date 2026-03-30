@@ -9,27 +9,33 @@
 
 
 #include "stdafx.h"
+#include "SampleConfigDlg.h"
 #include "Mainfrm.h"
 #include "Moddoc.h"
-#include "SampleConfigDlg.h"
+#include "Mptrack.h"
+#include "resource.h"
+#include "TrackerSettings.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
 BEGIN_MESSAGE_MAP(COptionsSampleEditor, CPropertyPage)
 	ON_WM_HSCROLL()
-	ON_EN_CHANGE(IDC_EDIT_UNDOSIZE,			&COptionsSampleEditor::OnUndoSizeChanged)
-	ON_EN_CHANGE(IDC_EDIT_FINETUNE,			&COptionsSampleEditor::OnSettingsChanged)
-	ON_EN_CHANGE(IDC_FLAC_COMPRESSION,		&COptionsSampleEditor::OnSettingsChanged)
-	ON_CBN_SELCHANGE(IDC_DEFAULT_FORMAT,	&COptionsSampleEditor::OnSettingsChanged)
-	ON_CBN_SELCHANGE(IDC_VOLUME_HANDLING,	&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO1,					&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO2,					&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO3,					&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_COMPRESS_ITI,			&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_PREVIEW_SAMPLES,			&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_NORMALIZE,				&COptionsSampleEditor::OnSettingsChanged)
-	ON_COMMAND(IDC_CURSORINHEX,				&COptionsSampleEditor::OnSettingsChanged)
+	ON_EN_CHANGE(IDC_EDIT_UNDOSIZE,       &COptionsSampleEditor::OnUndoSizeChanged)
+	ON_EN_CHANGE(IDC_EDIT_FINETUNE,       &COptionsSampleEditor::OnSettingsChanged)
+	ON_EN_CHANGE(IDC_FLAC_COMPRESSION,    &COptionsSampleEditor::OnSettingsChanged)
+	ON_CBN_SELCHANGE(IDC_DEFAULT_FORMAT,  &COptionsSampleEditor::OnSettingsChanged)
+	ON_CBN_SELCHANGE(IDC_VOLUME_HANDLING, &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO1,                &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO2,                &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO3,                &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO4,                &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO5,                &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO6,                &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_COMPRESS_ITI,          &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_PREVIEW_SAMPLES,       &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_NORMALIZE,             &COptionsSampleEditor::OnSettingsChanged)
+	ON_COMMAND(IDC_CURSORINHEX,           &COptionsSampleEditor::OnSettingsChanged)
 END_MESSAGE_MAP()
 
 
@@ -37,9 +43,18 @@ void COptionsSampleEditor::DoDataExchange(CDataExchange* pDX)
 {
 	CPropertyPage::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(COptionsSampleEditor)
-	DDX_Control(pDX, IDC_DEFAULT_FORMAT,		m_cbnDefaultSampleFormat);
-	DDX_Control(pDX, IDC_VOLUME_HANDLING,		m_cbnDefaultVolumeHandling);
+	DDX_Control(pDX, IDC_DEFAULT_FORMAT, m_cbnDefaultSampleFormat);
+	DDX_Control(pDX, IDC_VOLUME_HANDLING, m_cbnDefaultVolumeHandling);
+	DDX_Control(pDX, IDC_EDIT_UNDOSIZE, m_undoBufferEdit);
+	DDX_Control(pDX, IDC_EDIT_FINETUNE, m_finetuneEdit);
 	//}}AFX_DATA_MAP
+}
+
+
+COptionsSampleEditor::COptionsSampleEditor() : CPropertyPage{IDD_OPTIONS_SAMPLEEDITOR}
+{
+	m_undoBufferEdit.SetAccessibleSuffix(_T("%"));
+	m_finetuneEdit.SetAccessibleSuffix(_T("cents"));
 }
 
 
@@ -55,6 +70,8 @@ BOOL COptionsSampleEditor::OnInitDialog()
 	m_cbnDefaultSampleFormat.SetItemData(m_cbnDefaultSampleFormat.AddString(_T("FLAC")), dfFLAC);
 	m_cbnDefaultSampleFormat.SetItemData(m_cbnDefaultSampleFormat.AddString(_T("WAV")), dfWAV);
 	m_cbnDefaultSampleFormat.SetItemData(m_cbnDefaultSampleFormat.AddString(_T("RAW")), dfRAW);
+	m_cbnDefaultSampleFormat.SetItemData(m_cbnDefaultSampleFormat.AddString(_T("S3I")), dfS3I);
+	m_cbnDefaultSampleFormat.SetItemData(m_cbnDefaultSampleFormat.AddString(_T("IFF")), dfIFF);
 	m_cbnDefaultSampleFormat.SetCurSel(TrackerSettings::Instance().m_defaultSampleFormat);
 
 	CSliderCtrl *slider = static_cast<CSliderCtrl *>(GetDlgItem(IDC_SLIDER1));
@@ -63,6 +80,7 @@ BOOL COptionsSampleEditor::OnInitDialog()
 	slider->SetPos(TrackerSettings::Instance().m_FLACCompressionLevel);
 
 	CheckRadioButton(IDC_RADIO1, IDC_RADIO3, IDC_RADIO1 + TrackerSettings::Instance().sampleEditorKeyBehaviour);
+	CheckRadioButton(IDC_RADIO4, IDC_RADIO6, IDC_RADIO4 + static_cast<int>(TrackerSettings::Instance().m_followSamplePlayCursor.Get()));
 
 	CheckDlgButton(IDC_COMPRESS_ITI, TrackerSettings::Instance().compressITI ? BST_CHECKED : BST_UNCHECKED);
 
@@ -86,16 +104,16 @@ void COptionsSampleEditor::OnOK()
 	TrackerSettings::Instance().m_nFinetuneStep = GetDlgItemInt(IDC_EDIT_FINETUNE);
 	TrackerSettings::Instance().m_SampleUndoBufferSize = SampleUndoBufferSize(GetDlgItemInt(IDC_EDIT_UNDOSIZE));
 	TrackerSettings::Instance().m_defaultSampleFormat = static_cast<SampleEditorDefaultFormat>(m_cbnDefaultSampleFormat.GetItemData(m_cbnDefaultSampleFormat.GetCurSel()));
+	TrackerSettings::Instance().m_followSamplePlayCursor = static_cast<FollowSamplePlayCursor>(GetCheckedRadioButton(IDC_RADIO4, IDC_RADIO6) - IDC_RADIO4);
 	TrackerSettings::Instance().m_FLACCompressionLevel = static_cast<CSliderCtrl *>(GetDlgItem(IDC_SLIDER1))->GetPos();
-	TrackerSettings::Instance().sampleEditorKeyBehaviour = static_cast<SampleEditorKeyBehaviour>(GetCheckedRadioButton(IDC_RADIO1, IDC_RADIO3) -IDC_RADIO1);
+	TrackerSettings::Instance().sampleEditorKeyBehaviour = static_cast<SampleEditorKeyBehaviour>(GetCheckedRadioButton(IDC_RADIO1, IDC_RADIO3) - IDC_RADIO1);
 	TrackerSettings::Instance().compressITI = IsDlgButtonChecked(IDC_COMPRESS_ITI) != BST_UNCHECKED;
 	TrackerSettings::Instance().DefaultPlugVolumeHandling = static_cast<PlugVolumeHandling>(m_cbnDefaultVolumeHandling.GetItemData(m_cbnDefaultVolumeHandling.GetCurSel()));
 	TrackerSettings::Instance().previewInFileDialogs = IsDlgButtonChecked(IDC_PREVIEW_SAMPLES) != BST_UNCHECKED;
 	TrackerSettings::Instance().m_MayNormalizeSamplesOnLoad = IsDlgButtonChecked(IDC_NORMALIZE) != BST_UNCHECKED;
 	TrackerSettings::Instance().cursorPositionInHex = IsDlgButtonChecked(IDC_CURSORINHEX) != BST_UNCHECKED;
 
-	auto docs = theApp.GetOpenDocuments();
-	for(auto modDoc : docs)
+	for(auto modDoc : theApp.GetOpenDocuments())
 	{
 		modDoc->GetSampleUndo().RestrictBufferSize();
 	}

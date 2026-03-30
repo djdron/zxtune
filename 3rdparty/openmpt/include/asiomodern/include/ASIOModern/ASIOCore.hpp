@@ -20,11 +20,11 @@ namespace ASIO {
 
 
 
-inline namespace Core {
-
-
-
 inline namespace ASIO_VERSION_NAMESPACE {
+
+
+
+inline namespace Core {
 
 
 
@@ -34,8 +34,7 @@ using TimeStamp = HiLoLongLong;
 
 using SampleRate = Double;
 
-enum class SampleType : Long
-{
+enum class SampleType : Long {
 	Int16MSB    = 0,
 	Int24MSB    = 1,
 	Int32MSB    = 2,
@@ -60,8 +59,7 @@ enum class SampleType : Long
 };
 static_assert(sizeof(SampleType) == SizeOfLong);
 
-enum class ErrorCode : Long
-{
+enum class ErrorCode : Long {
 	OK               = 0,
 	SUCCESS          = 0x3f4847a0,
 	NotPresent       = -1000,
@@ -74,8 +72,7 @@ enum class ErrorCode : Long
 };
 static_assert(sizeof(ErrorCode) == SizeOfLong);
 
-enum TimeCodeFlags : ULong
-{
+enum TimeCodeFlags : ULong {
 	TimeCodeFlagValid      = 1 << 0,
 	TimeCodeFlagRunning    = 1 << 1,
 	TimeCodeFlagReverse    = 1 << 2,
@@ -120,8 +117,7 @@ struct TimeCode {
 #endif // ASIO_SYSTEM_WINDOWS && ASIO_HAVE_PRAGMA_PACK
 static_assert(sizeof(TimeCode) == (SizeOfDouble + SizeOfLongLong + SizeOfLong + 64));
 
-enum TimeInfoFlags : ULong
-{
+enum TimeInfoFlags : ULong {
 	TimeInfoFlagSystemTimeValid     = 1 << 0,
 	TimeInfoFlagSamplePositionValid = 1 << 1,
 	TimeInfoFlagSampleRateValid     = 1 << 2,
@@ -181,8 +177,7 @@ struct Time {
 #endif // ASIO_SYSTEM_WINDOWS && ASIO_HAVE_PRAGMA_PACK
 static_assert(sizeof(Time) == (4 * SizeOfLong + sizeof(TimeInfo) + sizeof(TimeCode)));
 
-enum class MessageSelector : Long
-{
+enum class MessageSelector : Long {
 	SelectorSupported    = 1,
 	EngineVersion        = 2,
 	ResetRequest         = 3,
@@ -213,8 +208,8 @@ static_assert(sizeof(MessageSelector) == SizeOfLong);
 struct Callbacks {
 	void(ASIO_CALL * bufferSwitch ASIO_ATTR_CALL)(Long doubleBufferIndex, Bool directProcess) noexcept                                      = nullptr;
 	void(ASIO_CALL * sampleRateDidChange ASIO_ATTR_CALL)(SampleRate sRate) noexcept                                                         = nullptr;
-	Long(ASIO_CALL * asioMessage ASIO_ATTR_CALL)(MessageSelector selector, Long value, void const * message, Double const * opt) noexcept   = nullptr;
-	Time const *(ASIO_CALL * bufferSwitchTimeInfo ASIO_ATTR_CALL)(Time const * params, Long doubleBufferIndex, Bool directProcess) noexcept = nullptr;
+	Long(ASIO_CALL * asioMessage ASIO_ATTR_CALL)(MessageSelector selector, Long value, const void * message, const Double * opt) noexcept   = nullptr;
+	const Time *(ASIO_CALL * bufferSwitchTimeInfo ASIO_ATTR_CALL)(const Time * params, Long doubleBufferIndex, Bool directProcess) noexcept = nullptr;
 };
 #if ASIO_SYSTEM_WINDOWS && (ASIO_COMPILER_GCC || ASIO_COMPILER_CLANG)
 #pragma pop_macro("cdecl")
@@ -268,8 +263,7 @@ struct BufferInfo {
 #endif // ASIO_SYSTEM_WINDOWS && ASIO_HAVE_PRAGMA_PACK
 static_assert(sizeof(BufferInfo) == (SizeOfBool + SizeOfLong + 2 * sizeof(void *)));
 
-enum class FutureSelector : Long
-{
+enum class FutureSelector : Long {
 	EnableTimeCodeRead       = 1,
 	DisableTimeCodeRead      = 2,
 	SetInputMonitor          = 3,
@@ -325,8 +319,7 @@ struct ChannelControls {
 #endif // ASIO_SYSTEM_WINDOWS && ASIO_HAVE_PRAGMA_PACK
 static_assert(sizeof(ChannelControls) == (SizeOfLong + SizeOfBool + SizeOfLong + SizeOfLong + 32));
 
-enum class TransportCommand : Long
-{
+enum class TransportCommand : Long {
 	Start      = 1,
 	Stop       = 2,
 	Locate     = 3,
@@ -356,8 +349,7 @@ struct TransportParameters {
 #endif // ASIO_SYSTEM_WINDOWS && ASIO_HAVE_PRAGMA_PACK
 static_assert(sizeof(TransportParameters) == (sizeof(TransportCommand) + SizeOfLongLong + SizeOfLong + 64 + 64));
 
-enum class IoFormatType : Long
-{
+enum class IoFormatType : Long {
 	Invalid = -1,
 	PCM     = 0,
 	DSD     = 1,
@@ -418,7 +410,7 @@ ASIO_INTERFACE ISystemDriver : public IUnknown {
 	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL setClockSource    ASIO_ATTR_DRIVERCALL(Long reference)                                                                           = 0;
 	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL getSamplePosition ASIO_ATTR_DRIVERCALL(HiLoLongLong * samplePosition, HiLoLongLong * timeStamp)                                  = 0;
 	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL getChannelInfo    ASIO_ATTR_DRIVERCALL(ChannelInfo * info)                                                                       = 0;
-	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL createBuffers     ASIO_ATTR_DRIVERCALL(BufferInfo * bufferInfos, Long numChannels, Long bufferSize, Callbacks const * callbacks) = 0;
+	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL createBuffers     ASIO_ATTR_DRIVERCALL(BufferInfo * bufferInfos, Long numChannels, Long bufferSize, const Callbacks * callbacks) = 0;
 	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL disposeBuffers    ASIO_ATTR_DRIVERCALL()                                                                                         = 0;
 	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL controlPanel      ASIO_ATTR_DRIVERCALL()                                                                                         = 0;
 	[[nodiscard]] virtual ErrorCode ASIO_DRIVERCALL future            ASIO_ATTR_DRIVERCALL(FutureSelector selector, void * opt)                                                      = 0;
@@ -453,7 +445,7 @@ public:
 	[[nodiscard]] virtual ErrorCode setClockSource(Long reference)                                                                          = 0;
 	[[nodiscard]] virtual ErrorCode getSamplePosition(HiLoLongLong * samplePosition, HiLoLongLong * timeStamp)                              = 0;
 	[[nodiscard]] virtual ErrorCode getChannelInfo(ChannelInfo * info)                                                                      = 0;
-	[[nodiscard]] virtual ErrorCode createBuffers(BufferInfo * bufferInfos, Long numChannels, Long bufferSize, Callbacks const * callbacks) = 0;
+	[[nodiscard]] virtual ErrorCode createBuffers(BufferInfo * bufferInfos, Long numChannels, Long bufferSize, const Callbacks * callbacks) = 0;
 	[[nodiscard]] virtual ErrorCode disposeBuffers()                                                                                        = 0;
 	[[nodiscard]] virtual ErrorCode controlPanel()                                                                                          = 0;
 	[[nodiscard]] virtual ErrorCode future(FutureSelector selector, void * opt)                                                             = 0;
@@ -462,11 +454,11 @@ public:
 
 
 
-} // namespace ASIO_VERSION_NAMESPACE
-
-
-
 } // namespace Core
+
+
+
+} // namespace ASIO_VERSION_NAMESPACE
 
 
 

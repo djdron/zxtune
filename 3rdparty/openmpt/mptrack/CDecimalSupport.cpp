@@ -9,12 +9,11 @@
 
 
 #include "stdafx.h"
-#include "Snd_defs.h"
 #include "CDecimalSupport.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-BEGIN_MESSAGE_MAP(CNumberEdit, CEdit)
+BEGIN_MESSAGE_MAP(CNumberEdit, AccessibleEdit)
 	ON_WM_CHAR()
 	ON_MESSAGE(WM_PASTE, &CNumberEdit::OnPaste)
 END_MESSAGE_MAP()
@@ -36,9 +35,11 @@ TEMPO CNumberEdit::GetTempoValue()
 
 void CNumberEdit::OnChar(UINT nChar, UINT nRepCnt, UINT nFlags)
 {
-	BOOL bHandled = false;
-	CDecimalSupport<CNumberEdit>::OnChar(0, nChar, 0, bHandled);
-	if(!bHandled) CEdit::OnChar(nChar , nRepCnt,  nFlags);
+	bool handled = false;
+	if(GetStyle() & ES_NUMBER)
+		CDecimalSupport<CNumberEdit>::OnChar(0, nChar, 0, handled);
+	if(!handled)
+		AccessibleEdit::OnChar(nChar, nRepCnt, nFlags);
 }
 
 
@@ -47,7 +48,7 @@ LPARAM CNumberEdit::OnPaste(WPARAM wParam, LPARAM lParam)
 	bool bHandled = false;
 	CDecimalSupport<CNumberEdit>::OnPaste(0, wParam, lParam, bHandled);
 	if(!bHandled)
-		return CEdit::DefWindowProc(WM_PASTE, wParam, lParam);
+		return AccessibleEdit::DefWindowProc(WM_PASTE, wParam, lParam);
 	else
 		return 0;
 }

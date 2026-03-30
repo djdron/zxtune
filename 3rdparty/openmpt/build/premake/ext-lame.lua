@@ -2,18 +2,13 @@
  project "lame"
   uuid "b545694a-ce2a-44f8-ba88-147c36369308"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "lame"
-  dofile "../../build/premake/premake-defaults-DLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "shared"
   targetname "openmpt-lame"
   includedirs { "../../include/lame/include" }
   includedirs { "../../include/lame/mpglib" }
   includedirs { "../../include/lame/libmp3lame" }
   includedirs { "../../build/premake/inc/lame" }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   files {
    "../../include/lame/include/lame.def",
@@ -57,10 +52,48 @@
    "../../include/lame/libmp3lame/vector/xmm_quantize_sub.c",
   }
   defines { "HAVE_CONFIG_H", "HAVE_MPGLIB", "USE_LAYER_2" }
-  filter {}
-  filter { "action:vs*" }
-    buildoptions { "/wd4267", "/wd4334" }
 	filter {}
-	filter { "action:vs*" }
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd4267", "/wd4334" }
 		buildoptions { "/wd6031", "/wd6262" } -- analyze
+	end
 	filter {}
+		if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+			buildoptions {
+				"-Wno-absolute-value",
+				"-Wno-tautological-pointer-compare",
+				"-Wno-unused-but-set-variable",
+				"-Wno-unused-const-variable",
+				"-Wno-unused-function",
+			}
+		end
+	filter {}
+	if MPT_WIN_AT_LEAST(MPT_WIN["7"]) then
+		-- WinXP builds do not use SSE2 by default
+		filter {}
+		filter { "architecture:x86" }
+			defines {
+				"HAVE_XMMINTRIN_H",
+				"MIN_ARCH_SSE",
+			}
+		filter {}
+	end
+	filter {}
+	filter { "architecture:x86_64" }
+		defines {
+			"HAVE_XMMINTRIN_H",
+			"MIN_ARCH_SSE",
+		}
+	filter {}
+
+function mpt_use_lame ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/lame/include",
+	}
+	filter {}
+	links {
+		"lame",
+	}
+	filter {}
+end

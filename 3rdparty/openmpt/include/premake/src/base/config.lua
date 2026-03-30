@@ -1,7 +1,7 @@
 --
 -- config.lua
 -- Premake configuration object API
--- Copyright (c) 2011-2015 Jason Perkins and the Premake project
+-- Copyright (c) 2011-2015 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -44,26 +44,28 @@
 		local prefix = cfg[field.."prefix"] or cfg.targetprefix or ""
 		local suffix = cfg[field.."suffix"] or cfg.targetsuffix or ""
 		local extension = cfg[field.."extension"] or cfg.targetextension or ""
+		local bundleextension = cfg[field.."bundleextension"] or cfg.targetbundleextension or ""
 
 		local bundlename = ""
 		local bundlepath = ""
 
 		if table.contains(os.getSystemTags(cfg.system), "darwin") and (kind == p.WINDOWEDAPP or (kind == p.SHAREDLIB and cfg.sharedlibtype)) then
-			bundlename = basename .. extension
+			bundlename = basename .. bundleextension
 			bundlepath = path.join(bundlename, iif(kind == p.SHAREDLIB and cfg.sharedlibtype == "OSXFramework", "Versions/A", "Contents/MacOS"))
 		end
 
 		local info = {}
-		info.directory  = directory
-		info.basename   = basename .. suffix
-		info.name       = prefix .. info.basename .. extension
-		info.extension  = extension
-		info.abspath    = path.join(directory, info.name)
-		info.fullpath   = info.abspath
-		info.bundlename = bundlename
-		info.bundlepath = path.join(directory, bundlepath)
-		info.prefix     = prefix
-		info.suffix     = suffix
+		info.directory       = directory
+		info.basename        = basename .. suffix
+		info.name            = prefix .. info.basename .. extension
+		info.extension       = extension
+		info.bundleextension = bundleextension
+		info.abspath         = path.join(directory, info.name)
+		info.fullpath        = info.abspath
+		info.bundlename      = bundlename
+		info.bundlepath      = path.join(directory, bundlepath)
+		info.prefix          = prefix
+		info.suffix          = suffix
 		return info
 	end
 
@@ -150,9 +152,16 @@
 --
 
 	function config.canLinkIncremental(cfg)
+		-- Explicit "On" overrides all other checks
+		if cfg.incrementallink == p.ON then
+			return true
+		end
+		
 		if cfg.kind == "StaticLib"
 				or config.isOptimizedBuild(cfg)
-				or cfg.flags.NoIncrementalLink then
+				or cfg.incrementallink == p.OFF
+				or cfg.linktimeoptimization == p.ON
+				or cfg.linktimeoptimization == "Fast" then
 			return false
 		end
 		return true
@@ -206,7 +215,7 @@
 		-- is provided, change the kind as import libraries are static.
 		local kind = cfg.kind
 		if project.isnative(cfg.project)  then
-			if cfg.system == p.WINDOWS and kind == p.SHAREDLIB and not cfg.flags.NoImportLib then
+			if cfg.system == p.WINDOWS and kind == p.SHAREDLIB and cfg.useimportlib ~= p.OFF then
 				kind = p.STATICLIB
 			end
 		end
@@ -262,10 +271,17 @@
 			local link = cfg.links[i]
 			local item
 
+			-- Strip linking decorators from link, to determine if the link
+			-- is a "sibling" project.
+			local name = link
+			if name:endswith(":static") or name:endswith(":shared") then
+				name = string.sub(name, 0, -8)
+			end
+
 			-- Sort the links into "sibling" (is another project in this same
 			-- workspace) and "system" (is not part of this workspace) libraries.
 
-			local prj = p.workspace.findproject(cfg.workspace, link)
+			local prj = p.workspace.findproject(cfg.workspace, name)
 			if prj and kind ~= "system" then
 
 				-- Sibling; is there a matching configuration in this project that
@@ -300,7 +316,7 @@
 			end
 
 			-- If this is something I can link against, pull out the requested part
-			-- dont link against my self
+			-- don't link against my self
 			if item and item ~= cfg then
 				if part == "directory" then
 					item = path.getdirectory(item)
@@ -325,6 +341,29 @@
 		end
 
 		return result
+	end
+
+
+--
+-- Returns the list of sibling target directories
+--
+-- @param cfg
+--    The configuration object to query.
+-- @return
+--    Absolute path list
+--
+	function config.getsiblingtargetdirs(cfg)
+		local paths = {}
+		for _, sibling in ipairs(config.getlinks(cfg, "siblings", "object")) do
+			if (sibling.kind == p.SHAREDLIB) then
+				local p = sibling.linktarget.directory
+				if not (table.contains(paths, p)) then
+					table.insert(paths, p)
+				end
+			end
+		end
+
+		return paths
 	end
 
 
@@ -412,7 +451,7 @@
 --
 
 	function config.isCopyLocal(cfg, linkname, default)
-		if cfg.flags.NoCopyLocal then
+		if cfg.allowcopylocal == p.OFF then
 			return false
 		end
 
@@ -541,7 +580,7 @@
 				-- result if the corresponding value is not present
 
 				for key, replacement in pairs(map) do
-					if #key > 1 and key:startswith("_") then
+					if type(key) == "string" and #key > 1 and key:startswith("_") then
 						key = key:sub(2)
 						if values[key] == nil then
 							add(replacement)

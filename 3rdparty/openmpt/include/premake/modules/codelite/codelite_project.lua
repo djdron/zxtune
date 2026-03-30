@@ -6,7 +6,7 @@
 --              Manu Evans
 --              Tom van Dijck
 -- Created:     2013/05/06
--- Copyright:   (c) 2008-2016 Jason Perkins and the Premake project
+-- Copyright:   (c) 2008-2016 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -33,35 +33,33 @@
 	m.elements = {}
 
 	m.ctools = {
-		gcc = "gnu gcc",
-		clang = "clang",
-		msc = "Visual C++",
+		[p.tools.gcc] = "gnu gcc",
+		[p.tools.clang] = "clang",
+		[p.tools.msc] = "Visual C++",
 	}
 	m.cxxtools = {
-		gcc = "gnu g++",
-		clang = "clang++",
-		msc = "Visual C++",
+		[p.tools.gcc] = "gnu g++",
+		[p.tools.clang] = "clang++",
+		[p.tools.msc] = "Visual C++",
 	}
 
 	function m.getcompilername(cfg)
-		local tool = _OPTIONS.cc or cfg.toolset or p.CLANG
-
-		local toolset = p.tools[tool]
+		local toolset, version = p.tools.canonical(cfg.toolset)
 		if not toolset then
-			error("Invalid toolset '" + (_OPTIONS.cc or cfg.toolset) + "'")
+			error("Invalid toolset '" + cfg.toolset + "'")
 		end
 
 		if p.languages.isc(cfg.language) then
-			return m.ctools[tool]
+			return m.ctools[toolset]
 		elseif p.languages.iscpp(cfg.language) then
-			return m.cxxtools[tool]
+			return m.cxxtools[toolset]
 		end
 	end
 
 	function m.getcompiler(cfg)
-		local toolset = p.tools[_OPTIONS.cc or cfg.toolset or p.CLANG]
+		local toolset, version = p.tools.canonical(cfg.toolset)
 		if not toolset then
-			error("Invalid toolset '" + (_OPTIONS.cc or cfg.toolset) + "'")
+			error("Invalid toolset '" + cfg.toolset + "'")
 		end
 		return toolset
 	end
@@ -86,6 +84,8 @@
 		ConsoleApp = "Console",
 		WindowedApp = "Console",
 		Makefile = "",
+		None = "",
+		Utility = "",
 		SharedLib = "Library",
 		StaticLib = "Library"
 	}
@@ -94,7 +94,7 @@
 		_p('<?xml version="1.0" encoding="UTF-8"?>')
 
 		local type = m.internalTypeMap[prj.kind] or ""
-		_x('<CodeLite_Project Name="%s" InternalType="%s">', prj.name, type)
+		_x('<CodeLite_Project Name="%s" InternalType="%s" Version="11000">', prj.name, type)
 	end
 
 	function m.plugins(prj)
@@ -103,7 +103,7 @@
 			-- <Plugin Name="qmake">
 --		_p(1, '</Plugins>')
 
-		_p(1, '<Plugins/>')
+		-- _p(1, '<Plugins/>')
 	end
 
 	function m.description(prj)
@@ -114,13 +114,18 @@
 
 	function m.files(prj)
 		local tr = project.getsourcetree(prj)
+		if #tr.children == 0 then
+			-- handle project without files
+			_p(1, '<VirtualDirectory Name="%s"/>', tr.name)
+			return
+		end
 		tree.traverse(tr, {
 			-- folders are handled at the internal nodes
 			onbranchenter = function(node, depth)
-				_p(depth, '<VirtualDirectory Name="%s">', node.name)
+				_p(1 + depth, '<VirtualDirectory Name="%s">', node.name)
 			end,
 			onbranchexit = function(node, depth)
-				_p(depth, '</VirtualDirectory>')
+				_p(1 + depth, '</VirtualDirectory>')
 			end,
 			-- source files are handled at the leaves
 			onleaf = function(node, depth)
@@ -128,15 +133,15 @@
 				for cfg in project.eachconfig(prj) do
 					local cfgname = codelite.cfgname(cfg)
 					local fcfg = p.fileconfig.getconfig(node, cfg)
-					if not fcfg or fcfg.flags.ExcludeFromBuild then
+					if not fcfg or fcfg.excludefrombuild or fcfg.buildaction == "None" then
 						table.insert(excludesFromBuild, cfgname)
 					end
 				end
 
 				if #excludesFromBuild > 0 then
-					_p(depth, '<File Name="%s" ExcludeProjConfig="%s" />', node.relpath, table.concat(excludesFromBuild, ';'))
+					_p(1 + depth, '<File Name="%s" ExcludeProjConfig="%s" />', node.relpath, table.concat(excludesFromBuild, ';'))
 				else
-					_p(depth, '<File Name="%s"/>', node.relpath)
+					_p(1 + depth, '<File Name="%s"/>', node.relpath)
 				end
 			end,
 		}, true)
@@ -188,41 +193,51 @@
 		}
 	end
 
-
 	function m.compiler(cfg)
-		if configuration_iscustombuild(cfg) or configuration_isfilelist(cfg) then
+		if cfg.project.kind == p.NONE or configuration_iscustombuild(cfg) or configuration_isfilelist(cfg) then
 			_p(3, '<Compiler Required="no"/>')
 			return
 		end
 
 		local toolset = m.getcompiler(cfg)
+		local externalincludedirs = toolset.getincludedirs(cfg, {}, cfg.externalincludedirs, cfg.frameworkdirs, cfg.includedirsafter)
 		local forceincludes = toolset.getforceincludes(cfg)
-		local cxxflags = table.concat(table.join(toolset.getcxxflags(cfg), forceincludes, cfg.buildoptions), ";")
-		local cflags   = table.concat(table.join(toolset.getcflags(cfg), forceincludes, cfg.buildoptions), ";")
+		local defines = iif(#cfg.undefines > 0, table.join(toolset.getdefines(cfg.defines), toolset.getundefines(cfg.undefines)), {})
+		local cxxflags = table.concat(table.join(externalincludedirs, toolset.getcxxflags(cfg), forceincludes, cfg.buildoptions, defines), ";")
+		local cflags   = table.concat(table.join(externalincludedirs, toolset.getcflags(cfg), forceincludes, cfg.buildoptions, defines), ";")
 		local asmflags = ""
-		local pch      = ""
+		local pch      = p.tools.gcc.getpch(cfg)
+		local usepch   = "yes"
+		if pch == nil then
+			pch = "";
+			usepch = "no"
+		end
 
-		_x(3, '<Compiler Options="%s" C_Options="%s" Assembler="%s" Required="yes" PreCompiledHeader="%s" PCHInCommandLine="no" UseDifferentPCHFlags="no" PCHFlags="">', cxxflags, cflags, asmflags, pch)
+		_x(3, '<Compiler Options="%s" C_Options="%s" Assembler="%s" Required="yes" PreCompiledHeader="%s" PCHInCommandLine="%s" PCHFlags="" PCHFlagsPolicy="1">', cxxflags, cflags, asmflags, pch, usepch)
 
 		for _, includedir in ipairs(cfg.includedirs) do
 			_x(4, '<IncludePath Value="%s"/>', project.getrelative(cfg.project, includedir))
 		end
-		for _, define in ipairs(cfg.defines) do
-			_p(4, '<Preprocessor Value="%s"/>', p.esc(define):gsub(' ', '\\ '))
+		-- undefines should be placed *after* defines/buildoptions
+		-- Codelite places preprocessors after buildoptions...
+		if #cfg.undefines == 0 then
+			for _, define in ipairs(cfg.defines) do
+				_p(4, '<Preprocessor Value="%s"/>', p.esc(define):gsub(' ', '\\ '))
+			end
 		end
 		_p(3, '</Compiler>')
 	end
 
 	function m.linker(cfg)
-		if configuration_iscustombuild(cfg) or configuration_isfilelist(cfg) then
+		if cfg.project.kind == p.NONE or configuration_iscustombuild(cfg) or configuration_isfilelist(cfg) then
 			_p(3, '<Linker Required="no"/>')
 			return
 		end
 
 		local toolset = m.getcompiler(cfg)
-		local flags   = table.join(toolset.getldflags(cfg), cfg.linkoptions, toolset.getlinks(cfg))
+		local flags   = table.join(toolset.getldflags(cfg), toolset.getincludedirs(cfg, {}, nil, cfg.frameworkdirs), toolset.getrunpathdirs(cfg, table.join(cfg.runpathdirs, config.getsiblingtargetdirs(cfg))), cfg.linkoptions, toolset.getlinks(cfg))
 
-		_x(3, '<Linker Required="yes" Options="%s">', table.concat(flags, ";"))
+		_x(3, '<Linker Options="%s" Required="yes">', table.concat(flags, ";"))
 
 		for _, libdir in ipairs(cfg.libdirs) do
 			_p(4, '<LibraryPath Value="%s"/>', project.getrelative(cfg.project, libdir))
@@ -241,7 +256,7 @@
 		local options = table.concat(cfg.resoptions, ";")
 
 		_x(3, '<ResourceCompiler Options="%s%s" Required="yes">', defines, options)
-		for _, includepath in ipairs(table.join(cfg.includedirs, cfg.resincludedirs)) do
+		for _, includepath in ipairs(table.join(cfg.externalincludedirs, cfg.includedirs, cfg.resincludedirs)) do
 			_x(4, '<IncludePath Value="%s"/>', project.getrelative(cfg.project, includepath))
 		end
 		_p(3, '</ResourceCompiler>')
@@ -267,21 +282,11 @@
 		local workingdir = iif(isExe, project.getrelative(prj, cfg.debugdir), "")
 		local pauseexec  = iif(prj.kind == "ConsoleApp", "yes", "no")
 		local isguiprogram = iif(prj.kind == "WindowedApp", "yes", "no")
-		local isenabled  = iif(cfg.flags.ExcludeFromBuild, "no", "yes")
-		local ldPath = ''
+		local isenabled  = iif(cfg.excludefrombuild, "no", "yes")
 
-		for _, libdir in ipairs(cfg.libdirs) do
-			ldPath = ldPath .. ":" .. project.getrelative(cfg.project, libdir)
-		end
-
-		if ldPath == nil or ldPath == '' then
-			_x(3, '<General OutputFile="%s" IntermediateDirectory="%s" Command="%s" CommandArguments="%s" UseSeparateDebugArgs="%s" DebugArguments="%s" WorkingDirectory="%s" PauseExecWhenProcTerminates="%s" IsGUIProgram="%s" IsEnabled="%s"/>',
-				targetname, objdir, command, cmdargs, useseparatedebugargs, debugargs, workingdir, pauseexec, isguiprogram, isenabled)
-		else
-			ldPath = string.sub(ldPath, 2)
-			_x(3, '<General OutputFile="%s" IntermediateDirectory="%s" Command="LD_LIBRARY_PATH=%s %s" CommandArguments="%s" UseSeparateDebugArgs="%s" DebugArguments="%s" WorkingDirectory="%s" PauseExecWhenProcTerminates="%s" IsGUIProgram="%s" IsEnabled="%s"/>',
- 				targetname, objdir, ldPath, command, cmdargs, useseparatedebugargs, debugargs, workingdir, pauseexec, isguiprogram, isenabled)
-		end
+		_x(3, '<General OutputFile="%s" IntermediateDirectory="%s" Command="%s" CommandArguments="%s" UseSeparateDebugArgs="%s" DebugArguments="%s" WorkingDirectory="%s" PauseExecWhenProcTerminates="%s" IsGUIProgram="%s" IsEnabled="%s"/>',
+			targetname, objdir, command, cmdargs, useseparatedebugargs, debugargs, workingdir, pauseexec, isguiprogram, isenabled)
+		_x(3, '<BuildSystem Name="Default"/>')
 	end
 
 	function m.environment(cfg)
@@ -320,34 +325,66 @@
 	end
 
 	function m.preBuild(cfg)
-		if #cfg.prebuildcommands > 0 then
+		if #cfg.prebuildcommands > 0 or cfg.prebuildmessage or #cfg.prelinkcommands > 0 or cfg.prelinkmessage then
 			_p(3, '<PreBuild>')
-			local commands = os.translateCommandsAndPaths(cfg.prebuildcommands, cfg.project.basedir, cfg.project.location)
 			p.escaper(codelite.escElementText)
+			if cfg.prebuildmessage then
+				local command = os.translateCommandsAndPaths("@{ECHO} " .. p.quote(cfg.prebuildmessage), cfg.project.basedir, cfg.project.location)
+				_x(4, '<Command Enabled="yes">%s</Command>', command)
+			end
+			local commands = os.translateCommandsAndPaths(cfg.prebuildcommands, cfg.project.basedir, cfg.project.location)
+			for _, command in ipairs(commands) do
+				_x(4, '<Command Enabled="yes">%s</Command>', command)
+			end
+			if #cfg.prelinkcommands then
+				p.warnOnce("codelite_prelink", "prelinkcommands is treated as prebuildcommands by Codelite")
+			end
+			if cfg.prelinkmessage then
+				local command = os.translateCommandsAndPaths("@{ECHO} " .. p.quote(cfg.prelinkmessage), cfg.project.basedir, cfg.project.location)
+				_x(4, '<Command Enabled="yes">%s</Command>', command)
+			end
+			local commands = os.translateCommandsAndPaths(cfg.prelinkcommands, cfg.project.basedir, cfg.project.location)
 			for _, command in ipairs(commands) do
 				_x(4, '<Command Enabled="yes">%s</Command>', command)
 			end
 			p.escaper(codelite.esc)
 			_p(3, '</PreBuild>')
+		else
+			_p(3, '<PreBuild/>')
 		end
 	end
 
 	function m.postBuild(cfg)
-		if #cfg.postbuildcommands > 0 then
+		if #cfg.postbuildcommands > 0  or cfg.postbuildmessage then
 			_p(3, '<PostBuild>')
-			local commands = os.translateCommandsAndPaths(cfg.postbuildcommands, cfg.project.basedir, cfg.project.location)
 			p.escaper(codelite.escElementText)
+			if cfg.postbuildmessage then
+				local command = os.translateCommandsAndPaths("@{ECHO} " .. p.quote(cfg.postbuildmessage), cfg.project.basedir, cfg.project.location)
+				_x(4, '<Command Enabled="yes">%s</Command>', command)
+			end
+			local commands = os.translateCommandsAndPaths(cfg.postbuildcommands, cfg.project.basedir, cfg.project.location)
 			for _, command in ipairs(commands) do
 				_x(4, '<Command Enabled="yes">%s</Command>', command)
 			end
 			p.escaper(codelite.esc)
 			_p(3, '</PostBuild>')
+		else
+			_p(3, '<PostBuild/>')
 		end
 	end
 
 	function m.customBuild(cfg)
 		if not configuration_iscustombuild(cfg) then
-			_p(3, '<CustomBuild Enabled="no"/>')
+			_p(3, '<CustomBuild Enabled="no">')
+			_p(4, '<RebuildCommand/>')
+			_p(4, '<CleanCommand/>')
+			_p(4, '<BuildCommand/>')
+			_p(4, '<PreprocessFileCommand/>')
+			_p(4, '<SingleFileCommand/>')
+			_p(4, '<MakefileGenerationCommand/>')
+			_p(4, '<ThirdPartyToolName/>')
+			_p(4, '<WorkingDirectory/>')
+			_p(3, '</CustomBuild>')
 			return
 		end
 
@@ -356,14 +393,14 @@
 		local rebuild = table.implode(cfg.rebuildcommands,"","","")
 
 		_p(3, '<CustomBuild Enabled="yes">')
-		_x(4, '<BuildCommand>%s</BuildCommand>', build)
-		_x(4, '<CleanCommand>%s</CleanCommand>', clean)
 		_x(4, '<RebuildCommand>%s</RebuildCommand>', rebuild)
-		_p(4, '<PreprocessFileCommand></PreprocessFileCommand>')
-		_p(4, '<SingleFileCommand></SingleFileCommand>')
-		_p(4, '<MakefileGenerationCommand></MakefileGenerationCommand>')
-		_p(4, '<ThirdPartyToolName></ThirdPartyToolName>')
-		_p(4, '<WorkingDirectory></WorkingDirectory>')
+		_x(4, '<CleanCommand>%s</CleanCommand>', clean)
+		_x(4, '<BuildCommand>%s</BuildCommand>', build)
+		_p(4, '<PreprocessFileCommand/>')
+		_p(4, '<SingleFileCommand/>')
+		_p(4, '<MakefileGenerationCommand/>')
+		_p(4, '<ThirdPartyToolName/>')
+		_p(4, '<WorkingDirectory/>')
 		_p(3, '</CustomBuild>')
 	end
 
@@ -375,7 +412,66 @@
 
 		_p(3, '<AdditionalRules>')
 		_p(4, '<CustomPostBuild/>')
-		_p(4, '<CustomPreBuild/>')
+
+		local dependencies = {}
+		local makefilerules = {}
+		local function addrule(dependencies, makefilerules, config, filename)
+			if #config.buildcommands > 0 and #config.buildoutputs > 0 then
+				local inputs = table.implode(project.getrelative(cfg.project, config.buildinputs), "", "", " ")
+				if filename ~= "" and inputs ~= "" then
+					filename = filename .. " "
+				end
+				local outputs = project.getrelative(cfg.project, config.buildoutputs[1])
+				local buildmessage = ""
+				if config.buildmessage then
+					buildmessage = "\t@{ECHO} " .. p.quote(config.buildmessage) .. "\n"
+				end
+				local commands = table.implode(config.buildcommands,"\t","\n","")
+				table.insert(makefilerules, os.translateCommandsAndPaths(outputs .. ": " .. filename .. inputs .. "\n" .. buildmessage .. "\t@$(MakeDirCommand) $(@D)\n" .. commands, cfg.project.basedir, cfg.project.location))
+				table.insertflat(dependencies, outputs)
+				return true
+			elseif config.buildaction == "Copy" and filename ~= "" then
+				local output = project.getrelative(cfg.workspace, path.join(cfg.targetdir, config.name))
+				local create_directory_command = '\t@$(MakeDirCommand) $(@D)\n'
+				local command = '\t' .. os.translateCommands('{COPYFILE} "' .. filename .. '" "' .. output ..'"') .. '\n'
+
+				table.insert(makefilerules, output .. ": " .. filename .. '\n' .. create_directory_command .. command)
+				table.insert(dependencies, output)
+				return true
+			else
+				return false
+			end
+		end
+		local tr = project.getsourcetree(cfg.project)
+		p.tree.traverse(tr, {
+			onleaf = function(node, depth)
+				local filecfg = p.fileconfig.getconfig(node, cfg)
+				if not filecfg then
+					return
+				end
+				local prj = cfg.project
+				local rule = p.global.getRuleForFile(node.name, prj.rules)
+
+				if not addrule(dependencies, makefilerules, filecfg, node.relpath) and rule then
+					local environ = table.shallowcopy(filecfg.environ)
+
+					if rule.propertydefinition then
+						p.rule.prepareEnvironment(rule, environ, cfg)
+						p.rule.prepareEnvironment(rule, environ, filecfg)
+					end
+					local rulecfg = p.context.extent(rule, environ)
+					addrule(dependencies, makefilerules, rulecfg, node.relpath)
+				end
+			end
+		})
+		addrule(dependencies, makefilerules, cfg, "")
+
+		if #makefilerules == 0 and #dependencies == 0 then
+			_p(4, '<CustomPreBuild/>')
+		else
+			_p(4, '<CustomPreBuild>' .. table.implode(dependencies,"",""," "))
+			_p(0, table.implode(makefilerules,"","","\n") .. '</CustomPreBuild>')
+		end
 		_p(3, '</AdditionalRules>')
 	end
 
@@ -422,6 +518,7 @@
 		SharedLib   = "Dynamic Library",
 		StaticLib   = "Static Library",
 		WindowedApp = "Executable",
+		None = "",
 		Utility     = "",
 	}
 
@@ -444,7 +541,7 @@
 			local cfgname  = codelite.cfgname(cfg)
 			local compiler = m.getcompilername(cfg)
 			local debugger = m.debuggers[cfg.debugger] or m.debuggers.Default
-			local type = m.types[cfg.kind]
+			local type = m.types[cfg.kind] or ""
 
 			_x(2, '<Configuration Name="%s" CompilerType="%s" DebuggerType="%s" Type="%s" BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append">', cfgname, compiler, debugger, type)
 
@@ -477,4 +574,5 @@
 		p.callArray(m.elements.project, prj)
 
 		_p('</CodeLite_Project>')
+		_p('')
 	end

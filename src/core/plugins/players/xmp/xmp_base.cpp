@@ -471,38 +471,6 @@ namespace Module::Xmp
       ,
       &fnk_loader
     },
-    //Graoumf Tracker
-    {
-      "GTK"_id
-      ,
-      "'G'T'K"
-      "00-03"
-      ""sv
-      ,
-      &gtk_loader
-    },
-    //Images Music System
-    {
-      "IMS"_id
-      ,
-      "?{20}"
-      "("                  //instruments
-       "(00|08|20-7f){20}" // name
-       "??"                // finetune
-       "00-7f?"            // BE size
-       "?"                 // unknown
-       "00-40"             // volume
-       "00-7f?"            // BE loop start
-       "??"                // BE loop size
-      "){31}"
-      "01-7f"   //len
-      "00-01"   //zero
-      "?{128}"  //orders
-      "???3c"   //magic
-      ""sv
-      ,
-      &ims_loader
-    },
     //Liquid Tracker
     {
       "LIQ"_id
@@ -555,16 +523,6 @@ namespace Module::Xmp
     },
     //{"MOD"_id, &polly_loader},//rle packed, too weak structure
     //{"MOD"_id, &pw_loader},//requires depacking
-    //Real Tracker
-    {
-      "RTM"_id
-      ,
-      "'R'T'M'M"
-      "20"
-      ""sv
-      ,
-      &rtm_loader
-    },
     //{"MTP"_id, &mtp_loader},//experimental
     //Slamtilt
     {
@@ -602,15 +560,6 @@ namespace Module::Xmp
       &stx_loader
     },
     //{"SYM"_id, &sym_loader},
-    //TCB Tracker
-    {
-      "TCB"_id
-      ,
-      "'A'N' 'C'O'O'L('.|'!)"
-      ""sv
-      ,
-      &tcb_loader
-    },
   };
   // clang-format on
 }  // namespace Module::Xmp

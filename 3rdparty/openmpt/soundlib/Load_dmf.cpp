@@ -24,7 +24,7 @@ struct DMFFileHeader
 {
 	char   signature[4];  // "DDMF"
 	uint8  version;       // 1 - 7 are beta versions, 8 is the official thing, 10 is xtracker32
-	char   tracker[8];    // "XTRACKER"
+	char   tracker[8];    // "XTRACKER", or "SCREAM 3" when converting from S3M, etc.
 	char   songname[30];
 	char   composer[20];
 	uint8  creationDay;
@@ -227,7 +227,7 @@ static uint8 DMFvibrato2MPT(uint8 val, const uint8 internalTicks)
 
 
 // Try using effect memory (zero paramer) to give the effect swapper some optimization hints.
-static void ApplyEffectMemory(const ModCommand *m, ROWINDEX row, CHANNELINDEX numChannels, uint8 effect, uint8 &param)
+static void ApplyEffectMemory(const ModCommand *m, ROWINDEX row, CHANNELINDEX numChannels, EffectCommand effect, uint8 &param)
 {
 	if(effect == CMD_NONE || param == 0)
 		return;
@@ -328,7 +328,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 		return pat;
 	}
 
-	PatternRow m = sndFile.Patterns[pat].GetRow(0);
+	ModCommand *m = sndFile.Patterns[pat].GetpModCommand(0, 0);
 	const CHANNELINDEX numChannels = std::min(static_cast<CHANNELINDEX>(sndFile.GetNumChannels() - 1), static_cast<CHANNELINDEX>(patHead.numTracks));
 
 	// When breaking to a pattern with less channels that the previous pattern,
@@ -346,7 +346,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 	// Counters for channel packing (including global track)
 	std::vector<uint8> channelCounter(numChannels + 1, 0);
 
-	for(ROWINDEX row = 0; row < numRows; row++)
+	for(ROWINDEX row = 0; row < numRows && file.CanRead(1); row++)
 	{
 		// Global track info counter reached 0 => read global track data
 		if(channelCounter[0] == 0)
@@ -381,7 +381,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					settings.tempoBPM = globalData;  // Tempo in real BPM (depends on rows per beat)
 					if(settings.beat != 0)
 					{
-						settings.tempoTicks = (globalData * settings.beat * 15);	// Automatically updated by X-Tracker
+						settings.tempoTicks = static_cast<uint8>(globalData * settings.beat * 15);  // Automatically updated by X-Tracker
 					}
 					tempoChange = true;
 				}
@@ -505,12 +505,12 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					m->note = file.ReadUint8();
 					if(m->note >= 1 && m->note <= 108)
 					{
-						m->note = static_cast<uint8>(Clamp(m->note + 24, NOTE_MIN, NOTE_MAX));
+						m->note = Clamp(static_cast<ModCommand::NOTE>(m->note + 24), NOTE_MIN, NOTE_MAX);
 						settings.channels[chn].lastNote = m->note;
 					} else if(m->note >= 129 && m->note <= 236)
 					{
 						// "Buffer notes" for portamento (and other effects?) that are actually not played, but just "queued"...
-						m->note = static_cast<uint8>(Clamp((m->note & 0x7F) + 24, NOTE_MIN, NOTE_MAX));
+						m->note = Clamp(static_cast<ModCommand::NOTE>((m->note & 0x7F) + 24), NOTE_MIN, NOTE_MAX);
 						settings.channels[chn].noteBuffer = m->note;
 						m->note = NOTE_NONE;
 					} else if(m->note == 255)
@@ -531,7 +531,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					settings.channels[chn].playDir = false;
 				}
 
-				uint8 effect1 = CMD_NONE, effect2 = CMD_NONE, effect3 = CMD_NONE;
+				EffectCommand effect1 = CMD_NONE, effect2 = CMD_NONE, effect3 = CMD_NONE;
 				uint8 effectParam1 = 0, effectParam2 = 0, effectParam3 = 0;
 				bool useMem2 = false, useMem3 = false;	// Effect can use memory if necessary
 
@@ -540,17 +540,17 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 				if((channelInfo & patVolume) != 0)
 				{
 					m->volcmd = VOLCMD_VOLUME;
-					m->vol = (file.ReadUint8() + 2) / 4;  // Should be + 3 instead of + 2, but volume 1 is silent in X-Tracker.
+					m->vol = static_cast<ModCommand::VOL>((file.ReadUint8() + 2) / 4);  // Should be + 3 instead of + 2, but volume 1 is silent in X-Tracker.
 				}
 
 				////////////////////////////////////////////////////////////////
 				// 0x08: Instrument effect
 				if((channelInfo & patInsEff) != 0)
 				{
-					effect1 = file.ReadUint8();
+					const uint8 command = file.ReadUint8();
 					effectParam1 = file.ReadUint8();
 
-					switch(effect1)
+					switch(command)
 					{
 					case 1:  // Stop Sample
 						m->note = NOTE_NOTECUT;
@@ -591,11 +591,11 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					case 8:  // Offset + 128k
 					case 9:  // Offset + 192k
 						// Put high offset on previous row
-						if(row > 0 && effect1 != settings.channels[chn].highOffset)
+						if(row > 0 && command != settings.channels[chn].highOffset)
 						{
-							if(sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, (0xA0 | (effect1 - 6))).Row(row - 1).Channel(chn).RetryPreviousRow()))
+							if(sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, (0xA0 | (command - 6))).Row(row - 1).Channel(chn).RetryPreviousRow()))
 							{
-								settings.channels[chn].highOffset = effect1;
+								settings.channels[chn].highOffset = command;
 							}
 						}
 						effect1 = CMD_OFFSET;
@@ -624,10 +624,10 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 				// 0x04: Note effect
 				if((channelInfo & patNoteEff) != 0)
 				{
-					effect2 = file.ReadUint8();
+					const uint8 command = file.ReadUint8();
 					effectParam2 = file.ReadUint8();
 
-					switch(effect2)
+					switch(command)
 					{
 					case 1:  // Note Finetune (1/16th of a semitone signed 8-bit value, not 1/128th as the interface claims)
 						{
@@ -657,7 +657,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					case 4:  // Portamento Up
 					case 5:  // Portamento Down
 						effectParam2 = DMFporta2MPT(effectParam2, settings.internalTicks, true);
-						effect2 = (effect2 == 4) ? CMD_PORTAMENTOUP : CMD_PORTAMENTODOWN;
+						effect2 = (command == 4) ? CMD_PORTAMENTOUP : CMD_PORTAMENTODOWN;
 						useMem2 = true;
 						break;
 					case 6:  // Portamento to Note
@@ -679,11 +679,11 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					case 9:   // Vibrato Triangle (ramp down should be close enough)
 					case 10:  // Vibrato Square
 						// Put vibrato type on previous row
-						if(row > 0 && effect2 != settings.channels[chn].vibratoType)
+						if(row > 0 && command != settings.channels[chn].vibratoType)
 						{
-							if(sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, (0x30 | (effect2 - 8))).Row(row - 1).Channel(chn).RetryPreviousRow()))
+							if(sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, (0x30 | (command - 8))).Row(row - 1).Channel(chn).RetryPreviousRow()))
 							{
-								settings.channels[chn].vibratoType = effect2;
+								settings.channels[chn].vibratoType = command;
 							}
 						}
 						effect2 = CMD_VIBRATO;
@@ -718,14 +718,14 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 				// 0x02: Volume effect
 				if((channelInfo & patVolEff) != 0)
 				{
-					effect3 = file.ReadUint8();
+					const uint8 command = file.ReadUint8();
 					effectParam3 = file.ReadUint8();
 
-					switch(effect3)
+					switch(command)
 					{
 					case 1:  // Volume Slide Up
 					case 2:  // Volume Slide Down
-						effectParam3 = DMFslide2MPT(effectParam3, settings.internalTicks, (effect3 == 1));
+						effectParam3 = DMFslide2MPT(effectParam3, settings.internalTicks, (command == 1));
 						effect3 = CMD_VOLUMESLIDE;
 						useMem3 = true;
 						break;
@@ -738,11 +738,11 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					case 5:  // Tremolo Triangle (ramp down should be close enough)
 					case 6:  // Tremolo Square
 						// Put tremolo type on previous row
-						if(row > 0 && effect3 != settings.channels[chn].tremoloType)
+						if(row > 0 && command != settings.channels[chn].tremoloType)
 						{
-							if(sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, (0x40 | (effect3 - 4))).Row(row - 1).Channel(chn).RetryPreviousRow()))
+							if(sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, (0x40 | (command - 4))).Row(row - 1).Channel(chn).RetryPreviousRow()))
 							{
-								settings.channels[chn].tremoloType = effect3;
+								settings.channels[chn].tremoloType = command;
 							}
 						}
 						effect3 = CMD_TREMOLO;
@@ -754,7 +754,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 						break;
 					case 8:  // Slide Balance Left
 					case 9:  // Slide Balance Right
-						effectParam3 = DMFslide2MPT(effectParam3, settings.internalTicks, (effect3 == 8));
+						effectParam3 = DMFslide2MPT(effectParam3, settings.internalTicks, (command == 8));
 						effect3 = CMD_PANNINGSLIDE;
 						useMem3 = true;
 						break;
@@ -804,28 +804,25 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 					}
 				}
 
-				ModCommand::TwoRegularCommandsToMPT(effect2, effectParam2, effect3, effectParam3);
+				ModCommand combinedCmd;
+				combinedCmd.FillInTwoCommands(effect2, effectParam2, effect3, effectParam3);
 
-				if(m->volcmd == VOLCMD_NONE && effect2 != VOLCMD_NONE)
+				if(m->volcmd == VOLCMD_NONE && combinedCmd.volcmd != VOLCMD_NONE)
 				{
-					m->volcmd = effect2;
-					m->vol = effectParam2;
+					m->SetVolumeCommand(combinedCmd);
 				}
 				// Prefer instrument effects over any other effects
 				if(effect1 != CMD_NONE)
 				{
-					ModCommand::TwoRegularCommandsToMPT(effect3, effectParam3, effect1, effectParam1);
-					if(m->volcmd == VOLCMD_NONE && effect3 != VOLCMD_NONE)
+					combinedCmd.FillInTwoCommands(combinedCmd.command, combinedCmd.param, effect1, effectParam1);
+					if(m->volcmd == VOLCMD_NONE && combinedCmd.volcmd != VOLCMD_NONE)
 					{
-						m->volcmd = effect3;
-						m->vol = effectParam3;
+						m->SetVolumeCommand(combinedCmd);
 					}
-					m->command = effect1;
-					m->param = effectParam1;
-				} else if(effect3 != CMD_NONE)
+					m->SetEffectCommand(combinedCmd);
+				} else if(combinedCmd.command != CMD_NONE)
 				{
-					m->command = effect3;
-					m->param = effectParam3;
+					m->SetEffectCommand(combinedCmd);
 				}
 
 			} else
@@ -849,7 +846,7 @@ static PATTERNINDEX ConvertDMFPattern(FileReader &file, const uint8 fileVersion,
 		}
 		if(writeDelay & 0x0F)
 		{
-			const uint8 param = (writeDelay & 0x0F) * settings.internalTicks / 15;
+			const uint8 param = static_cast<uint8>((writeDelay & 0x0F) * settings.internalTicks / 15);
 			sndFile.Patterns[pat].WriteEffect(EffectWriter(CMD_S3MCMDEX, 0x60u | Clamp(param, uint8(1), uint8(15))).Row(row).AllowMultiple());
 		}
 		writeDelay = 0;
@@ -904,22 +901,6 @@ bool CSoundFile::ReadDMF(FileReader &file, ModLoadingFlags loadFlags)
 		return true;
 	}
 
-	InitializeGlobals(MOD_TYPE_DMF);
-
-	m_modFormat.formatName = MPT_UFORMAT("X-Tracker v{}")(fileHeader.version);
-	m_modFormat.type = U_("dmf");
-	m_modFormat.charset = mpt::Charset::CP437;
-
-	m_songName = mpt::String::ReadBuf(mpt::String::spacePadded, fileHeader.songname);
-	m_songArtist = mpt::ToUnicode(mpt::Charset::CP437, mpt::String::ReadBuf(mpt::String::spacePadded, fileHeader.composer));
-
-	FileHistory mptHistory;
-	mptHistory.loadDate.tm_mday = Clamp(fileHeader.creationDay, uint8(1), uint8(31));
-	mptHistory.loadDate.tm_mon = Clamp(fileHeader.creationMonth, uint8(1), uint8(12)) - 1;
-	mptHistory.loadDate.tm_year = fileHeader.creationYear;
-	m_FileHistory.clear();
-	m_FileHistory.push_back(mptHistory);
-
 	// Go through all chunks now... cannot use our standard IFF chunk reader here because early X-Tracker versions write some malformed chunk headers... fun code ahead!
 	ChunkReader::ChunkList<DMFChunk> chunks;
 	while(file.CanRead(sizeof(DMFChunk)))
@@ -937,11 +918,52 @@ bool CSoundFile::ReadDMF(FileReader &file, ModLoadingFlags loadFlags)
 		// I don't know when exactly this stopped, but I have no version 5-7 files to check (and no X-Tracker version that writes those versions).
 		// Since this is practically always the last chunk in the file, the following code is safe for those versions, though.
 		else if(fileHeader.version < 8 && chunkHeader.GetID() == DMFChunk::idSMPD)
-			chunkLength = uint32_max;
+			chunkLength = mpt::saturate_cast<uint32>(file.BytesLeft());
 		chunks.chunks.push_back(ChunkReader::Item<DMFChunk>{chunkHeader, file.ReadChunk(chunkLength)});
 		file.Skip(chunkSkip);
 	}
 	FileReader chunk;
+
+	// Read pattern chunk first so that we know how many channels there are
+	chunk = chunks.GetChunk(DMFChunk::idPATT);
+	if(!chunk.IsValid())
+		return false;
+
+	DMFPatterns patHeader;
+	chunk.ReadStruct(patHeader);
+	// First, find out where all of our patterns are...
+	std::vector<FileReader> patternChunks;
+	if(loadFlags & loadPatternData)
+	{
+		patternChunks.resize(patHeader.numPatterns);
+		const uint8 headerSize = fileHeader.version < 3 ? 9 : 8;
+		for(auto &patternChunk : patternChunks)
+		{
+			chunk.Skip(headerSize - sizeof(uint32le));
+			const uint32 patLength = chunk.ReadUint32LE();
+			if(!chunk.CanRead(patLength))
+				return false;
+			chunk.SkipBack(headerSize);
+			patternChunk = chunk.ReadChunk(headerSize + patLength);
+		}
+	}
+
+	InitializeGlobals(MOD_TYPE_DMF, Clamp<uint8, uint8>(patHeader.numTracks, 1, 32) + 1);  // + 1 for global track (used for tempo stuff)
+
+	m_modFormat.formatName = MPT_UFORMAT("Delusion Digital Music Format v{}")(fileHeader.version);
+	m_modFormat.madeWithTracker = fileHeader.version == 10 ? UL_("X-Tracker 32") : UL_("X-Tracker");
+	m_modFormat.type = UL_("dmf");
+	m_modFormat.charset = mpt::Charset::CP437;
+
+	m_songName = mpt::String::ReadBuf(mpt::String::spacePadded, fileHeader.songname);
+	m_songArtist = mpt::ToUnicode(mpt::Charset::CP437, mpt::String::ReadBuf(mpt::String::spacePadded, fileHeader.composer));
+
+	FileHistory mptHistory;
+	mptHistory.loadDate.day = Clamp(fileHeader.creationDay, uint8(1), uint8(31));
+	mptHistory.loadDate.month = Clamp(fileHeader.creationMonth, uint8(1), uint8(12));
+	mptHistory.loadDate.year = 1900 + fileHeader.creationYear;
+	m_FileHistory.clear();
+	m_FileHistory.push_back(mptHistory);
 
 	// Read order list
 	chunk = chunks.GetChunk(DMFChunk::idSEQU);
@@ -958,25 +980,8 @@ bool CSoundFile::ReadDMF(FileReader &file, ModLoadingFlags loadFlags)
 	LimitMax(seqLoopStart, Order().GetLastIndex());
 	LimitMax(seqLoopEnd, Order().GetLastIndex());
 
-	// Read patterns
-	chunk = chunks.GetChunk(DMFChunk::idPATT);
-	if(chunk.IsValid() && (loadFlags & loadPatternData))
+	if(loadFlags & loadPatternData)
 	{
-		DMFPatterns patHeader;
-		chunk.ReadStruct(patHeader);
-		m_nChannels = Clamp<uint8, uint8>(patHeader.numTracks, 1, 32) + 1;	// + 1 for global track (used for tempo stuff)
-
-		// First, find out where all of our patterns are...
-		std::vector<FileReader> patternChunks(patHeader.numPatterns);
-		for(auto &patternChunk : patternChunks)
-		{
-			const uint8 headerSize = fileHeader.version < 3 ? 9 : 8;
-			chunk.Skip(headerSize - sizeof(uint32le));
-			const uint32 patLength = chunk.ReadUint32LE();
-			chunk.SkipBack(headerSize);
-			patternChunk = chunk.ReadChunk(headerSize + patLength);
-		}
-
 		// Now go through the order list and load them.
 		DMFPatternSettings settings(GetNumChannels());
 
@@ -1042,12 +1047,12 @@ bool CSoundFile::ReadDMF(FileReader &file, ModLoadingFlags loadFlags)
 		}
 	}
 
-	InitializeChannels();
 	m_SongFlags = SONG_LINEARSLIDES | SONG_ITCOMPATGXX;  // this will be converted to IT format by MPT. SONG_ITOLDEFFECTS is not set because of tremor and vibrato.
-	m_nDefaultSpeed = 6;
-	m_nDefaultTempo.Set(120);
+	Order().SetDefaultSpeed(6);
+	Order().SetDefaultTempoInt(120);
 	m_nDefaultGlobalVolume = 256;
 	m_nSamplePreAmp = m_nVSTiVolume = 48;
+	m_playBehaviour.set(kApplyOffsetWithoutNote);
 
 	return true;
 }
@@ -1117,6 +1122,8 @@ uintptr_t DMFUnpack(FileReader &file, uint8 *psample, uint32 maxlen)
 	try
 	{
 		tree.DMFNewNode();
+		if(tree.nodes[0].left < 0 || tree.nodes[0].right < 0)
+			return tree.file.GetPosition();
 		for(uint32 i = 0; i < maxlen; i++)
 		{
 			int actnode = 0;

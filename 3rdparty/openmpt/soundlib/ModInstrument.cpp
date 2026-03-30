@@ -9,8 +9,8 @@
 
 
 #include "stdafx.h"
-#include "Sndfile.h"
 #include "ModInstrument.h"
+#include "Sndfile.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -41,6 +41,12 @@ void InstrumentEnvelope::Convert(MODTYPE fromType, MODTYPE toType)
 			// So we have to disable the sustain loop if it was behind the normal loop.
 			dwFlags.reset(ENV_SUSTAIN);
 		}
+		if(!dwFlags[ENV_LOOP | ENV_SUSTAIN])
+		{
+			// XM has no automatic fade-out behaviour at the end of the envelope.
+			dwFlags.set(ENV_SUSTAIN);
+			nSustainStart = nSustainEnd = LastPoint();
+		}
 
 		// XM -> IT / MPTM: Shorten loop by one tick by inserting bogus point
 		if(nLoopEnd > nLoopStart && dwFlags[ENV_LOOP] && nLoopEnd < size())
@@ -48,7 +54,7 @@ void InstrumentEnvelope::Convert(MODTYPE fromType, MODTYPE toType)
 			if(at(nLoopEnd).tick - 1 > at(nLoopEnd - 1).tick)
 			{
 				// Insert an interpolated point just before the loop point.
-				EnvelopeNode::tick_t tick = at(nLoopEnd).tick - 1u;
+				EnvelopeNode::tick_t tick = static_cast<EnvelopeNode::tick_t>(at(nLoopEnd).tick - 1u);
 				auto interpolatedValue = static_cast<EnvelopeNode::value_t>(GetValueFromPosition(tick, 64));
 				insert(begin() + nLoopEnd, EnvelopeNode(tick, interpolatedValue));
 			} else
@@ -70,11 +76,14 @@ void InstrumentEnvelope::Convert(MODTYPE fromType, MODTYPE toType)
 // returns value in range [0, rangeOut].
 int32 InstrumentEnvelope::GetValueFromPosition(int position, int32 rangeOut, int32 rangeIn) const
 {
-	uint32 pt = size() - 1u;
+	if(empty())
+		return 0;
+
+	uint32 pt = LastPoint();
 	const int32 ENV_PRECISION = 1 << 16;
 
 	// Checking where current 'tick' is relative to the envelope points.
-	for(uint32 i = 0; i < size() - 1u; i++)
+	for(uint32 i = 0; i < LastPoint(); i++)
 	{
 		if (position <= at(i).tick)
 		{
@@ -106,7 +115,7 @@ int32 InstrumentEnvelope::GetValueFromPosition(int position, int32 rangeOut, int
 		{
 			// Linear approximation between the points;
 			// f(x + d) ~ f(x) + f'(x) * d, where f'(x) = (y2 - y1) / (x2 - x1)
-			value += ((position - x1) * (at(pt).value * ENV_PRECISION / rangeIn - value)) / (x2 - x1);
+			value += Util::muldiv(position - x1, (at(pt).value * ENV_PRECISION / rangeIn - value), x2 - x1);
 		}
 	}
 
@@ -126,27 +135,20 @@ void InstrumentEnvelope::Sanitize(uint8 maxValue)
 			it->tick = std::max(it->tick, (it - 1)->tick);
 			LimitMax(it->value, maxValue);
 		}
+		LimitMax(nLoopEnd, LastPoint());
+		LimitMax(nLoopStart, nLoopEnd);
+		LimitMax(nSustainEnd, LastPoint());
+		LimitMax(nSustainStart, nSustainEnd);
+		if(nReleaseNode != ENV_RELEASE_NODE_UNSET)
+			LimitMax(nReleaseNode, LastPoint());
+	} else
+	{
+		nLoopStart = 0;
+		nLoopEnd = 0;
+		nSustainStart = 0;
+		nSustainEnd = 0;
+		nReleaseNode = ENV_RELEASE_NODE_UNSET;
 	}
-	LimitMax(nLoopEnd, static_cast<decltype(nLoopEnd)>(size() - 1));
-	LimitMax(nLoopStart, nLoopEnd);
-	LimitMax(nSustainEnd, static_cast<decltype(nSustainEnd)>(size() - 1));
-	LimitMax(nSustainStart, nSustainEnd);
-	if(nReleaseNode != ENV_RELEASE_NODE_UNSET)
-		LimitMax(nReleaseNode, static_cast<decltype(nReleaseNode)>(size() - 1));
-}
-
-
-ModInstrument::ModInstrument(SAMPLEINDEX sample)
-{
-	SetCutoff(0, false);
-	SetResonance(0, false);
-
-	pitchToTempoLock.Set(0);
-
-	pTuning = CSoundFile::GetDefaultTuning();
-
-	AssignSample(sample);
-	ResetNoteMap();
 }
 
 
@@ -154,6 +156,7 @@ ModInstrument::ModInstrument(SAMPLEINDEX sample)
 void ModInstrument::Convert(MODTYPE fromType, MODTYPE toType)
 {
 	MPT_UNREFERENCED_PARAMETER(fromType);
+	synth.Clear();
 
 	if(toType & MOD_TYPE_XM)
 	{
@@ -187,7 +190,7 @@ void ModInstrument::Convert(MODTYPE fromType, MODTYPE toType)
 		nGlobalVol = 64;
 		nPan = 128;
 
-		LimitMax(nFadeOut, 32767u);
+		LimitMax(nFadeOut, uint16(32767));
 	}
 
 	VolEnv.Convert(fromType, toType);
@@ -210,10 +213,11 @@ void ModInstrument::Convert(MODTYPE fromType, MODTYPE toType)
 		}
 	}
 
-	// Limit fadeout length for IT
+	// Limit fadeout length and precision for IT
 	if(toType & MOD_TYPE_IT)
 	{
-		LimitMax(nFadeOut, 8192u);
+		LimitMax(nFadeOut, uint16(8192));
+		nFadeOut = static_cast<uint16>(((nFadeOut + 16) / 32) * 32);
 	}
 
 	// MPT-specific features - remove instrument tunings, Pitch/Tempo Lock, cutoff / resonance swing and filter mode for other formats
@@ -261,9 +265,9 @@ void ModInstrument::GetSamples(std::vector<bool> &referencedSamples) const
 
 void ModInstrument::Sanitize(MODTYPE modType)
 {
-	LimitMax(nFadeOut, 65536u);
-	LimitMax(nGlobalVol, 64u);
-	LimitMax(nPan, 256u);
+	LimitMax(nFadeOut, uint16(32768));
+	LimitMax(nGlobalVol, uint16(64));
+	LimitMax(nPan, uint16(256));
 
 	LimitMax(wMidiBank, uint16(16384));
 	LimitMax(nMidiProgram, uint8(128));
@@ -285,11 +289,12 @@ void ModInstrument::Sanitize(MODTYPE modType)
 	MPT_UNREFERENCED_PARAMETER(modType);
 	const uint8 range = ENVELOPE_MAX;
 #else
-	const uint8 range = modType == MOD_TYPE_AMS ? uint8_max : ENVELOPE_MAX;
+	const uint8 range = modType == MOD_TYPE_AMS ? uint8_max : uint8(ENVELOPE_MAX);
 #endif
 	VolEnv.Sanitize();
 	PanEnv.Sanitize();
 	PitchEnv.Sanitize(range);
+	synth.Sanitize();
 
 	for(size_t i = 0; i < std::size(NoteMap); i++)
 	{
@@ -299,6 +304,38 @@ void ModInstrument::Sanitize(MODTYPE modType)
 
 	if(!Resampling::IsKnownMode(resampling))
 		resampling = SRCMODE_DEFAULT;
+
+	if(nMixPlug > MAX_MIXPLUGINS)
+		nMixPlug = 0;
+}
+
+
+std::map<SAMPLEINDEX, int8> ModInstrument::CanConvertToDefaultNoteMap() const
+{
+	std::map<SAMPLEINDEX, int8> transposeMap;
+	for(size_t i = 0; i < std::size(NoteMap); i++)
+	{
+		if(Keyboard[i] == 0)
+			continue;
+		if(NoteMap[i] == NOTE_NONE)
+			continue;
+
+		const int8 relativeNote = static_cast<int8>(NoteMap[i] - (i + NOTE_MIN));
+		if(transposeMap.count(Keyboard[i]) && transposeMap[Keyboard[i]] != relativeNote)
+			return {};
+		transposeMap[Keyboard[i]] = relativeNote;
+	}
+	// Remove all samples that wouldn't be transposed.
+	// They were previously inserted into the map to catch the case where a specific sample's
+	// map would start with a transpose value of 0 but end with a different value.
+	for(auto it = transposeMap.begin(); it != transposeMap.end();)
+	{
+		if(it->second == 0)
+			it = transposeMap.erase(it);
+		else
+			it++;
+	}
+	return transposeMap;
 }
 
 
@@ -311,13 +348,9 @@ void ModInstrument::Transpose(int8 amount)
 }
 
 
-uint8 ModInstrument::GetMIDIChannel(const CSoundFile &sndFile, CHANNELINDEX chn) const
+uint8 ModInstrument::GetMIDIChannel(const ModChannel &channel, CHANNELINDEX chn) const
 {
-	if(chn >= std::size(sndFile.m_PlayState.Chn))
-		return 0;
-
 	// For mapped channels, return their pattern channel, modulo 16 (because there are only 16 MIDI channels)
-	const ModChannel &channel = sndFile.m_PlayState.Chn[chn];
 	if(nMidiChannel == MidiMappedChannel)
 		return static_cast<uint8>((channel.nMasterChn ? (channel.nMasterChn - 1u) : chn) % 16u);
 	else if(HasValidMIDIChannel())

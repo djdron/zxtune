@@ -13,6 +13,7 @@
 #include "openmpt/all/BuildSettings.hpp"
 
 #include "../soundlib/tuning.h"
+#include "../soundlib/modcommand.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -28,7 +29,9 @@ protected:
 	const CTuning* m_pTuning = nullptr;
 	CTuningDialog* m_pParent = nullptr;
 
+	CFont m_font;
 	int m_cxFont = 0, m_cyFont = 0;
+	int m_dpi = 0;
 	NOTEINDEXTYPE m_nNote = NOTE_MIDDLEC;
 
 	NOTEINDEXTYPE m_nNoteCentre = NOTE_MIDDLEC;
@@ -43,7 +46,6 @@ protected:
 
 	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
 	afx_msg void OnLButtonDown(UINT, CPoint);
-	afx_msg void OnLButtonUp(UINT, CPoint);
 	afx_msg void OnSetFocus(CWnd *pOldWnd);
 	afx_msg void OnKillFocus(CWnd *pNewWnd);
 	afx_msg void OnPaint();

@@ -10,6 +10,7 @@
 #include "mpt/random/engine.hpp"
 #include "mpt/random/default_engines.hpp"
 #include "mpt/random/random.hpp"
+#include "mpt/random/seed.hpp"
 #include "openmpt/base/Types.hpp"
 #include "openmpt/soundbase/MixSample.hpp"
 #include "openmpt/soundbase/MixSampleConvert.hpp"
@@ -34,11 +35,11 @@ private:
 
 public:
 	template <uint32 targetbits, typename Trng>
-	MPT_FORCEINLINE MixSampleInt process(MixSampleInt sample, Trng &prng)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE MixSampleInt process(MixSampleInt sample, Trng &prng)
 	{
 		if constexpr(targetbits == 0)
 		{
-			MPT_UNREFERENCED_PARAMETER(prng);
+			MPT_UNUSED(prng);
 			return sample;
 		} else
 		{
@@ -46,7 +47,7 @@ public:
 			constexpr int rshift = (32 - targetbits) - MixSampleIntTraits::mix_headroom_bits;
 			if constexpr(rshift <= 1)
 			{
-				MPT_UNREFERENCED_PARAMETER(prng);
+				MPT_UNUSED(prng);
 				// nothing to dither
 				return sample;
 			} else
@@ -80,7 +81,7 @@ public:
 		}
 	}
 	template <uint32 targetbits, typename Trng>
-	MPT_FORCEINLINE MixSampleFloat process(MixSampleFloat sample, Trng &prng)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE MixSampleFloat process(MixSampleFloat sample, Trng &prng)
 	{
 		return mix_sample_cast<MixSampleFloat>(process<targetbits>(mix_sample_cast<MixSampleInt>(sample), prng));
 	}

@@ -10,30 +10,32 @@
 
 #include "stdafx.h"
 
-#if MPT_COMPILER_MSVC
-#pragma warning(disable:4800) // 'T' : forcing value to bool 'true' or 'false' (performance warning)
-#endif // MPT_COMPILER_MSVC
-
 #include "MPTrackWine.h"
 
 #include "mpt/uuid/uuid.hpp"
 
-#include "Mptrack.h"
-#include "Mainfrm.h"
+#include "Reporting.h"
+
 #include "AboutDialog.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
+#include "MPTrackUtilWine.h"
 #include "TrackerSettings.h"
 #include "../common/ComponentManager.h"
+#include "../common/FileReader.h"
 #include "../common/mptFileIO.h"
 #include "../misc/mptOS.h"
-#include "mpt/crc/crc.hpp"
-#include "../common/FileReader.h"
 #include "../misc/mptWine.h"
-#include "MPTrackUtilWine.h"
-
-#include "wine/NativeSoundDevice.h"
+#include "mpt/crc/crc.hpp"
+#include "mpt/fs/fs.hpp"
+#include "mpt/io_file/fstream.hpp"
+#include "mpt/io_file/inputfile.hpp"
+#include "mpt/io_file_read/inputfile_filecursor.hpp"
+#include "mpt/string/utility.hpp"
 #include "openmpt/sounddevice/SoundDevice.hpp"
-#include "wine/NativeSoundDeviceMarshalling.h"
 #include "openmpt/sounddevice/SoundDeviceManager.hpp"
+#include "wine/NativeSoundDevice.h"
+#include "wine/NativeSoundDeviceMarshalling.h"
 
 #include <ios>
 
@@ -110,7 +112,7 @@ static mpt::crc64_jones WineHashVersion(mpt::crc64_jones crc)
 
 static mpt::crc64_jones WineHashFile(mpt::crc64_jones crc, mpt::PathString filename)
 {
-	InputFile file(filename, TrackerSettings::Instance().MiscCacheCompleteFileBeforeLoading);
+	mpt::IO::InputFile file(filename, TrackerSettings::Instance().MiscCacheCompleteFileBeforeLoading);
 	if(!file.IsValid())
 	{
 		return crc;
@@ -124,10 +126,10 @@ static mpt::crc64_jones WineHashFile(mpt::crc64_jones crc, mpt::PathString filen
 
 static mpt::crc64_jones WineHashSettings(mpt::crc64_jones crc)
 {
-	std::string result;
-	result += std::string() + "-c";
-	result += std::string() + "-" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePulseAudio.Get());
-	result += std::string() + "-" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePortAudio.Get());
+	std::string result =
+		"-c"
+		"-" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePulseAudio.Get()) +
+		"-" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePortAudio.Get());
 	crc(result.begin(), result.end());
 	return crc;
 }
@@ -142,7 +144,7 @@ mpt::ustring WineGetSystemInfoString(mpt::OS::Wine::VersionContext & wineVersion
 	msg += U_("\n");
 
 	msg += MPT_UFORMAT("OpenMPT detected Wine {} running on {}.\n")
-		( wineVersion.Version().AsString()
+		( mpt::ToUnicode(mpt::Charset::UTF8, wineVersion.VersionAsString())
 		, wineVersion.HostClass() == mpt::osinfo::osclass::Linux ? U_("Linux") : U_("unknown system")
 		);
 
@@ -151,46 +153,88 @@ mpt::ustring WineGetSystemInfoString(mpt::OS::Wine::VersionContext & wineVersion
 }
 
 
-bool WineSetupIsSupported(mpt::OS::Wine::VersionContext & wineVersion)
+bool WineSetupIsSupported(mpt::OS::Wine::VersionContext & wineVersion, std::vector<mpt::ustring> & reasons)
 {
 	bool supported = true;
-	if(wineVersion.RawBuildID().empty()) supported = false;
+	if(wineVersion.RawBuildID().empty())
+	{
+		supported = false;
+		reasons.push_back(MPT_USTRING("Empty result from wine_get_build_id()."));
+	}
 	if(!TrackerSettings::Instance().WineSupportAllowUnknownHost)
 	{
-		if((wineVersion.HostClass() == mpt::osinfo::osclass::Linux) || ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD) && wineVersion.RawHostSysName() == "FreeBSD"))
+		if((wineVersion.HostClass() == mpt::osinfo::osclass::Linux) || ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD_) && wineVersion.RawHostSysName() == "FreeBSD"))
 		{
 			// ok
 		} else
 		{
 			supported = false;
+			reasons.push_back(MPT_UFORMAT("Unsupported host OS type: {}")(mpt::ToUnicode(mpt::Charset::UTF8, wineVersion.RawHostSysName())));
 		}
 	}
-	if(!wineVersion.Version().IsValid()) supported = false;
+	if(!wineVersion.IsValid())
+	{
+		supported = false;
+		reasons.push_back(MPT_UFORMAT("Failed to parse Wine version: {}")(mpt::ToUnicode(mpt::Charset::UTF8, wineVersion.RawVersion())));
+	}
+	if(wineVersion.IsAtLeast(mpt::osinfo::windows::wine::version{10, 11, 0}) && wineVersion.IsBefore(mpt::osinfo::windows::wine::version{10, 12, 0}))
+	{
+		// Blacklisted due to <https://bugs.openmpt.org/view.php?id=1904>.
+		// Probably caused by <https://gitlab.winehq.org/wine/wine/-/commit/96cd811903e3d3f227c39e12235725baf793f4b9>,
+		// and maybe fixed by <https://gitlab.winehq.org/wine/wine/-/commit/aae0f624d48d1e4f79e6947798e61b4d1006bf76>.
+		// Upstream bug: <https://bugs.winehq.org/show_bug.cgi?id=58435>.
+		supported = false;
+		reasons.push_back(MPT_USTRING("Buggy Wine version 10.11.x: https://bugs.openmpt.org/view.php?id=1904"));
+	}
 	return supported;
 }
 
-bool WineSetupIsSupported(mpt::Wine::Context & wine)
+bool WineSetupIsSupported(mpt::Wine::Context & wine, std::vector<mpt::ustring> & reasons)
 {
 	bool supported = true;
-	if(theApp.GetInstallPath().empty()) supported = false;
-	if(wine.PathToPosix(theApp.GetInstallPath()).empty()) supported = false;
-	if(wine.PathToPosix(theApp.GetConfigPath()).empty()) supported = false;
-	if(wine.PathToWindows("/").empty()) supported = false;
-	if(supported)
+	if(theApp.GetInstallPath().empty())
 	{
-		if(wine.HOME().empty()) supported = false;
+		supported = false;
+		reasons.push_back(MPT_USTRING("Empty OpenMPT install path."));
+	}
+	if(wine.PathToPosix(theApp.GetInstallPath()).empty())
+	{
+		supported = false;
+		reasons.push_back(MPT_USTRING("Empty Unix OpenMPT install path."));
+	}
+	if(wine.PathToPosix(theApp.GetConfigPath()).empty())
+	{
+		supported = false;
+		reasons.push_back(MPT_USTRING("Empty Unix OpenMPT config path."));
+	}
+	if(wine.PathToWindows("/").empty())
+	{
+		supported = false;
+		reasons.push_back(MPT_USTRING("Empty Windows root path."));
 	}
 	if(supported)
 	{
-		if(wine.Uname_m() == "x86_64" && mpt::pointer_size != 8) supported = false;
+		if(wine.HOME().empty())
+		{
+			supported = false;
+			reasons.push_back(MPT_USTRING("Empty $HOME path."));
+		}
+	}
+	if(supported)
+	{
+		if(wine.Uname_m() == "x86_64" && mpt::pointer_size != 8)
+		{
+			supported = false;
+			reasons.push_back(MPT_USTRING("Architecture mismatch."));
+		}
 	}
 	return supported;
 }
 
 
-static std::map<std::string, std::vector<char> > UnzipToMap(mpt::PathString filename)
+static std::map<std::string, std::vector<char>> UnzipToMap(mpt::PathString filename)
 {
-	std::map<std::string, std::vector<char> > filetree;
+	std::map<std::string, std::vector<char>> filetree;
 	{
 		zlib_filefunc64_def zipfilefuncs;
 		MemsetZero(zipfilefuncs);
@@ -236,7 +280,7 @@ static std::map<std::string, std::vector<char> > UnzipToMap(mpt::PathString file
 
 bool IsSupported()
 {
-	return theApp.GetWine() ? true : false;
+	return theApp.GetWineIntegration() ? true : false;
 }
 
 
@@ -254,43 +298,38 @@ void Initialize()
 		return;
 	}
 
-	mpt::ustring lf = U_("\n");
-
 	if(!TrackerSettings::Instance().WineSupportEnabled)
 	{
 		return;
 	}
 
 	mpt::OS::Wine::VersionContext wineVersion = *theApp.GetWineVersion();
-	if(!WineSetupIsSupported(wineVersion))
+	std::vector<mpt::ustring> reasons;
+	if(!WineSetupIsSupported(wineVersion, reasons))
 	{
-		mpt::ustring msg;
-		msg += U_("OpenMPT does not support Wine integration on your current Wine setup.") + lf;
-		Reporting::Notification(msg, WineGetWindowTitle());
+		Reporting::Notification(MPT_UFORMAT("OpenMPT does not support Wine integration on your current Wine setup.\nReasons:\n{}")(mpt::join(reasons, MPT_USTRING("\n"))), WineGetWindowTitle());
 		return;
 	}
 
 	try
 	{
 		mpt::Wine::Context wine = mpt::Wine::Context(wineVersion);
-		if(!WineSetupIsSupported(wine))
+		if(!WineSetupIsSupported(wine, reasons))
 		{
-			mpt::ustring msg;
-			msg += U_("OpenMPT does not support Wine integration on your current Wine setup.") + lf;
-			Reporting::Notification(msg, WineGetWindowTitle());
+			Reporting::Notification(MPT_UFORMAT("OpenMPT does not support Wine integration on your current Wine setup.\nReasons:\n{}")(mpt::join(reasons, MPT_USTRING("\n"))), WineGetWindowTitle());
 			return;
 		}
-		theApp.SetWine(std::make_shared<mpt::Wine::Context>(wine));
+		theApp.SetWineIntegration(std::make_shared<mpt::Wine::Context>(wine));
 	} catch(const std::exception & e)
 	{
-		mpt::ustring msg;
-		msg += U_("OpenMPT was not able to determine Wine configuration details on your current Wine setup:") + lf;
-		msg += mpt::get_exception_text<mpt::ustring>(e) + lf;
-		msg += U_("OpenMPT native Wine Integration will not be available.") + lf;
+		mpt::ustring msg =
+			U_("OpenMPT was not able to determine Wine configuration details on your current Wine setup:" "\n") +
+			mpt::get_exception_text<mpt::ustring>(e) +
+			U_("\n" "OpenMPT native Wine Integration will not be available.");
 		Reporting::Error(msg, WineGetWindowTitle());
 		return;
 	}
-	mpt::Wine::Context wine = *theApp.GetWine();
+	mpt::Wine::Context wine = *theApp.GetWineIntegration();
 
 	try
 	{
@@ -308,24 +347,23 @@ void Initialize()
 			std::string Host_Native_OpenMPT_Wine_WineVersion_OpenMPTVersion;
 			static void CreatePath(mpt::PathString path)
 			{
-				if(path.IsDirectory())
+				if(mpt::native_fs{}.is_directory(path))
 				{
 					return;
 				}
 				if(CreateDirectory(path.AsNative().c_str(), NULL) == 0)
 				{
-					throw mpt::Wine::Exception(std::string() + "Failed to create directory: " +  path.ToUTF8());
+					throw mpt::Wine::Exception("Failed to create directory: " + path.ToUTF8());
 				}
 			}
 			std::string GetOpenMPTVersion() const
 			{
-				std::string ver;
-				ver += mpt::ToCharset(mpt::Charset::UTF8, Build::GetVersionStringPure() + U_("_") + mpt::OS::Windows::Name(mpt::OS::Windows::GetProcessArchitecture()));
 				mpt::crc64_jones crc;
 				crc = WineHashVersion(crc);
 				crc = WineHashFile(crc, theApp.GetInstallPath() + WineGetSupportZipFilename());
 				crc = WineHashSettings(crc);
-				ver += std::string("-") + mpt::afmt::hex0<16>(crc.result());
+				std::string ver = mpt::ToCharset(mpt::Charset::UTF8, Build::GetVersionStringPure() + U_("_") + mpt::OS::Windows::Name(mpt::OS::Windows::GetProcessArchitecture()))
+					+ std::string("-") + mpt::afmt::hex0<16>(crc.result());
 				return ver;
 			}
 			Paths(mpt::Wine::Context & wine)
@@ -352,7 +390,7 @@ void Initialize()
 
 		if(!TrackerSettings::Instance().WineSupportAlwaysRecompile)
 		{
-			if((paths.AppData_Wine_WineVersion_OpenMPTVersion.WithTrailingSlash() + P_("success.txt")).IsFile())
+			if(mpt::native_fs{}.is_file(paths.AppData_Wine_WineVersion_OpenMPTVersion.WithTrailingSlash() + P_("success.txt")))
 			{
 				theApp.SetWineWrapperDllFilename(paths.AppData_Wine_WineVersion_OpenMPTVersion.WithTrailingSlash() + P_("openmpt_wine_wrapper.dll"));
 				return;
@@ -361,124 +399,120 @@ void Initialize()
 
 		if(TrackerSettings::Instance().WineSupportAskCompile)
 		{
-			mpt::ustring msg;
-			msg += U_("OpenMPT Wine integration requires recompilation and will not work otherwise.\n");
-			msg += U_("Recompile now?\n");
-			if(Reporting::Confirm(msg, WineGetWindowTitle(), false, false) != cnfYes)
+			if(Reporting::Confirm(U_("OpenMPT Wine integration requires recompilation and will not work otherwise." "\n"
+				"Recompile now?"), WineGetWindowTitle(), false, false) != cnfYes)
 			{
 				return;
 			}
 		}
 
-		std::map<std::string, std::vector<char> > filetree;
+		std::map<std::string, std::vector<char>> filetree;
 		filetree = UnzipToMap(theApp.GetInstallPath() + WineGetSupportZipFilename());
 
 		Util::Wine::Dialog dialog(WineGetWindowTitleUTF8(), TrackerSettings::Instance().WineSupportCompileVerbosity < 6);
 
-		std::string script;
-
-		script += std::string() + "#!/usr/bin/env sh" + "\n";
-		script += std::string() + "\n";
-		script += std::string() + "touch message.txt" + "\n";
-		script += std::string() + "\n";
+		std::string script =
+			"#!/usr/bin/env sh" "\n"
+			"\n"
+			"touch message.txt" "\n"
+			"\n";
 
 		script += dialog.Detect();
 
 		if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 6)
 		{
-			script += std::string() + "echo Working directory:" + "\n";
-			script += std::string() + "pwd" + "\n";
+			script +=
+				"echo Working directory:" "\n"
+				"pwd" "\n";
 		}
 
-		script += std::string() + "\n";
+		script += "\n";
 
 		if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 3)
 		{
-			script += std::string() + "echo " + WineGetWindowTitleUTF8() + "\n";
+			script += "echo " + WineGetWindowTitleUTF8() + "\n";
 		} else
 		{
 			if(TrackerSettings::Instance().WineSupportCompileVerbosity == 2)
 			{
-				script += std::string() + "{" + "\n";
-				script += std::string() + " echo 0" + "\n";
-				script += std::string() + " echo 100" + "\n";
-				script += std::string() + "} | " + dialog.Progress("[>>] Prepare OpenMPT Wine Integration\\n[  ] Compile native support\\n[  ] Compile Wine wrapper\\n\\n[1/3] Preparing OpenMPT Wine Integration ...") + "\n";
+				script +=
+					"{" "\n"
+					" echo 0" "\n"
+					" echo 100" "\n"
+					"} | " + dialog.Progress("[>>] Prepare OpenMPT Wine Integration\\n[  ] Compile native support\\n[  ] Compile Wine wrapper\\n\\n[1/3] Preparing OpenMPT Wine Integration ...") + "\n";
 			} else
 			{
-				script += std::string() + dialog.Status("Preparing OpenMPT Wine Integration.") + "\n";
+				script += dialog.Status("Preparing OpenMPT Wine Integration.") + "\n";
 			}
 		}
 
-		script += std::string() + "\n";
+		script +=
+			"\n"
+			"printf \"#pragma once\\n\" >> common/svn_version.h" "\n"
+			"printf \"#define OPENMPT_VERSION_URL \\\"" + mpt::ToCharset(mpt::Charset::ASCII, SourceInfo::Current().Url()) + "\\\"\\n\" >> common/svn_version.h" "\n"
+			"printf \"#define OPENMPT_VERSION_DATE \\\"" + mpt::ToCharset(mpt::Charset::ASCII, SourceInfo::Current().Date()) + "\\\"\\n\" >> common/svn_version.h" "\n"
+			"printf \"#define OPENMPT_VERSION_REVISION " + mpt::afmt::dec(SourceInfo::Current().Revision()) + "\\n\" >> common/svn_version.h" "\n"
+			"printf \"#define OPENMPT_VERSION_DIRTY " + mpt::afmt::dec(SourceInfo::Current().IsDirty()) + "\\n\" >> common/svn_version.h" "\n"
+			"printf \"#define OPENMPT_VERSION_MIXEDREVISIONS " + mpt::afmt::dec(SourceInfo::Current().HasMixedRevisions()) + "\\n\" >> common/svn_version.h" "\n"
+			"printf \"#define OPENMPT_VERSION_IS_PACKAGE " + mpt::afmt::dec(SourceInfo::Current().IsPackage()) + "\\n\" >> common/svn_version.h" "\n"
+			"\n"
+			"missing=" "\n"
+			"\n";
 
-		script += std::string() + "printf \"#pragma once\\n\" >> common/svn_version.h" + "\n";
-		script += std::string() + "printf \"#define OPENMPT_VERSION_URL \\\"" + mpt::ToCharset(mpt::Charset::ASCII, SourceInfo::Current().Url()) + "\\\"\\n\" >> common/svn_version.h" + "\n";
-		script += std::string() + "printf \"#define OPENMPT_VERSION_DATE \\\"" + mpt::ToCharset(mpt::Charset::ASCII, SourceInfo::Current().Date()) + "\\\"\\n\" >> common/svn_version.h" + "\n";
-		script += std::string() + "printf \"#define OPENMPT_VERSION_REVISION " + mpt::afmt::dec(SourceInfo::Current().Revision()) + "\\n\" >> common/svn_version.h" + "\n";
-		script += std::string() + "printf \"#define OPENMPT_VERSION_DIRTY " + mpt::afmt::dec(SourceInfo::Current().IsDirty()) + "\\n\" >> common/svn_version.h" + "\n";
-		script += std::string() + "printf \"#define OPENMPT_VERSION_MIXEDREVISIONS " + mpt::afmt::dec(SourceInfo::Current().HasMixedRevisions()) + "\\n\" >> common/svn_version.h" + "\n";
-		script += std::string() + "printf \"#define OPENMPT_VERSION_IS_PACKAGE " + mpt::afmt::dec(SourceInfo::Current().IsPackage()) + "\\n\" >> common/svn_version.h" + "\n";
+		const std::string make = ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD_) ? "gmake" : "make");
 
-		script += std::string() + "\n";
-
-		script += std::string() + "missing=" + "\n";
-
-		script += std::string() + "\n";
-
-		const std::string make = ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD) ? "gmake" : "make");
-
-		std::vector<std::string> commands;
-		commands.push_back(make);
-		commands.push_back("pkg-config");
-		commands.push_back("cpp");
-		commands.push_back("cc");
-		commands.push_back("c++");
-		commands.push_back("ld");
-		commands.push_back("ccache");
+		const std::string commands[] =
+		{
+			make,
+			"pkg-config",
+			"cpp",
+			"cc",
+			"c++",
+			"ld",
+			"ccache",
+		};
 		for(const auto &command : commands)
 		{
-			script += std::string() + "command -v " + command + " 2>/dev/null 1>/dev/null" + "\n";
-			script += std::string() + "if [ \"$?\" -ne \"0\" ] ; then" + "\n";
-			script += std::string() + " missing=\"$missing " + command + "\"" + "\n";
-			script += std::string() + "fi" + "\n";
+			script +=
+				"command -v " + command + " 2>/dev/null 1>/dev/null" "\n"
+				"if [ \"$?\" -ne \"0\" ] ; then" "\n"
+				" missing=\"$missing " + command + "\"" "\n"
+				"fi" "\n";
 		}
-				
-		script += std::string() + "if [ \"x$missing\" = \"x\" ] ; then" + "\n";
-		script += std::string() + " printf \"\"" + "\n";
-		script += std::string() + "else" + "\n";
+
+		script +=
+			"if [ \"x$missing\" = \"x\" ] ; then" "\n"
+			" printf \"\"" "\n"
+			"else" "\n";
 #if 0
 		if(!TrackerSettings::Instance().WineSupportSilentCompile >= 1)
 		{
-			script += std::string() + " " + dialog.YesNo("The following commands are missing:\\n\\n$missing\\n\\nDo you want OpenMPT to try installing those now?") + "\n";
+			script += " " + dialog.YesNo("The following commands are missing:\\n\\n$missing\\n\\nDo you want OpenMPT to try installing those now?") + "\n";
 		}
-		script += std::string() + " if [ \"$?\" -ne \"0\" ] ; then" + "\n";
-		script += std::string() + "  exit 1" + "\n";
-		script += std::string() + " fi" + "\n";
+		script +=
+			" if [ \"$?\" -ne \"0\" ] ; then" "\n"
+			"  exit 1" "\n"
+			" fi" "\n";
 #else
 		if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
 		{
-						script += std::string() + " " + dialog.MessageBox("The following commands are missing:\\n\\n$missing\\n\\nPlease install them with your system package installer.") + "\n";
+			script += " " + dialog.MessageBox("The following commands are missing:\\n\\n$missing\\n\\nPlease install them with your system package installer.") + "\n";
 		}
-		script += std::string() + " exit 1" + "\n";
+		script += " exit 1" "\n";
 #endif
-		script += std::string() + "fi" + "\n";
-
-		script += std::string() + "\n";
-
-		script += std::string() + "mkdir -p " + wine.EscapePosixShell(wine.XDG_DATA_HOME()) + "/OpenMPT/Wine" + "\n";
-		script += std::string() + "mkdir -p " + wine.EscapePosixShell(wine.XDG_CACHE_HOME()) + "/OpenMPT/Wine" + "\n";
-		script += std::string() + "mkdir -p " + wine.EscapePosixShell(wine.XDG_CONFIG_HOME()) + "/OpenMPT/Wine" + "\n";
-
-		script += std::string() + "mkdir -p " + wine.EscapePosixShell(paths.Host_Native_OpenMPT_Wine_WineVersion_OpenMPTVersion) + "\n";
-
-		script += std::string() + "\n";
-
-		script += std::string() + "CCACHE_DIR=" + wine.EscapePosixShell(wine.XDG_CACHE_HOME()) + "/OpenMPT/Wine/ccache" + "\n";
-		script += std::string() + "CCACHE_COMPRESS=1" + " \n";
-		script += std::string() + "export CCACHE_DIR" + " \n";
-		script += std::string() + "export CCACHE_COMPRESS" + " \n";
-
-		script += std::string() + "\n";
+		script +=
+			"fi" "\n"
+			"\n"
+			"mkdir -p " + wine.EscapePosixShell(wine.XDG_DATA_HOME()) + "/OpenMPT/Wine" "\n"
+			"mkdir -p " + wine.EscapePosixShell(wine.XDG_CACHE_HOME()) + "/OpenMPT/Wine" "\n"
+			"mkdir -p " + wine.EscapePosixShell(wine.XDG_CONFIG_HOME()) + "/OpenMPT/Wine" "\n"
+			"mkdir -p " + wine.EscapePosixShell(paths.Host_Native_OpenMPT_Wine_WineVersion_OpenMPTVersion) + "\n"
+			"\n"
+			"CCACHE_DIR=" + wine.EscapePosixShell(wine.XDG_CACHE_HOME()) + "/OpenMPT/Wine/ccache" "\n"
+			"CCACHE_COMPRESS=1" " \n"
+			"export CCACHE_DIR" " \n"
+			"export CCACHE_COMPRESS" " \n"
+			"\n";
 
 		std::vector<std::string> winegcc;
 		if constexpr(mpt::arch_bits == 32)
@@ -490,7 +524,7 @@ void Initialize()
 			winegcc.push_back("winegcc64-development");
 		}
 		winegcc.push_back("winegcc-development");
-		if(wineVersion.HostClass() != mpt::osinfo::osclass::BSD)
+		if(wineVersion.HostClass() != mpt::osinfo::osclass::BSD_)
 		{ // avoid C++ compiler on *BSD because libc++ Win32 support tends to be missing there.
 			if constexpr(mpt::arch_bits == 32)
 			{ // 32bit winegcc probably cannot compile to 64bit
@@ -511,7 +545,7 @@ void Initialize()
 			winegcc.push_back("winegcc64");
 		}
 		winegcc.push_back("winegcc");
-		if(wineVersion.HostClass() != mpt::osinfo::osclass::BSD)
+		if(wineVersion.HostClass() != mpt::osinfo::osclass::BSD_)
 		{ // avoid C++ compiler on *BSD because libc++ Win32 support tends to be missing there.
 			if constexpr(mpt::arch_bits == 32)
 			{ // 32bit winegcc probably cannot compile to 64bit
@@ -525,140 +559,155 @@ void Initialize()
 		}
 		for(const auto &c : winegcc)
 		{
-			script += std::string() + "if command -v " + c + " 2>/dev/null 1>/dev/null ; then" + "\n";
-			script += std::string() + " MPT_WINEGXX=" + c + "\n";
-			script += std::string() + "fi" + "\n";
+			script +=
+				"if command -v " + c + " 2>/dev/null 1>/dev/null ; then" "\n"
+				" MPT_WINEGXX=" + c + "\n"
+				"fi" "\n";
 		}
-		script += std::string() + "if [ -z $MPT_WINEGXX ] ; then" + "\n";
+		script += "if [ -z $MPT_WINEGXX ] ; then" "\n";
 		if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
 		{
-			script += std::string() + " " + dialog.MessageBox("WineGCC not found.\\nPlease install it with your system package installer.") + "\n";
+			script += " " + dialog.MessageBox("WineGCC not found.\\nPlease install it with your system package installer.") + "\n";
 		}
-		script += std::string() + " exit 1" + "\n";
-		script += std::string() + "fi" + "\n";
+		script +=
+			" exit 1" "\n"
+			"fi" "\n";
 
 		// Work-around for Debian 8, Wine 1.6.2
 		MPT_MAYBE_CONSTANT_IF(TrackerSettings::Instance().WineSupportForeignOpenMPT || (mpt::arch_bits == 64))
 		{
-			script += std::string() + "if [ `$MPT_WINEGXX > /dev/null 2>&1 ; echo $?` -eq 127 ] ; then" + "\n";
-			script += std::string() + " if command -v /usr/lib/x86_64-linux-gnu/wine/bin/winegcc 2>/dev/null 1>/dev/null ; then" + "\n";
-			script += std::string() + "  MPT_WINEGXX=/usr/lib/x86_64-linux-gnu/wine/bin/winegcc"+ "\n";
-			script += std::string() + "  PATH=/usr/lib/x86_64-linux-gnu/wine/bin:\"${PATH}\"" + "\n";
-			script += std::string() + "  export PATH" + "\n";
-			script += std::string() + " fi" + "\n";
-			script += std::string() + "fi" + "\n";
+			script +=
+				"if [ `$MPT_WINEGXX > /dev/null 2>&1 ; echo $?` -eq 127 ] ; then" "\n"
+				" if command -v /usr/lib/x86_64-linux-gnu/wine/bin/winegcc 2>/dev/null 1>/dev/null ; then" "\n"
+				"  MPT_WINEGXX=/usr/lib/x86_64-linux-gnu/wine/bin/winegcc" "\n"
+				"  PATH=/usr/lib/x86_64-linux-gnu/wine/bin:\"${PATH}\"" "\n"
+				"  export PATH" "\n"
+				" fi" "\n"
+				"fi" "\n";
 		}
 		if constexpr(mpt::arch_bits == 32)
 		{
-			script += std::string() + "if [ `$MPT_WINEGXX > /dev/null 2>&1 ; echo $?` -eq 127 ] ; then" + "\n";
-			script += std::string() + " if command -v /usr/lib/i386-linux-gnu/wine/bin/winegcc 2>/dev/null 1>/dev/null ; then" + "\n";
-			script += std::string() + "  MPT_WINEGXX=/usr/lib/i386-linux-gnu/wine/bin/winegcc" + "\n";
-			script += std::string() + "  PATH=/usr/lib/i386-linux-gnu/wine/bin:\"${PATH}\"" + "\n";
-			script += std::string() + "  export PATH" + "\n";
-			script += std::string() + " fi" + "\n";
-			script += std::string() + "fi" + "\n";
+			script +=
+				"if [ `$MPT_WINEGXX > /dev/null 2>&1 ; echo $?` -eq 127 ] ; then" "\n"
+				" if command -v /usr/lib/i386-linux-gnu/wine/bin/winegcc 2>/dev/null 1>/dev/null ; then" "\n"
+				"  MPT_WINEGXX=/usr/lib/i386-linux-gnu/wine/bin/winegcc" "\n"
+				"  PATH=/usr/lib/i386-linux-gnu/wine/bin:\"${PATH}\"" "\n"
+				"  export PATH" "\n"
+				" fi" "\n"
+				"fi" "\n";
 		}
 
 		std::string features;
 		if(TrackerSettings::Instance().WineSupportForeignOpenMPT)
 		{
-			features += std::string() + " " + "MPT_ARCH_BITS=" + mpt::afmt::dec(mpt::arch_bits);
+			features += " MPT_ARCH_BITS=" + mpt::afmt::dec(mpt::arch_bits);
 			if constexpr(mpt::arch_bits == 64)
 			{
-				features += std::string() + " " + "MPT_TARGET=" + "x86_64-linux-gnu-";
+				features += " MPT_TARGET=" "x86_64-linux-gnu-";
 			} else
 			{
-				features += std::string() + " " + "MPT_TARGET=" + "i686-linux-gnu-";
+				features += " MPT_TARGET=" "i686-linux-gnu-";
 			}
 		}
-		features += std::string() + " " + "MPT_TRY_PORTAUDIO=" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePortAudio.Get());
-		features += std::string() + " " + "MPT_TRY_PULSEAUDIO=" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePulseAudio.Get());
-		features += std::string() + " " + "MPT_TRY_RTAUDIO=" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnableRtAudio.Get());
+		features += " MPT_TRY_PORTAUDIO=" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePortAudio.Get());
+		features += " MPT_TRY_PULSEAUDIO=" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnablePulseAudio.Get());
+		features += " MPT_TRY_RTAUDIO=" + mpt::afmt::dec(TrackerSettings::Instance().WineSupportEnableRtAudio.Get());
 		
-		int makeverbosity = Clamp(TrackerSettings::Instance().WineSupportCompileVerbosity.Get(), 0, 6);
+		const int makeverbosity = Clamp(TrackerSettings::Instance().WineSupportCompileVerbosity.Get(), 0, 6);
 
 		if(TrackerSettings::Instance().WineSupportCompileVerbosity == 2)
 		{
-			
-			script += std::string() + "{" + "\n";
-			script += std::string() + " echo 0" + "\n";
-			script += std::string() + " " + make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/native_support.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " " + features + " all MPT_PROGRESS_FILE=\"&4\" 4>&1 1>stdout.txt 2>stderr.txt" + "\n";
-			script += std::string() + " echo -n $? > stdexit.txt" + "\n";
-			script += std::string() + " echo 100" + "\n";
-			script += std::string() + "} | " + dialog.Progress("[OK] Prepare OpenMPT Wine Integration\\n[>>] Compile native support\\n[  ] Compile Wine wrapper\\n\\n[2/3] Compiling native support ...") + "\n";
-			script += std::string() + "MPT_EXITCODE=`cat stdexit.txt`" + "\n";
-			script += std::string() + "if [ \"$MPT_EXITCODE\" -ne \"0\" ] ; then" + "\n";
-			if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
-			{
-				script += std::string() + " " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n";
-				script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
-			}
-			script += std::string() + " exit 1" + "\n";
-			script += std::string() + "fi" + "\n";
-			script += std::string() + "if [ -s stderr.txt ] ; then" + "\n";
-			script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
-			script += std::string() + "fi" + "\n";
 
-			script += std::string() + "{" + "\n";
-			script += std::string() + " echo 0" + "\n";
-			script += std::string() + " " + make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/wine_wrapper.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " WINEGXX=$MPT_WINEGXX " + "MPT_WINEGCC_LANG=" + ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD) ? "C" : "CPLUSPLUS") + " MPT_WINE_SEARCHPATH=" + wine.EscapePosixShell(nativeSearchPath) + " all MPT_PROGRESS_FILE=\"&4\" 4>&1 1>stdout.txt 2>stderr.txt" + "\n";
-			script += std::string() + " echo -n $? > stdexit.txt" + "\n";
-			script += std::string() + " echo 100" + "\n";
-			script += std::string() + "} | " + dialog.Progress("[OK] Prepare OpenMPT Wine Integration\\n[OK] Compile native support\\n[>>] Compile Wine wrapper\\n\\n[3/3] Compiling Wine wrapper ...") + "\n";
-			script += std::string() + "MPT_EXITCODE=`cat stdexit.txt`" + "\n";
-			script += std::string() + "if [ \"$MPT_EXITCODE\" -ne \"0\" ] ; then" + "\n";
+			script +=
+				"{" "\n"
+				" echo 0" "\n"
+				" " + make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/native_support.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " " + features + " all MPT_PROGRESS_FILE=\"&4\" 4>&1 1>stdout.txt 2>stderr.txt" "\n"
+				" echo -n $? > stdexit.txt" "\n"
+				" echo 100" "\n"
+				"} | " + dialog.Progress("[OK] Prepare OpenMPT Wine Integration\\n[>>] Compile native support\\n[  ] Compile Wine wrapper\\n\\n[2/3] Compiling native support ...") + "\n"
+				"MPT_EXITCODE=`cat stdexit.txt`" "\n"
+				"if [ \"$MPT_EXITCODE\" -ne \"0\" ] ; then" "\n";
 			if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
 			{
-				script += std::string() + " " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n";
-				script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
+				script +=
+					" " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n"
+					" " + dialog.TextBox("stderr.txt") + "\n";
 			}
-			script += std::string() + " exit 1" + "\n";
-			script += std::string() + "fi" + "\n";
-			script += std::string() + "if [ -s stderr.txt ] ; then" + "\n";
-			script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
-			script += std::string() + "fi" + "\n";
+			script +=
+				" exit 1" "\n"
+				"fi" "\n"
+				"if [ -s stderr.txt ] ; then" "\n"
+				" " + dialog.TextBox("stderr.txt") + "\n"
+				"fi" "\n"
+
+				"{" "\n"
+				" echo 0" "\n"
+				" " + make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/wine_wrapper.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " WINEGXX=$MPT_WINEGXX " + "MPT_WINEGCC_LANG=" + ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD_) ? "C" : "CPLUSPLUS") + " MPT_WINE_SEARCHPATH=" + wine.EscapePosixShell(nativeSearchPath) + " all MPT_PROGRESS_FILE=\"&4\" 4>&1 1>stdout.txt 2>stderr.txt" "\n"
+				" echo -n $? > stdexit.txt" "\n"
+				" echo 100" "\n"
+				"} | " + dialog.Progress("[OK] Prepare OpenMPT Wine Integration\\n[OK] Compile native support\\n[>>] Compile Wine wrapper\\n\\n[3/3] Compiling Wine wrapper ...") + "\n"
+				"MPT_EXITCODE=`cat stdexit.txt`" "\n"
+				"if [ \"$MPT_EXITCODE\" -ne \"0\" ] ; then" "\n";
+			if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
+			{
+				script +=
+					" " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n"
+					" " + dialog.TextBox("stderr.txt") + "\n";
+			}
+			script +=
+				" exit 1" "\n"
+				"fi" "\n"
+				"if [ -s stderr.txt ] ; then" "\n"
+				" " + dialog.TextBox("stderr.txt") + "\n"
+				"fi" "\n";
 
 		} else
 		{
 
-			script += std::string() + "" + make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/native_support.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " " + features + " all" + "\n";
-			script += std::string() + "if [ \"$?\" -ne \"0\" ] ; then" + "\n";
+			script +=
+				make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/native_support.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " " + features + " all" "\n"
+				"if [ \"$?\" -ne \"0\" ] ; then" "\n";
 			if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
 			{
-				script += std::string() + " " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n";
-				script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
+				script +=
+					" " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n"
+					" " + dialog.TextBox("stderr.txt") + "\n";
 			}
-			script += std::string() + " exit 1" + "\n";
-			script += std::string() + "fi" + "\n";
-			script += std::string() + "if [ -s stderr.txt ] ; then" + "\n";
-			script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
-			script += std::string() + "fi" + "\n";
-		
-			script += std::string() + "" + make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/wine_wrapper.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " WINEGXX=$MPT_WINEGXX " + "MPT_WINEGCC_LANG=" + ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD) ? "C" : "CPLUSPLUS") + " MPT_WINE_SEARCHPATH=" + wine.EscapePosixShell(nativeSearchPath) + " all" + "\n";
-			script += std::string() + "if [ \"$?\" -ne \"0\" ] ; then" + "\n";
+			script +=
+				" exit 1" "\n"
+				"fi" "\n"
+				"if [ -s stderr.txt ] ; then" "\n"
+				" " + dialog.TextBox("stderr.txt") + "\n"
+				"fi" "\n";
+
+			script +=
+				make + " -j " + mpt::afmt::dec(std::max(std::thread::hardware_concurrency(), static_cast<unsigned int>(1))) + " -f build/wine/wine_wrapper.mk" + " V=" + mpt::afmt::dec(makeverbosity) + " WINEGXX=$MPT_WINEGXX " + "MPT_WINEGCC_LANG=" + ((wineVersion.HostClass() == mpt::osinfo::osclass::BSD_) ? "C" : "CPLUSPLUS") + " MPT_WINE_SEARCHPATH=" + wine.EscapePosixShell(nativeSearchPath) + " all" "\n"
+				"if [ \"$?\" -ne \"0\" ] ; then" "\n";
 			if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 1)
 			{
-				script += std::string() + " " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n";
-				script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
+				script +=
+					" " + dialog.MessageBox("OpenMPT Wine integration failed to compile.") + "\n"
+					" " + dialog.TextBox("stderr.txt") + "\n";
 			}
-			script += std::string() + " exit 1" + "\n";
-			script += std::string() + "fi" + "\n";
-			script += std::string() + "if [ -s stderr.txt ] ; then" + "\n";
-			script += std::string() + " " + dialog.TextBox("stderr.txt") + "\n";
-			script += std::string() + "fi" + "\n";
+			script +=
+				" exit 1" "\n"
+				"fi" "\n"
+				"if [ -s stderr.txt ] ; then" "\n"
+				" " + dialog.TextBox("stderr.txt") + "\n"
+				"fi" "\n";
 
 		}
 		
-		script += std::string() + "\n";
+		script += "\n";
 
 		if(TrackerSettings::Instance().WineSupportCompileVerbosity >= 6)
 		{
-			script += std::string() + dialog.MessageBox("OpenMPT Wine integration compiled successfully.") + "\n";
+			script += dialog.MessageBox("OpenMPT Wine integration compiled successfully.") + "\n";
 		}
 
-		script += std::string() + "\n";
-
-		script += "exit 0" "\n";
+		script +=
+			"\n"
+			"exit 0" "\n";
 
 		CMainFrame::GetMainFrame()->EnableWindow(FALSE);
 		mpt::Wine::ExecResult result;
@@ -702,7 +751,7 @@ void Initialize()
 
 		{
 			std::string fn = "libopenmpt_native_support.so";
-			mpt::ofstream f(wine.PathToWindows(nativeSearchPath) + P_("\\") + mpt::PathString::FromUTF8(fn), std::ios::binary);
+			mpt::IO::ofstream f(wine.PathToWindows(nativeSearchPath) + P_("\\") + mpt::PathString::FromUTF8(fn), std::ios::binary);
 			f.write(&result.filetree[fn][0], result.filetree[fn].size());
 			f.flush();
 			if(!f)
@@ -712,7 +761,7 @@ void Initialize()
 		}
 		{
 			std::string fn = "openmpt_wine_wrapper.dll";
-			mpt::ofstream f(paths.AppData_Wine_WineVersion_OpenMPTVersion + P_("\\") + mpt::PathString::FromUTF8(fn), std::ios::binary);
+			mpt::IO::ofstream f(paths.AppData_Wine_WineVersion_OpenMPTVersion + P_("\\") + mpt::PathString::FromUTF8(fn), std::ios::binary);
 			f.write(&result.filetree[fn][0], result.filetree[fn].size());
 			f.flush();
 			if(!f)
@@ -722,7 +771,7 @@ void Initialize()
 		}
 		{
 			std::string fn = "success.txt";
-			mpt::ofstream f(paths.AppData_Wine_WineVersion_OpenMPTVersion + P_("\\") + mpt::PathString::FromUTF8(fn), std::ios::binary);
+			mpt::IO::ofstream f(paths.AppData_Wine_WineVersion_OpenMPTVersion + P_("\\") + mpt::PathString::FromUTF8(fn), std::ios::binary);
 			f.imbue(std::locale::classic());
 			f << std::string("1");
 			f.flush();

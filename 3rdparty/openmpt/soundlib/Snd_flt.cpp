@@ -1,5 +1,5 @@
 /*
- * snd_flt.cpp
+ * Snd_flt.cpp
  * -----------
  * Purpose: Calculation of resonant filter coefficients.
  * Notes  : Extended filter range was introduced in MPT 1.12 and went up to 8652 Hz.
@@ -13,7 +13,6 @@
 
 #include "stdafx.h"
 #include "Sndfile.h"
-#include "Tables.h"
 #include "../common/misc_util.h"
 #include "mpt/base/numbers.hpp"
 
@@ -38,24 +37,54 @@ uint8 CSoundFile::FrequencyToCutOff(double frequency) const
 }
 
 
-uint32 CSoundFile::CutOffToFrequency(uint32 nCutOff, int envModifier) const
+float CSoundFile::CutOffToFrequency(uint32 nCutOff, int envModifier) const
 {
 	MPT_ASSERT(nCutOff < 128);
 	float computedCutoff = static_cast<float>(nCutOff * (envModifier + 256));	// 0...127*512
-	float Fc;
+	float frequency;
 	if(GetType() != MOD_TYPE_IMF)
 	{
-		Fc = 110.0f * std::pow(2.0f, 0.25f + computedCutoff / (m_SongFlags[SONG_EXFILTERRANGE] ? 20.0f * 512.0f : 24.0f * 512.0f));
+		frequency = 110.0f * std::pow(2.0f, 0.25f + computedCutoff / (m_SongFlags[SONG_EXFILTERRANGE] ? 20.0f * 512.0f : 24.0f * 512.0f));
 	} else
 	{
 		// EMU8000: Documentation says the cutoff is in quarter semitones, with 0x00 being 125 Hz and 0xFF being 8 kHz
 		// The first half of the sentence contradicts the second, though.
-		Fc = 125.0f * std::pow(2.0f, computedCutoff * 6.0f / (127.0f * 512.0f));
+		frequency = 125.0f * std::pow(2.0f, computedCutoff * 6.0f / (127.0f * 512.0f));
 	}
-	int freq = mpt::saturate_round<int>(Fc);
-	Limit(freq, 120, 20000);
-	if(freq * 2 > (int)m_MixerSettings.gdwMixingFreq) freq = m_MixerSettings.gdwMixingFreq / 2;
-	return static_cast<uint32>(freq);
+	Limit(frequency, 120.0f, 20000.0f);
+	LimitMax(frequency, static_cast<float>(m_MixerSettings.gdwMixingFreq) * 0.5f);
+	return frequency;
+}
+
+
+// Update channels with instrument filter settings updated through tracker UI
+void CSoundFile::UpdateInstrumentFilter(const ModInstrument &ins, bool updateMode, bool updateCutoff, bool updateResonance)
+{
+	for(auto &chn : m_PlayState.Chn)
+	{
+		if(chn.pModInstrument != &ins)
+			continue;
+
+		bool change = false;
+		if(updateMode && ins.filterMode != FilterMode::Unchanged && chn.nFilterMode != ins.filterMode)
+		{
+			chn.nFilterMode = ins.filterMode;
+			change = true;
+		}
+		if(updateCutoff)
+		{
+			chn.nCutOff = ins.IsCutoffEnabled() ? ins.GetCutoff() : 0x7F;
+			change |= (chn.nCutOff < 0x7F || chn.dwFlags[CHN_FILTER]);
+		}
+		if(updateResonance)
+		{
+			chn.nResonance = ins.IsResonanceEnabled() ? ins.GetResonance() : 0;
+			change |= (chn.nResonance > 0 || chn.dwFlags[CHN_FILTER]);
+		}
+		// If filter envelope is active, the filter will be updated in the next player tick anyway.
+		if(change && (!ins.PitchEnv.dwFlags[ENV_FILTER] || !IsEnvelopeProcessed(chn, ENV_PITCH)))
+			SetupChannelFilter(chn, false);
+	}
 }
 
 
@@ -82,11 +111,10 @@ int CSoundFile::SetupChannelFilter(ModChannel &chn, bool bReset, int envModifier
 	// Filtering is only ever done in IT if either cutoff is not full or if resonance is set.
 	if(m_playBehaviour[kITFilterBehaviour] && resonance == 0 && computedCutoff >= 254)
 	{
-		if(chn.rowCommand.IsNote() && !chn.rowCommand.IsPortamento() && !chn.nMasterChn
-		   && chn.position.IsZero() && !chn.dwFlags[CHN_WRAPPED_LOOP])
+		if(chn.triggerNote)
 		{
 			// Z7F next to a note disables the filter, however in other cases this should not happen.
-			// Test cases: filter-reset.it, filter-reset-carry.it, filter-nna.it
+			// Test cases: filter-reset.it, filter-reset-carry.it, filter-reset-envelope.it, filter-nna.it, FilterResetPatDelay.it, FilterPortaSmpChange.it, FilterPortaSmpChange-InsMode.it
 			chn.dwFlags.reset(CHN_FILTER);
 		}
 		return -1;
@@ -95,18 +123,18 @@ int CSoundFile::SetupChannelFilter(ModChannel &chn, bool bReset, int envModifier
 	chn.dwFlags.set(CHN_FILTER);
 
 	// 2 * damping factor
-	const float dmpfac = std::pow(10.0f, -resonance * ((24.0f / 128.0f) / 20.0f));
+	const float dmpfac = std::pow(10.0f, static_cast<float>(-resonance) * ((24.0f / 128.0f) / 20.0f));
 	const float fc = CutOffToFrequency(cutoff, envModifier) * (2.0f * mpt::numbers::pi_v<float>);
 	float d, e;
 	if(m_playBehaviour[kITFilterBehaviour] && !m_SongFlags[SONG_EXFILTERRANGE])
 	{
-		const float r = m_MixerSettings.gdwMixingFreq / fc;
+		const float r = static_cast<float>(m_MixerSettings.gdwMixingFreq) / fc;
 
 		d = dmpfac * r + dmpfac - 1.0f;
 		e = r * r;
 	} else
 	{
-		const float r = fc / m_MixerSettings.gdwMixingFreq;
+		const float r = fc / static_cast<float>(m_MixerSettings.gdwMixingFreq);
 
 		d = (1.0f - 2.0f * dmpfac) * r;
 		LimitMax(d, 2.0f);
@@ -119,17 +147,17 @@ int CSoundFile::SetupChannelFilter(ModChannel &chn, bool bReset, int envModifier
 	float fb1 = -e / (1.0f + d + e);
 
 #if defined(MPT_INTMIXER)
-#define FILTER_CONVERT(x) mpt::saturate_round<mixsample_t>((x) * (1 << MIXING_FILTER_PRECISION))
+#define MPT_FILTER_CONVERT(x) mpt::saturate_round<mixsample_t>((x) * (1 << MIXING_FILTER_PRECISION))
 #else
-#define FILTER_CONVERT(x) (x)
+#define MPT_FILTER_CONVERT(x) (x)
 #endif
 
 	switch(chn.nFilterMode)
 	{
 	case FilterMode::HighPass:
-		chn.nFilter_A0 = FILTER_CONVERT(1.0f - fg);
-		chn.nFilter_B0 = FILTER_CONVERT(fb0);
-		chn.nFilter_B1 = FILTER_CONVERT(fb1);
+		chn.nFilter_A0 = MPT_FILTER_CONVERT(1.0f - fg);
+		chn.nFilter_B0 = MPT_FILTER_CONVERT(fb0);
+		chn.nFilter_B1 = MPT_FILTER_CONVERT(fb1);
 #ifdef MPT_INTMIXER
 		chn.nFilter_HP = -1;
 #else
@@ -138,9 +166,9 @@ int CSoundFile::SetupChannelFilter(ModChannel &chn, bool bReset, int envModifier
 		break;
 
 	default:
-		chn.nFilter_A0 = FILTER_CONVERT(fg);
-		chn.nFilter_B0 = FILTER_CONVERT(fb0);
-		chn.nFilter_B1 = FILTER_CONVERT(fb1);
+		chn.nFilter_A0 = MPT_FILTER_CONVERT(fg);
+		chn.nFilter_B0 = MPT_FILTER_CONVERT(fb0);
+		chn.nFilter_B1 = MPT_FILTER_CONVERT(fb1);
 #ifdef MPT_INTMIXER
 		if(chn.nFilter_A0 == 0)
 			chn.nFilter_A0 = 1;	// Prevent silence at low filter cutoff and very high sampling rate
@@ -150,7 +178,7 @@ int CSoundFile::SetupChannelFilter(ModChannel &chn, bool bReset, int envModifier
 #endif // MPT_INTMIXER
 		break;
 	}
-#undef FILTER_CONVERT
+#undef MPT_FILTER_CONVERT
 
 	if (bReset)
 	{

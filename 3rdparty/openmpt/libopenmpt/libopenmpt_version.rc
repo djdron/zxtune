@@ -1,4 +1,6 @@
 
+#pragma code_page(65001)
+
 #include "svn_version.h"
 #include "libopenmpt_version.h"
 #include <winver.h>
@@ -135,21 +137,46 @@
 	#define VER_PRIVATEBUILD_STR "unknwon"
 #endif
 
-#if defined(MPT_BUILD_RETRO) || defined(MPT_BUILD_VER_SPECIAL_PREFIX) || defined(MPT_BUILD_VER_SPECIAL_SUFFIX)
+#if defined(_WIN32)
+#if defined(NTDDI_VERSION)
+#if (NTDDI_VERSION >= 0x0a00000e)
+// Windows 11
+//#define MPT_BUILD_FLAVOUR_STR ""
+#elif (NTDDI_VERSION >= 0x06010000)
+// Windows 7
+#define MPT_BUILD_FLAVOUR_STR "+legacy"
+#else
+#define MPT_BUILD_FLAVOUR_STR "+retro"
+#endif
+#elif defined(_WIN32_WINNT)
+#if (_WIN32_WINNT >= 0x0601)
+// Windows 7
+#define MPT_BUILD_FLAVOUR_STR "+legacy"
+#else
+#define MPT_BUILD_FLAVOUR_STR "+retro"
+#endif
+#elif defined(_WIN32_WINDOWS)
+#define MPT_BUILD_FLAVOUR_STR "+retro"
+#elif defined(WINVER)
+#define MPT_BUILD_FLAVOUR_STR "+retro"
+#else
+#define MPT_BUILD_FLAVOUR_STR "+retro"
+#endif
+#endif
+#if defined(MPT_BUILD_FLAVOUR_STR) || defined(MPT_BUILD_VER_SPECIAL_PREFIX) || defined(MPT_BUILD_VER_SPECIAL_SUFFIX)
 	#ifndef MPT_BUILD_VER_SPECIAL_PREFIX
 	#define MPT_BUILD_VER_SPECIAL_PREFIX ""
 	#endif
 	#ifndef MPT_BUILD_VER_SPECIAL_SUFFIX
 	#define MPT_BUILD_VER_SPECIAL_SUFFIX ""
 	#endif
-	#define VER_SPECIALBUILD VS_FF_SPECIALBUILD
-	#if defined(MPT_BUILD_RETRO)
-		#define VER_SPECIALBUILD_STR MPT_BUILD_VER_SPECIAL_PREFIX "+retro" MPT_BUILD_VER_SPECIAL_SUFFIX
-	#else
-		#define VER_SPECIALBUILD_STR MPT_BUILD_VER_SPECIAL_PREFIX MPT_BUILD_VER_SPECIAL_SUFFIX
+	#ifndef MPT_BUILD_FLAVOUR_STR
+	#define MPT_BUILD_FLAVOUR_STR ""
 	#endif
+	#define VER_SPECIALBUILD VS_FF_SPECIALBUILD
+	#define VER_SPECIALBUILD_STR MPT_BUILD_VER_SPECIAL_PREFIX MPT_BUILD_FLAVOUR_STR MPT_BUILD_VER_SPECIAL_SUFFIX
 #elif defined(MPT_BUILD_VER_SPECIAL_PREFIX) || defined(MPT_BUILD_VER_SPECIAL_SUFFIX)
-	#define VER_SPECIALBUILD     1
+	#define VER_SPECIALBUILD     VS_FF_SPECIALBUILD
 	#define VER_SPECIALBUILD_STR MPT_BUILD_VER_SPECIAL_PREFIX MPT_BUILD_VER_SPECIAL_SUFFIX
 #else
 	#define VER_SPECIALBUILD     0
@@ -192,7 +219,7 @@ BEGIN
             VALUE "FileDescription",  VER_FILEDESC_STR
             VALUE "FileVersion",      VER_FILEVERSION_STR
             VALUE "InternalName",     VER_FILENAME_STR
-            VALUE "LegalCopyright",   "Copyright © 2004-2020 OpenMPT Project Developers and Contributors, Copyright © 1997-2003 Olivier Lapicque"
+            VALUE "LegalCopyright",   "Copyright Â© 2004-2026 OpenMPT Project Developers and Contributors, Copyright Â© 1997-2003 Olivier Lapicque"
             VALUE "OriginalFilename", VER_FILENAME_STR
             VALUE "ProductName",      "libopenmpt"
             VALUE "ProductVersion",   VER_FILEVERSION_STR
@@ -209,6 +236,8 @@ BEGIN
         VALUE "Translation", 0x409, 1200
     END
 END
+
+2                       ICON                    "libopenmpt.ico"
 
 //#endif
 //#endif

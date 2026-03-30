@@ -68,22 +68,22 @@ OPENMPT_NAMESPACE_BEGIN
 
 static size_t VorbisfileFilereaderRead(void *ptr, size_t size, size_t nmemb, void *datasource)
 {
-	FileReader &file = *static_cast<FileReader*>(datasource);
+	FileReader &file = *mpt::void_ptr<FileReader>(datasource);
 	return file.ReadRaw(mpt::span(mpt::void_cast<std::byte*>(ptr), size * nmemb)).size() / size;
 }
 
 static int VorbisfileFilereaderSeek(void *datasource, ogg_int64_t offset, int whence)
 {
-	FileReader &file = *static_cast<FileReader*>(datasource);
+	FileReader &file = *mpt::void_ptr<FileReader>(datasource);
 	switch(whence)
 	{
 	case SEEK_SET:
 		{
-			if(!mpt::in_range<FileReader::off_t>(offset))
+			if(!mpt::in_range<FileReader::pos_type>(offset))
 			{
 				return -1;
 			}
-			return file.Seek(mpt::saturate_cast<FileReader::off_t>(offset)) ? 0 : -1;
+			return file.Seek(mpt::saturate_cast<FileReader::pos_type>(offset)) ? 0 : -1;
 		}
 		break;
 	case SEEK_CUR:
@@ -94,32 +94,32 @@ static int VorbisfileFilereaderSeek(void *datasource, ogg_int64_t offset, int wh
 				{
 					return -1;
 				}
-				if(!mpt::in_range<FileReader::off_t>(0-offset))
+				if(!mpt::in_range<FileReader::pos_type>(0-offset))
 				{
 					return -1;
 				}
-				return file.SkipBack(mpt::saturate_cast<FileReader::off_t>(0 - offset)) ? 0 : -1;
+				return file.SkipBack(mpt::saturate_cast<FileReader::pos_type>(0 - offset)) ? 0 : -1;
 			} else
 			{
-				if(!mpt::in_range<FileReader::off_t>(offset))
+				if(!mpt::in_range<FileReader::pos_type>(offset))
 				{
 					return -1;
 				}
-				return file.Skip(mpt::saturate_cast<FileReader::off_t>(offset)) ? 0 : -1;
+				return file.Skip(mpt::saturate_cast<FileReader::pos_type>(offset)) ? 0 : -1;
 			}
 		}
 		break;
 	case SEEK_END:
 		{
-			if(!mpt::in_range<FileReader::off_t>(offset))
+			if(!mpt::in_range<FileReader::pos_type>(offset))
 			{
 				return -1;
 			}
-			if(!mpt::in_range<FileReader::off_t>(file.GetLength() + offset))
+			if(!mpt::in_range<FileReader::pos_type>(file.GetLength() + offset))
 			{
 				return -1;
 			}
-			return file.Seek(mpt::saturate_cast<FileReader::off_t>(file.GetLength() + offset)) ? 0 : -1;
+			return file.Seek(mpt::saturate_cast<FileReader::pos_type>(file.GetLength() + offset)) ? 0 : -1;
 		}
 		break;
 	default:
@@ -129,7 +129,7 @@ static int VorbisfileFilereaderSeek(void *datasource, ogg_int64_t offset, int wh
 
 static long VorbisfileFilereaderTell(void *datasource)
 {
-	FileReader &file = *static_cast<FileReader*>(datasource);
+	FileReader &file = *mpt::void_ptr<FileReader>(datasource);
 	MPT_MAYBE_CONSTANT_IF(!mpt::in_range<long>(file.GetPosition()))
 	{
 		return -1;
@@ -178,7 +178,7 @@ bool CSoundFile::ReadVorbisSample(SAMPLEINDEX sample, FileReader &file)
 
 	file.Rewind();
 
-	int rate = 0;
+	long rate = 0;
 	int channels = 0;
 	std::vector<int16> raw_sample_data;
 
@@ -198,7 +198,7 @@ bool CSoundFile::ReadVorbisSample(SAMPLEINDEX sample, FileReader &file)
 	};
 	OggVorbis_File vf;
 	MemsetZero(vf);
-	if(ov_open_callbacks(&file, &vf, NULL, 0, callbacks) == 0)
+	if(ov_open_callbacks(mpt::void_ptr<FileReader>(&file), &vf, NULL, 0, callbacks) == 0)
 	{
 		if(ov_streams(&vf) == 1)
 		{ // we do not support chained vorbis samples
@@ -325,7 +325,7 @@ bool CSoundFile::ReadVorbisSample(SAMPLEINDEX sample, FileReader &file)
 	DestroySampleThreadsafe(sample);
 	ModSample &mptSample = Samples[sample];
 	mptSample.Initialize();
-	mptSample.nC5Speed = rate;
+	mptSample.nC5Speed = static_cast<uint32>(rate);
 	mptSample.nLength = std::min(MAX_SAMPLE_LENGTH, mpt::saturate_cast<SmpLength>(raw_sample_data.size() / channels));
 
 	mptSample.uFlags.set(CHN_16BIT);

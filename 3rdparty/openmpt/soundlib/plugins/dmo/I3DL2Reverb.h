@@ -12,8 +12,6 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#ifndef NO_PLUGINS
-
 #include "../PlugInterface.h"
 
 OPENMPT_NAMESPACE_BEGIN
@@ -50,9 +48,9 @@ protected:
 
 	class DelayLine : private std::vector<float>
 	{
-		int32 m_length;
-		int32 m_position;
-		int32 m_delayPosition;
+		int32 m_length = 0;
+		int32 m_position = 0;
+		int32 m_delayPosition = 0;
 
 	public:
 		void Init(int32 ms, int32 padding, uint32 sampleRate, int32 delayTap = 0);
@@ -63,7 +61,7 @@ protected:
 		float Get() const;
 	};
 
-	float m_param[kI3DL2ReverbNumParameters];
+	std::array<float, kI3DL2ReverbNumParameters> m_param;
 	int32 m_program = 0;
 
 	// Calculated parameters
@@ -91,10 +89,9 @@ protected:
 	bool m_ok = false, m_recalcParams = true;
 
 public:
-	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
-	I3DL2Reverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
+	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
+	I3DL2Reverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
 
-	void Release() override { delete this; }
 	int32 GetUID() const override { return 0xEF985E71; }
 	int32 GetVersion() const override { return 0; }
 	void Idle() override { }
@@ -111,7 +108,7 @@ public:
 
 	PlugParamIndex GetNumParameters() const override { return kI3DL2ReverbNumParameters; }
 	PlugParamValue GetParameter(PlugParamIndex index) override;
-	void SetParameter(PlugParamIndex index, PlugParamValue value) override;
+	void SetParameter(PlugParamIndex index, PlugParamValue value, PlayState * = nullptr, CHANNELINDEX = CHANNELINDEX_INVALID) override;
 
 	void Resume() override;
 	void Suspend() override { m_isResumed = false; }
@@ -165,5 +162,3 @@ protected:
 } // namespace DMO
 
 OPENMPT_NAMESPACE_END
-
-#endif // !NO_PLUGINS

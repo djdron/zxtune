@@ -29,11 +29,11 @@ public:
 
 	// Effects Description
 	
-	bool GetEffectName(CString &pszDescription, ModCommand::COMMAND command, UINT param, bool bXX = false) const; // bXX: Nxx: ...
+	bool GetEffectName(CString &pszDescription, ModCommand::COMMAND command, UINT param, bool addCommandFormat = false) const; // addCommandFormat: Prepend "Nxx: ..."
 	// Get size of list of known effect commands
 	UINT GetNumEffects() const;
 	// Get range information, effect name, etc... from a given effect.
-	bool GetEffectInfo(UINT ndx, CString *s, bool bXX = false, ModCommand::PARAM *prangeMin = nullptr, ModCommand::PARAM *prangeMax = nullptr) const;
+	bool GetEffectInfo(UINT ndx, CString *s, bool addCommandFormat = false, ModCommand::PARAM *prangeMin = nullptr, ModCommand::PARAM *prangeMax = nullptr) const;
 	// Get effect index in effect list from effect command + param
 	LONG GetIndexFromEffect(ModCommand::COMMAND command, ModCommand::PARAM param) const;
 	// Get effect command + param from effect index
@@ -42,7 +42,7 @@ public:
 	// Get parameter mask from effect (for extended effects)
 	UINT GetEffectMaskFromIndex(UINT ndx) const;
 	// Get precise effect name, also with explanation of effect parameter
-	bool GetEffectNameEx(CString &pszName, UINT ndx, UINT param, CHANNELINDEX chn = CHANNELINDEX_INVALID) const;
+	bool GetEffectNameEx(CString &pszName, const ModCommand &m, uint32 param, CHANNELINDEX chn) const;
 	// Check whether an effect is extended (with parameter nibbles)
 	bool IsExtendedEffect(UINT ndx) const;
 	// Map an effect value to slider position
@@ -61,7 +61,11 @@ public:
 	// Get range information, effect name, etc... from a given effect.
 	bool GetVolCmdInfo(UINT ndx, CString *s, ModCommand::VOL *prangeMin = nullptr, ModCommand::VOL *prangeMax = nullptr) const;
 	// Get effect name and parameter description
-	bool GetVolCmdParamInfo(const ModCommand &m, CString *s) const;
+	bool GetVolCmdParamInfo(const ModCommand &m, CString *s, bool hex) const;
+	// Map an effect value to slider position
+	UINT MapVolumeToPos(VolumeCommand cmd, ModCommand::VOL param) const;
+	// Map slider position to an effect value
+	ModCommand::VOL MapPosToVolume(VolumeCommand cmd, UINT pos) const;
 };
 
 OPENMPT_NAMESPACE_END

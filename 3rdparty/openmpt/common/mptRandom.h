@@ -57,7 +57,7 @@ class thread_safe_prng
 private:
 	mpt::mutex m;
 public:
-	typedef typename Trng::result_type result_type;
+	using result_type = typename Trng::result_type;
 public:
 	template <typename Trd>
 	explicit thread_safe_prng(Trd & rd)
@@ -71,15 +71,15 @@ public:
 		return;
 	}
 public:
-	static MPT_CONSTEXPRINLINE typename engine_traits<Trng>::result_type min()
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static typename engine_traits<Trng>::result_type min()
 	{
 		return Trng::min();
 	}
-	static MPT_CONSTEXPRINLINE typename engine_traits<Trng>::result_type max()
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static typename engine_traits<Trng>::result_type max()
 	{
 		return Trng::max();
 	}
-	static MPT_CONSTEXPRINLINE int result_bits()
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static int result_bits()
 	{
 		return engine_traits<Trng>::result_bits();
 	}
@@ -95,7 +95,7 @@ public:
 #if defined(MPT_BUILD_FUZZER) || defined(MPT_DETERMINISTIC_RANDOM)
 
 //  Use deterministic seeding
-using random_device = deterministc_random_device;
+using random_device = deterministic_random_device;
 
 #else // !MPT_BUILD_FUZZER
 
@@ -127,6 +127,10 @@ using default_prng = mpt::good_prng;
 
 mpt::random_device & global_random_device();
 mpt::thread_safe_prng<mpt::default_prng> & global_prng();
+
+#ifdef MPT_BUILD_FUZZER
+void reinit_global_random();
+#endif  // MPT_BUILD_FUZZER
 
 #if defined(MODPLUG_TRACKER) && !defined(MPT_BUILD_WINESUPPORT)
 void set_global_random_device(mpt::random_device *rd);

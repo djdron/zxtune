@@ -10,6 +10,7 @@
 
 #include "stdafx.h"
 #include "PatternFont.h"
+#include "HighDPISupport.h"
 #include "Mptrack.h"
 #include "Mainfrm.h"
 #include "TrackerSettings.h"
@@ -98,6 +99,15 @@ static void DrawChar(HDC hDC, CHAR ch, int x, int y, int w, int h)
 	::DrawTextA(hDC, &ch, 1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 }
 
+#if MPT_CXX_AT_LEAST(20) && MPT_USTRING_MODE_UTF8
+static void DrawChar(HDC hDC, char8_t ch8, int x, int y, int w, int h)
+{
+	CRect rect(x, y, x + w, y + h);
+	CHAR ch = mpt::unsafe_char_convert<char>(ch8);
+	::DrawTextA(hDC, &ch, 1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+}
+#endif
+
 template<typename char_t>
 static void DrawString(HDC hDC, const char_t *text, int len, int x, int y, int w, int h)
 {
@@ -110,6 +120,7 @@ static void DrawString(HDC hDC, const char_t *text, int len, int x, int y, int w
 
 void PatternFont::UpdateFont(HWND hwnd)
 {
+	const int dpi = HighDPISupport::GetDpiForWindow(hwnd);
 	FontSetting font = TrackerSettings::Instance().patternFont;
 	const PATTERNFONT *builtinFont = nullptr;
 	if(font.name == PATTERNFONT_SMALL || font.name.empty())
@@ -120,22 +131,25 @@ void PatternFont::UpdateFont(HWND hwnd)
 		builtinFont = &gDefaultPatternFont;
 	}
 
-	if(builtinFont != nullptr && font.size < 1)
+	const int builtInFontSize = Util::muldivr(std::min(font.size + 1, 11), dpi, 96);
+	if(builtinFont != nullptr && builtInFontSize < 2)
 	{
 		currentFont = builtinFont;
 		return;
 	}
 
-	static PATTERNFONT pf = { 0 };
+	static PATTERNFONT pf{};
 	currentFont = &pf;
 
 	static FontSetting previousFont;
-	if(previousFont == font)
+	static int previousDPI = 0;
+	if(previousFont == font && previousDPI == dpi)
 	{
 		// Nothing to do
 		return;
 	}
 	previousFont = font;
+	previousDPI = dpi;
 	DeleteFontData();
 	pf.dib = &customFontBitmap;
 	pf.dibASCII = nullptr;
@@ -144,18 +158,16 @@ void PatternFont::UpdateFont(HWND hwnd)
 	if(builtinFont != nullptr)
 	{
 		// Copy and scale original 4-bit bitmap
-		LimitMax(font.size, 10);
-		font.size++;
 		customFontBitmap.bmiHeader = CMainFrame::bmpNotes->bmiHeader;
-		customFontBitmap.bmiHeader.biWidth *= font.size;
-		customFontBitmap.bmiHeader.biHeight *= font.size;
+		customFontBitmap.bmiHeader.biWidth *= builtInFontSize;
+		customFontBitmap.bmiHeader.biHeight *= builtInFontSize;
 		customFontBitmap.bmiHeader.biSizeImage = customFontBitmap.bmiHeader.biWidth * customFontBitmap.bmiHeader.biHeight / 2;
 		customFontBitmap.lpDibBits = new uint8[customFontBitmap.bmiHeader.biSizeImage];
 
 		// Upscale the image (ugly code ahead)
 		const uint8 *origPixels = CMainFrame::bmpNotes->lpDibBits;
 		uint8 *scaledPixels = customFontBitmap.lpDibBits;
-		const int bytesPerLine = customFontBitmap.bmiHeader.biWidth / 2, scaleBytes = bytesPerLine * font.size;
+		const int bytesPerLine = customFontBitmap.bmiHeader.biWidth / 2, scaleBytes = bytesPerLine * builtInFontSize;
 		bool outPos = false;
 		for(int y = 0; y < CMainFrame::bmpNotes->bmiHeader.biHeight; y++, scaledPixels += scaleBytes - bytesPerLine)
 		{
@@ -170,7 +182,7 @@ void PatternFont::UpdateFont(HWND hwnd)
 					pixel &= 0x0F;
 					origPixels++;
 				}
-				for(int scaleX = 0; scaleX < font.size; scaleX++)
+				for(int scaleX = 0; scaleX < builtInFontSize; scaleX++)
 				{
 					if(!outPos)
 					{
@@ -190,43 +202,43 @@ void PatternFont::UpdateFont(HWND hwnd)
 				}
 			}
 		}
-		pf.nWidth = (builtinFont->nWidth - 4) * font.size + 4;
-		pf.nHeight = builtinFont->nHeight * font.size;
-		pf.nClrX = builtinFont->nClrX * font.size;
-		pf.nClrY = builtinFont->nClrY * font.size;
-		pf.nSpaceX = builtinFont->nSpaceX * font.size;
-		pf.nSpaceY = builtinFont->nSpaceY * font.size;
+		pf.nWidth = (builtinFont->nWidth - 4) * builtInFontSize + 4;
+		pf.nHeight = builtinFont->nHeight * builtInFontSize;
+		pf.nClrX = builtinFont->nClrX * builtInFontSize;
+		pf.nClrY = builtinFont->nClrY * builtInFontSize;
+		pf.nSpaceX = builtinFont->nSpaceX * builtInFontSize;
+		pf.nSpaceY = builtinFont->nSpaceY * builtInFontSize;
 		for(std::size_t i = 0; i < std::size(pf.nEltWidths); i++)
 		{
-			pf.nEltWidths[i] = builtinFont->nEltWidths[i] * font.size;
-			pf.padding[i] = builtinFont->padding[i] * font.size;
+			pf.nEltWidths[i] = builtinFont->nEltWidths[i] * builtInFontSize;
+			pf.padding[i] = builtinFont->padding[i] * builtInFontSize;
 		}
-		pf.nNumX = builtinFont->nNumX * font.size;
-		pf.nNumY = builtinFont->nNumY * font.size;
-		pf.nNum10X = builtinFont->nNum10X * font.size;
-		pf.nNum10Y = builtinFont->nNum10Y * font.size;
-		pf.nAlphaAM_X = builtinFont->nAlphaAM_X * font.size;
-		pf.nAlphaAM_Y = builtinFont->nAlphaAM_Y * font.size;
-		pf.nAlphaNZ_X = builtinFont->nAlphaNZ_X * font.size;
-		pf.nAlphaNZ_Y = builtinFont->nAlphaNZ_Y * font.size;
-		pf.nNoteX = builtinFont->nNoteX * font.size;
-		pf.nNoteY = builtinFont->nNoteY * font.size;
-		pf.nNoteWidth[0] = builtinFont->nNoteWidth[0] * font.size;
-		pf.nNoteWidth[1] = builtinFont->nNoteWidth[1] * font.size;
-		pf.nOctaveWidth = builtinFont->nOctaveWidth * font.size;
-		pf.nVolX = builtinFont->nVolX * font.size;
-		pf.nVolY = builtinFont->nVolY * font.size;
-		pf.nVolCmdWidth = builtinFont->nVolCmdWidth * font.size;
-		pf.nVolHiWidth = builtinFont->nVolHiWidth * font.size;
-		pf.nCmdOfs = builtinFont->nCmdOfs * font.size;
-		pf.nParamHiWidth = builtinFont->nParamHiWidth * font.size;
-		pf.nInstrOfs = builtinFont->nInstrOfs * font.size;
-		pf.nInstr10Ofs = builtinFont->nInstr10Ofs * font.size;
-		pf.nInstrHiWidth = builtinFont->nInstrHiWidth * font.size;
-		pf.pcParamMargin = builtinFont->pcParamMargin * font.size;
-		pf.pcValMargin = builtinFont->pcValMargin * font.size;
-		pf.paramLoMargin = builtinFont->paramLoMargin * font.size;
-		pf.spacingY = builtinFont->spacingY * font.size;
+		pf.nNumX = builtinFont->nNumX * builtInFontSize;
+		pf.nNumY = builtinFont->nNumY * builtInFontSize;
+		pf.nNum10X = builtinFont->nNum10X * builtInFontSize;
+		pf.nNum10Y = builtinFont->nNum10Y * builtInFontSize;
+		pf.nAlphaAM_X = builtinFont->nAlphaAM_X * builtInFontSize;
+		pf.nAlphaAM_Y = builtinFont->nAlphaAM_Y * builtInFontSize;
+		pf.nAlphaNZ_X = builtinFont->nAlphaNZ_X * builtInFontSize;
+		pf.nAlphaNZ_Y = builtinFont->nAlphaNZ_Y * builtInFontSize;
+		pf.nNoteX = builtinFont->nNoteX * builtInFontSize;
+		pf.nNoteY = builtinFont->nNoteY * builtInFontSize;
+		pf.nNoteWidth[0] = builtinFont->nNoteWidth[0] * builtInFontSize;
+		pf.nNoteWidth[1] = builtinFont->nNoteWidth[1] * builtInFontSize;
+		pf.nOctaveWidth = builtinFont->nOctaveWidth * builtInFontSize;
+		pf.nVolX = builtinFont->nVolX * builtInFontSize;
+		pf.nVolY = builtinFont->nVolY * builtInFontSize;
+		pf.nVolCmdWidth = builtinFont->nVolCmdWidth * builtInFontSize;
+		pf.nVolHiWidth = builtinFont->nVolHiWidth * builtInFontSize;
+		pf.nCmdOfs = builtinFont->nCmdOfs * builtInFontSize;
+		pf.nParamHiWidth = builtinFont->nParamHiWidth * builtInFontSize;
+		pf.nInstrOfs = builtinFont->nInstrOfs * builtInFontSize;
+		pf.nInstr10Ofs = builtinFont->nInstr10Ofs * builtInFontSize;
+		pf.nInstrHiWidth = builtinFont->nInstrHiWidth * builtInFontSize;
+		pf.pcParamMargin = builtinFont->pcParamMargin * builtInFontSize;
+		pf.pcValMargin = builtinFont->pcValMargin * builtInFontSize;
+		pf.paramLoMargin = builtinFont->paramLoMargin * builtInFontSize;
+		pf.spacingY = builtinFont->spacingY * builtInFontSize;
 
 		// Create 4-pixel border
 		const int bmWidth2 = pf.dib->bmiHeader.biWidth / 2;
@@ -244,7 +256,7 @@ void PatternFont::UpdateFont(HWND hwnd)
 	CDC hDC;
 	hDC.CreateCompatibleDC(CDC::FromHandle(::GetDC(hwnd)));
 	// Point size to pixels
-	font.size = -MulDiv(font.size, Util::GetDPIy(hwnd), 720);
+	font.size = -MulDiv(font.size, dpi, 720);
 
 	CFont gdiFont;
 	gdiFont.CreateFont(font.size, 0, 0, 0, font.flags[FontSetting::Bold] ? FW_BOLD : FW_NORMAL, font.flags[FontSetting::Italic] ? TRUE : FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_RASTER_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, FIXED_PITCH | FF_DONTCARE, mpt::ToCString(font.name));
@@ -442,7 +454,7 @@ void PatternFont::UpdateFont(HWND hwnd)
 
 		for(uint32 c = 32; c < 128; ++c)
 		{
-			DrawChar(hDC, (char)(unsigned char)c, charWidth * c, 0, charWidth, charHeight);
+			DrawChar(hDC, mpt::unsafe_char_convert<char>(static_cast<char32_t>(c)), charWidth * c, 0, charWidth, charHeight);
 		}
 		::GdiFlush();
 

@@ -8,9 +8,23 @@
 
 #if MPT_OS_WINDOWS
 
-#ifndef UNICODE
 #ifndef MPT_CHECK_WINDOWS_IGNORE_WARNING_NO_UNICODE
+#if MPT_OS_WINDOWS_WINNT
+#ifndef UNICODE
 MPT_WARNING("windows.h uses MBCS TCHAR. Please #define UNICODE.")
+#endif
+#elif MPT_OS_WINDOWS_WIN9X
+#ifdef UNICODE
+MPT_WARNING("Targeting Win9x but windows.h uses UNICODE TCHAR. Please do not #define UNICODE.")
+#endif
+#endif
+#endif
+
+#ifndef MPT_CHECK_WINDOWS_IGNORE_WARNING_UNICODE_MISMATCH
+#ifdef _UNICODE
+#ifndef UNICODE
+MPT_WARNING("_UNICODE is defined but UNICODE is not defined. Please enable UNICODE support in your compiler, or do not #define _UNICODE.")
+#endif
 #endif
 #endif
 

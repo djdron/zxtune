@@ -35,30 +35,42 @@ How to compile
 
  -  Supported Visual Studio versions:
 
-     -  Visual Studio 2017 and 2019 Community/Professional/Enterprise
+     -  Visual Studio 2019, and 2022 Community/Professional/Enterprise
 
         To compile the project, open `build/vsVERSIONwin7/OpenMPT.sln` (VERSION
-        being 2017 or 2019) and hit the compile button. Other target systems can
-        be found in the `vs2017*` and `vs2019*` sibling folders.
+        being 2019, or 2022) and hit the compile button. Other target systems
+        can be found in the `vs2019*`, and `vs2022*` sibling folders.
 
         Note that you have to build the `PluginBridge` and `PluginBridgeLegacy`
         projects manually for architectures other than the one you are building
         OpenMPT for, as Visual Studio only builds one architecture configuration
         at a time.
 
- -  OpenMPT requires the compile host system to be 64bit x86-64.
+        Please note that we do not support building with a later Visual Studio
+        installation with an earlier compiler version. This is because, while
+        later Visual Studio versions allow installing earlier compilers to be
+        available via the later version's environment, in this configuration,
+        the earlier compiler will still use the later C and C++ runtime's
+        headers and implementation, which significantly increases the matrix of
+        possible configurations to test.
 
- -  The Windows 8.1 SDK is required to build OpenMPT with Visual Studio 2017
-    (this is included with Visual Studio, however may need to be selected
-    explicitly during setup).
+     -  Visual Studio 2017 XP targeting toolset
+
+ -  OpenMPT requires the compile host system to be Windows 8.1 (or later) on
+    amd64 for VS2019 and VS2017, Windows 10 (or later) on amd64 for VS2022, or
+    Windows 11 (or later) ARM64.
+
+ -  In order to build OpenMPT for Windows XP, the Visual Studio 2017 XP 
+    targeting toolset as well as the Windows 8.1 SDK need to be installed. The
+    SDK is optionally included with Visual Studio 2017.
 
  -  Microsoft Foundation Classes (MFC) are required to build OpenMPT.
 
 
 ### libopenmpt and openmpt123
 
-See [Dependencies](libopenmpt/dox/dependencies.md) and
-[Getting Started](libopenmpt/dox/gettingstarted.md).
+See [Dependencies](doc/libopenmpt/dependencies.md) and
+[Getting Started](doc/libopenmpt/gettingstarted.md).
 
 
 Contributing to OpenMPT/libopenmpt

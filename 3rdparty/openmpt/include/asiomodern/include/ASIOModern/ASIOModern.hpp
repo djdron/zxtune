@@ -27,11 +27,11 @@ namespace ASIO {
 
 
 
-inline namespace Modern {
-
-
-
 inline namespace ASIO_VERSION_NAMESPACE {
+
+
+
+inline namespace Modern {
 
 
 
@@ -163,7 +163,10 @@ private:
 private:
 	static inline std::mutex                                      s_AllocationMutex;
 	static inline std::array<bool, MaxInstances>                  s_Allocation                = detail::init_array<bool, MaxInstances>(false);
-	static inline std::array<CallbacksWrapperState, MaxInstances> s_AsioCallbackWrapperStates = detail::init_array<CallbacksWrapperState, MaxInstances>(CallbacksWrapperState{{nullptr, nullptr, nullptr, nullptr}, nullptr});
+	static inline std::array<CallbacksWrapperState, MaxInstances> s_AsioCallbackWrapperStates = detail::init_array<CallbacksWrapperState, MaxInstances>(CallbacksWrapperState{
+		{nullptr, nullptr, nullptr, nullptr},
+		nullptr
+    });
 	static constexpr inline std::array<Callbacks, MaxInstances>   s_AsioCallbacks             = construct_callbacks_array<std::array<CallbacksWrapperState, MaxInstances>, &s_AsioCallbackWrapperStates>(std::make_index_sequence<MaxInstances>());
 
 private:
@@ -200,7 +203,7 @@ protected:
 	IMultiplexedCallbacks() = default;
 
 public:
-	IMultiplexedCallbacks(const IMultiplexedCallbacks &) = delete;
+	IMultiplexedCallbacks(const IMultiplexedCallbacks &)             = delete;
 	IMultiplexedCallbacks & operator=(const IMultiplexedCallbacks &) = delete;
 
 public:
@@ -240,7 +243,7 @@ public:
 			m_State.second.bufferSwitchTimeInfo = nullptr;
 		}
 	}
-	MultiplexedCallbacks(const MultiplexedCallbacks &) = delete;
+	MultiplexedCallbacks(const MultiplexedCallbacks &)             = delete;
 	MultiplexedCallbacks & operator=(const MultiplexedCallbacks &) = delete;
 	~MultiplexedCallbacks() final {
 		GlobalState::Unmultiplex(m_State);
@@ -317,7 +320,7 @@ public:
 		ICallbackHandler() = default;
 
 	public:
-		ICallbackHandler(const ICallbackHandler &) = delete;
+		ICallbackHandler(const ICallbackHandler &)             = delete;
 		ICallbackHandler & operator=(const ICallbackHandler &) = delete;
 		virtual ~ICallbackHandler()                            = default;
 
@@ -344,8 +347,8 @@ public:
 		void RealtimeBufferSwitch(ASIO::BufferIndex bufferIndex) noexcept override;
 		*/
 	public:
-		CallbackHandler()                        = default;
-		CallbackHandler(const CallbackHandler &) = delete;
+		CallbackHandler()                                    = default;
+		CallbackHandler(const CallbackHandler &)             = delete;
 		CallbackHandler & operator=(const CallbackHandler &) = delete;
 		virtual ~CallbackHandler()                           = default;
 
@@ -942,11 +945,11 @@ public:
 
 
 
-} // namespace ASIO_VERSION_NAMESPACE
-
-
-
 } // namespace Modern
+
+
+
+} // namespace ASIO_VERSION_NAMESPACE
 
 
 

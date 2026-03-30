@@ -9,21 +9,28 @@
 
 
 #include "stdafx.h"
-#include "MPTrackUtil.h"
 #include "Image.h"
 #include "../common/FileReader.h"
 #include "../common/ComponentManager.h"
 
 // GDI+
 #include <atlbase.h>
+#if MPT_MSVC_BEFORE(2019, 11)  // really < Windows 10 SDK 2104 (10.0.20348.0)
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+#if MPT_COMPILER_MSVC
 #pragma warning(push)
 #pragma warning(disable : 4458)  // declaration of 'x' hides class member
+#endif
 #include <gdiplus.h>
+#if MPT_COMPILER_MSVC
 #pragma warning(pop)
+#endif
+#if MPT_MSVC_BEFORE(2019, 11)  // really < Windows 10 SDK 2104 (10.0.20348.0)
 #undef min
 #undef max
+#endif
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -60,7 +67,7 @@ namespace GDIP
 static CComPtr<IStream> GetStream(mpt::const_byte_span data)
 {
 	CComPtr<IStream> stream;
-#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 	stream.Attach(SHCreateMemStream(mpt::byte_cast<const unsigned char *>(data.data()), mpt::saturate_cast<UINT>(data.size())));
 #else
 	HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, data.size());

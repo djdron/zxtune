@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/cs2005/test_project_refs.lua
 -- Test the project dependencies block of a Visual Studio 2005+ C# project.
--- Copyright (c) 2012 Jason Perkins and the Premake project
+-- Copyright (c) 2012 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -96,9 +96,24 @@
 -- NoCopyLocal flag has been set for the configuration.
 --
 
-	function suite.markedPrivate_onNoCopyLocal()
+	function suite.markedPrivate_onNoCopyLocal_ViaFlag()
 		links { "MyProject" }
 		flags { "NoCopyLocal" }
+		prepare()
+		test.capture [[
+	<ItemGroup>
+		<ProjectReference Include="MyProject.vcproj">
+			<Project>{00112233-4455-6677-8888-99AABBCCDDEE}</Project>
+			<Name>MyProject</Name>
+			<Private>False</Private>
+		</ProjectReference>
+	</ItemGroup>
+		]]
+	end
+
+	function suite.markedPrivate_onNoLocalCopy_ViaAPI()
+		links { "MyProject" }
+		allowcopylocal "Off"
 		prepare()
 		test.capture [[
 	<ItemGroup>

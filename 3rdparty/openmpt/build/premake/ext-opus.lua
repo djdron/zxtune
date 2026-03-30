@@ -2,75 +2,318 @@
  project "opus"
   uuid "9a2d9099-e1a2-4287-b845-e3598ad24d70"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "opus"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-opus"
-  local extincludedirs = {
-   "../../include/ogg/include",
+	includedirs {
+		"../../include/opus/include",
+		"../../include/opus/celt",
+		"../../include/opus/dnn",
+		"../../include/opus/silk",
+		"../../include/opus/silk/fixed",
+		"../../include/opus/silk/float",
+		"../../include/opus/src",
+		"../../include/opus/win32",
+		"../../include/opus",
 	}
- 	filter { "action:vs*" }
-		includedirs ( extincludedirs )
-	filter { "not action:vs*" }
-		sysincludedirs ( extincludedirs )
 	filter {}
-  includedirs {
-   "../../include/opus/include",
-   "../../include/opus/celt",
-   "../../include/opus/silk",
-   "../../include/opus/silk/float",
-   "../../include/opus/src",
-   "../../include/opus/win32",
-   "../../include/opus",
-  }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
-	filter {}
-  files {
-   "../../include/opus/include/opus.h",
-   "../../include/opus/include/opus_custom.h",
-   "../../include/opus/include/opus_defines.h",
-   "../../include/opus/include/opus_multistream.h",
-   "../../include/opus/include/opus_projection.h",
-   "../../include/opus/include/opus_types.h",
-  }
-  files {
-   "../../include/opus/celt/*.c",
-   "../../include/opus/celt/*.h",
-   "../../include/opus/silk/*.c",
-   "../../include/opus/silk/*.h",
-   "../../include/opus/silk/float/*.c",
-   "../../include/opus/silk/float/*.h",
-   "../../include/opus/src/*.c",
-   "../../include/opus/src/*.h",
-  }
+		files {
+			"../../include/opus/include/opus.h",
+			"../../include/opus/include/opus_custom.h",
+			"../../include/opus/include/opus_defines.h",
+			"../../include/opus/include/opus_multistream.h",
+			"../../include/opus/include/opus_projection.h",
+			"../../include/opus/include/opus_types.h",
+		}
+		files {
+			"../../include/opus/celt/*.c",
+			"../../include/opus/celt/*.h",
+			"../../include/opus/silk/*.c",
+			"../../include/opus/silk/*.h",
+			"../../include/opus/silk/float/*.c",
+			"../../include/opus/silk/float/*.h",
+			"../../include/opus/src/*.c",
+			"../../include/opus/src/*.h",
+		}
 	filter { "architecture:x86 or x86_64" }
-	files {
-		"../../include/opus/celt/x86/*.c",
-		"../../include/opus/celt/x86/*.h",
-		"../../include/opus/silk/x86/*.c",
-		"../../include/opus/silk/x86/*.h",
+		files {
+			"../../include/opus/celt/x86/*.c",
+			"../../include/opus/celt/x86/*.h",
+			"../../include/opus/silk/float/x86/*.c",
+			"../../include/opus/silk/float/x86/*.h",
+			"../../include/opus/silk/x86/*.c",
+			"../../include/opus/silk/x86/*.h",
+		}
+	filter {}
+	filter { "architecture:arm or aarch64" }
+		files {
+			"../../include/opus/celt/arm/*.c",
+			"../../include/opus/celt/arm/*.h",
+			"../../include/opus/silk/float/arm/*.c",
+			"../../include/opus/silk/float/arm/*.h",
+			"../../include/opus/silk/arm/*.c",
+			"../../include/opus/silk/arm/*.h",
+		}
+	filter {}
+		excludes {
+			"../../include/opus/celt/opus_custom_demo.c",
+			"../../include/opus/src/opus_compare.c",
+			"../../include/opus/src/opus_demo.c",
+			"../../include/opus/src/qext_compare.c",
+			"../../include/opus/src/repacketizer_demo.c",
+		}
+	filter {}
+		defines {
+			"OPUS_BUILD=1",
+			"PACKAGE_VERISON=\"1.6\"",
+			"ENABLE_HARDENING=1",
+			"HAVE_STDINT_H=1",
+			"HAVE_STDIO_H=1",
+			"HAVE_STDLIB_H=1",
+			"HAVE_STRING_H=1",
+			"SUPPRESS_PERF_WARNINGS=1",
+			"USE_ALLOCA=1",
+		}
+	filter {}
+		opus_enable_dnn = false
+		if opus_enable_dnn then -- NoLACE (OSCE) / LACE (OSCE) / DEEP-PLC (DEEP_PLC || DRED) / DRED (DRED) / QEXT (Opus HD)
+			filter {}
+				files {
+					"../../include/opus/dnn/*.c",
+					"../../include/opus/dnn/*.h",
+				}
+				defines {
+					"ENABLE_DEEP_PLC=1",
+					"ENABLE_DRED=1",
+					"ENABLE_OSCE=1",
+					"ENABLE_OSCE_BWE=1",
+					"ENABLE_QEXT=1",
+				}
+			filter {}
+			filter { "architecture:x86 or x86_64" }
+				files {
+					"../../include/opus/dnn/x86/*.c",
+					"../../include/opus/dnn/x86/*.h",
+				}
+			filter {}
+			filter { "architecture:arm or aarch64" }
+				files {
+					"../../include/opus/dnn/arm/*.c",
+					"../../include/opus/dnn/arm/*.h",
+				}
+			filter {}
+				excludes {
+					"../../include/opus/dnn/bwe_demo.c",
+					"../../include/opus/dnn/dred_compare.c",
+					"../../include/opus/dnn/dump_data.c",
+					"../../include/opus/dnn/fargan_demo.c",
+					"../../include/opus/dnn/lossgen.c",
+					"../../include/opus/dnn/lossgen_data.c",
+					"../../include/opus/dnn/lossgen_demo.c",
+					"../../include/opus/dnn/write_lpcnet_weights.c",
+				}
+			filter {}
+		end
+	filter {}
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+		filter { "architecture:x86" }
+			defines {
+				"OPUS_HAVE_RTCD=1",
+				"CPU_INFO_BY_C=1",
+			}
+			excludes {
+				"../../include/opus/dnn/x86/nnet_avx2.c",
+				"../../include/opus/dnn/x86/nnet_sse4_1.c",
+			}
+		filter {}
+		filter { "architecture:x86_64" }
+			defines {
+				"OPUS_HAVE_RTCD=1",
+				"CPU_INFO_BY_C=1",
+				"OPUS_X86_MAY_HAVE_SSE=1",
+				"OPUS_X86_MAY_HAVE_SSE2=1",
+				"OPUS_X86_PRESUME_SSE=1",
+				"OPUS_X86_PRESUME_SSE2=1",
+			}
+			excludes {
+				"../../include/opus/dnn/x86/nnet_avx2.c",
+				"../../include/opus/dnn/x86/nnet_sse4_1.c",
+			}
+		filter {}
+		filter { "architecture:arm" }
+			excludes {
+				"../../include/opus/celt/arm/celt_fft_ne10.c",
+				"../../include/opus/celt/arm/celt_mdct_ne10.c",
+				"../../include/opus/celt/arm/celt_neon_intr.c",
+				"../../include/opus/celt/arm/pitch_neon_intr.c",
+				"../../include/opus/dnn/arm/nnet_dotprod.c",
+				"../../include/opus/dnn/arm/nnet_neon.c",
+			}
+		filter {}
+		filter { "architecture:aarch64" }
+			excludes {
+				"../../include/opus/celt/arm/celt_fft_ne10.c",
+				"../../include/opus/celt/arm/celt_mdct_ne10.c",
+				"../../include/opus/celt/arm/celt_neon_intr.c",
+				"../../include/opus/celt/arm/pitch_neon_intr.c",
+				"../../include/opus/dnn/arm/nnet_dotprod.c",
+				"../../include/opus/dnn/arm/nnet_neon.c",
+			}
+		filter {}
+	else
+		if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+			filter { "architecture:x86" }
+				defines {
+					"OPUS_HAVE_RTCD=1",
+					"CPU_INFO_BY_C=1",
+					"OPUS_X86_MAY_HAVE_SSE=1",
+					"OPUS_X86_MAY_HAVE_SSE2=1",
+					"OPUS_X86_MAY_HAVE_SSE4_1=1",
+				}
+			filter {}
+		else
+			if opus_enable_dnn and MPT_MSVC_AT_LEAST(2026) then
+			-- work-around VS2026 Internal Compiler Error:
+			-- DNN fails to build with SSE2 or SSE4.1
+			-- Because Opus does not handle having AVX while not having SSE gracefully,
+			-- just disable both.
+			else
+			filter { "architecture:x86" }
+			defines {
+				"OPUS_HAVE_RTCD=1",
+				"CPU_INFO_BY_C=1",
+				"OPUS_X86_MAY_HAVE_SSE=1",
+				"OPUS_X86_MAY_HAVE_SSE2=1",
+				"OPUS_X86_MAY_HAVE_SSE4_1=1",
+			}
+			filter {}
+			filter { "architecture:x86" }
+				defines {
+					"OPUS_X86_PRESUME_SSE",
+					"OPUS_X86_PRESUME_SSE2",
+				}
+			filter {}
+			end
+		end
+		filter {}
+		filter { "architecture:x86_64" }
+			defines {
+				"OPUS_HAVE_RTCD=1",
+				"CPU_INFO_BY_C=1",
+				"OPUS_X86_MAY_HAVE_SSE=1",
+				"OPUS_X86_MAY_HAVE_SSE2=1",
+				"OPUS_X86_MAY_HAVE_SSE4_1=1",
+				"OPUS_X86_MAY_HAVE_AVX2=1",
+				"OPUS_X86_PRESUME_SSE",
+				"OPUS_X86_PRESUME_SSE2",
+			}
+			if MPT_WIN_AT_LEAST(MPT_WIN["11_24H2"]) then
+				if MPT_MSVC_AT_LEAST(2022) then
+					defines {
+						"OPUS_X86_PRESUME_SSE4_1",
+					}
+				end
+			end
+		filter {}
+		filter { "architecture:arm" }
+			excludes {
+				"../../include/opus/celt/arm/celt_fft_ne10.c",
+				"../../include/opus/celt/arm/celt_mdct_ne10.c",
+				"../../include/opus/celt/arm/celt_neon_intr.c",
+				"../../include/opus/celt/arm/pitch_neon_intr.c",
+				"../../include/opus/dnn/arm/nnet_dotprod.c",
+				"../../include/opus/dnn/arm/nnet_neon.c",
+			}
+			defines {
+				--"OPUS_HAVE_RTCD=1",
+				--"CPU_INFO_BY_C=1",
+				--"OPUS_ARM_MAY_HAVE_DOTPROD=1",
+				--"OPUS_ARM_MAY_HAVE_EDSP=1",
+				--"OPUS_ARM_MAY_HAVE_MEDIA=1",
+				--"OPUS_ARM_MAY_HAVE_NEON=1",
+				--"OPUS_ARM_MAY_HAVE_NEON_INTR=1",
+			}
+		filter {}
+		filter { "architecture:aarch64" }
+			excludes {
+				"../../include/opus/celt/arm/celt_fft_ne10.c",
+				"../../include/opus/celt/arm/celt_mdct_ne10.c",
+				"../../include/opus/celt/arm/celt_neon_intr.c",
+				"../../include/opus/celt/arm/pitch_neon_intr.c",
+				"../../include/opus/dnn/arm/nnet_dotprod.c",
+				"../../include/opus/dnn/arm/nnet_neon.c",
+			}
+			defines {
+				--"OPUS_HAVE_RTCD=1",
+				--"CPU_INFO_BY_C=1",
+				--"OPUS_ARM_MAY_HAVE_DOTPROD=1",
+				--"OPUS_ARM_MAY_HAVE_EDSP=1",
+				--"OPUS_ARM_MAY_HAVE_MEDIA=1",
+				--"OPUS_ARM_MAY_HAVE_NEON=1",
+				--"OPUS_ARM_MAY_HAVE_NEON_INTR=1",
+				--"OPUS_ARM_PRESUME_NEON_INTR=1",
+			}
+		filter {}
+		filter { "architecture:arm64ec" }
+			excludes {
+				"../../include/opus/celt/arm/celt_fft_ne10.c",
+				"../../include/opus/celt/arm/celt_mdct_ne10.c",
+				"../../include/opus/celt/arm/celt_neon_intr.c",
+				"../../include/opus/celt/arm/pitch_neon_intr.c",
+				"../../include/opus/dnn/arm/nnet_dotprod.c",
+				"../../include/opus/dnn/arm/nnet_neon.c",
+			}
+			defines {
+				--"OPUS_HAVE_RTCD=1",
+				--"CPU_INFO_BY_C=1",
+				--"OPUS_ARM_MAY_HAVE_DOTPROD=1",
+				--"OPUS_ARM_MAY_HAVE_EDSP=1",
+				--"OPUS_ARM_MAY_HAVE_MEDIA=1",
+				--"OPUS_ARM_MAY_HAVE_NEON=1",
+				--"OPUS_ARM_MAY_HAVE_NEON_INTR=1",
+				--"OPUS_ARM_PRESUME_NEON_INTR=1",
+			}
+		filter {}
+	end
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions {
+			"/wd4244",
+			"/wd4305",
+		}
+		buildoptions { -- analyze
+			"/wd6255",
+			"/wd6297",
+		}
+	end
+	filter {}
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+		buildoptions {
+			"-Wno-excess-initializers",
+			"-Wno-macro-redefined",
+		}
+	end
+	filter {}
+	if MPT_OS_WINDOWS then
+		filter {}
+		filter { "kind:SharedLib" }
+			defines { "DLL_EXPORT" }
+		filter {}
+	end
+	filter {}
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+		defines { "FLOAT_APPROX" }
+	end
+	filter {}
+
+function mpt_use_opus ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/opus/include",
 	}
 	filter {}
-  excludes {
-   "../../include/opus/celt/opus_custom_demo.c",
-   "../../include/opus/src/opus_compare.c",
-   "../../include/opus/src/opus_demo.c",
-   "../../include/opus/src/repacketizer_demo.c",
-  }
-  defines { "HAVE_CONFIG_H" }
-  links { }
-  filter { "action:vs*" }
-    buildoptions { "/wd4244", "/wd4334" }
-  filter {}
-  filter { "action:vs*" }
-		buildoptions { "/wd6255", "/wd6297" } -- analyze
-  filter {}
-  filter { "kind:SharedLib" }
-   defines { "DLL_EXPORT" }
-  filter {}
-		if _OPTIONS["clang"] then
-			defines { "FLOAT_APPROX" }
-		end
+	links {
+		"opus",
+	}
+	filter {}
+end

@@ -12,8 +12,11 @@
 #include "HTTP.h"
 #include "mpt/system_error/system_error.hpp"
 #include <WinInet.h>
+#include "mpt/format/join.hpp"
 #include "mpt/io/io.hpp"
 #include "mpt/io/io_stdstream.hpp"
+#include "mpt/parse/parse.hpp"
+#include "mpt/string/utility.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -109,7 +112,7 @@ namespace HTTP
 
 
 exception::exception(const mpt::ustring &m)
-	: std::runtime_error(std::string("HTTP error: ") + mpt::ToCharset(mpt::Charset::ASCII, m))
+	: std::runtime_error(std::string("HTTP error: ") + mpt::transcode<std::string>(mpt::exception_encoding, m))
 {
 	message = m;
 }
@@ -323,7 +326,7 @@ Result Request::operator()(InternetSession &internet) const
 				arguments.push_back(MPT_UFORMAT("{}")(key));
 			}
 		}
-		queryPath += U_("?") + mpt::String::Combine(arguments, U_("&"));
+		queryPath += U_("?") + mpt::join_format(arguments, U_("&"));
 	}
 	Handle request = NativeHandle(HttpOpenRequest(
 		NativeHandle(connection),
@@ -449,7 +452,7 @@ Request &Request::SetURI(const URI &uri)
 	host = uri.host;
 	if(!uri.port.empty())
 	{
-		port = HTTP::Port(ConvertStrTo<uint16>(uri.port));
+		port = HTTP::Port(mpt::parse<uint16>(uri.port));
 	} else
 	{
 		port = HTTP::Port::Default;
@@ -464,7 +467,7 @@ Request &Request::SetURI(const URI &uri)
 		path = uri.path;
 	}
 	query.clear();
-	auto keyvals = mpt::String::Split<mpt::ustring>(uri.query, U_("&"));
+	auto keyvals = mpt::split(uri.query, U_("&"));
 	for(const auto &keyval : keyvals)
 	{
 		std::size_t delim_pos = keyval.find(U_("="));
@@ -481,10 +484,10 @@ Request &Request::SetURI(const URI &uri)
 }
 
 
-#if defined(MPT_BUILD_RETRO)
+#if MPT_WIN_BEFORE(MPT_WIN_VISTA)
 Request &Request::InsecureTLSDowngradeWindowsXP()
 {
-	if(mpt::OS::Windows::IsOriginal() && mpt::OS::Windows::Version::Current().IsBefore(mpt::OS::Windows::Version::WinVista))
+	if(mpt::OS::Windows::IsOriginal() && mpt::osinfo::windows::Version::Current().IsBefore(mpt::osinfo::windows::Version::WinVista))
 	{
 		// TLS 1.0 is not enabled by default until IE7. Since WinInet won't let us override this setting, we cannot assume that HTTPS
 		// is going to work on older systems. Besides... Windows XP is already enough of a security risk by itself. :P
@@ -499,7 +502,7 @@ Request &Request::InsecureTLSDowngradeWindowsXP()
 	}
 	return *this;
 }
-#endif // MPT_BUILD_RETRO
+#endif // < MPT_WIN_VISTA
 
 
 Result SimpleGet(InternetSession &internet, Protocol protocol, const mpt::ustring &host, const mpt::ustring &path)

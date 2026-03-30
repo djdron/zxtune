@@ -23,12 +23,15 @@ namespace IPCWindow
 		GetVersion                         = 0x03,  // returns Version::GewRawVersion()
 		GetArchitecture                    = 0x04,  // returns mpt::OS::Windows::Architecture
 		HasSameBinaryPath                  = 0x05,
-		HasSameSettingsPath                = 0x06
+		HasSameSettingsPath                = 0x06,
+		PlayCurrent                        = 0x07,
 	};
 
 	void Open(HINSTANCE hInstance);
 
 	void Close();
+
+	void UpdateLastUsed();
 
 	LRESULT SendIPC(HWND ipcWnd, Function function, mpt::const_byte_span data = mpt::const_byte_span());
 
@@ -36,19 +39,18 @@ namespace IPCWindow
 
 	enum InstanceRequirements
 	{
+		None             = 0x00u,
 		SamePath         = 0x01u,
 		SameSettings     = 0x02u,
 		SameArchitecture = 0x04u,
-		SameVersion      = 0x08u
+		SameVersion      = 0x08u,
 	};
 	MPT_DECLARE_ENUM(InstanceRequirements)
 
-	HWND FindIPCWindow();
-
-	HWND FindIPCWindow(FlagSet<InstanceRequirements> require);
+	HWND FindIPCWindow(FlagSet<InstanceRequirements> require = None);
 
 	// Send file open requests to other OpenMPT instance, if there is one
-	bool SendToIPC(const std::vector<mpt::PathString> &filenames);
+	bool SendToIPC(const std::vector<mpt::PathString> &filenames, bool autoplay);
 
 }
 

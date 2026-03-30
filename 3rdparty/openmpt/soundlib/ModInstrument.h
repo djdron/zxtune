@@ -12,28 +12,31 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#include "InstrumentSynth.h"
 #include "modcommand.h"
 #include "tuningbase.h"
 #include "Snd_defs.h"
 #include "openmpt/base/FlagSet.hpp"
 #include "../common/misc_util.h"
+
+#include <map>
 #include <set>
 
 OPENMPT_NAMESPACE_BEGIN
 
-class CSoundFile;
+struct ModChannel;
 
 // Instrument Nodes
 struct EnvelopeNode
 {
-	using tick_t = uint16 ;
+	using tick_t = uint16;
 	using value_t = uint8;
 
 	tick_t tick = 0;   // Envelope node position (x axis)
 	value_t value = 0; // Envelope node value (y axis)
 
-	EnvelopeNode() { }
-	EnvelopeNode(tick_t tick, value_t value) : tick(tick), value(value) { }
+	constexpr EnvelopeNode() = default;
+	constexpr EnvelopeNode(tick_t tick, value_t value) : tick{tick}, value{value} { }
 
 	bool operator== (const EnvelopeNode &other) const { return tick == other.tick && value == other.value; }
 };
@@ -60,6 +63,8 @@ struct InstrumentEnvelope : public std::vector<EnvelopeNode>
 
 	uint32 size() const { return static_cast<uint32>(std::vector<EnvelopeNode>::size()); }
 
+	uint8 LastPoint() const { return static_cast<uint8>(std::max(size(), uint32(1)) - 1); }
+
 	using std::vector<EnvelopeNode>::push_back;
 	void push_back(EnvelopeNode::tick_t tick, EnvelopeNode::value_t value) { emplace_back(tick, value); }
 };
@@ -67,9 +72,9 @@ struct InstrumentEnvelope : public std::vector<EnvelopeNode>
 // Instrument Struct
 struct ModInstrument
 {
-	uint32 nFadeOut = 256;   // Instrument fadeout speed
-	uint32 nGlobalVol = 64;  // Global volume (0...64, all sample volumes are multiplied with this - TODO: This is 0...128 in Impulse Tracker)
-	uint32 nPan = 32 * 4;    // Default pan (0...256), if the appropriate flag is set. Sample panning overrides instrument panning.
+	uint16 nFadeOut = 256;   // Instrument fadeout speed
+	uint16 nGlobalVol = 64;  // Global volume (0...64, all sample volumes are multiplied with this - TODO: This is 0...128 in Impulse Tracker)
+	uint16 nPan = 32 * 4;    // Default pan (0...256), if the appropriate flag is set. Sample panning overrides instrument panning.
 
 	uint16 nVolRampUp = 0;  // Default sample ramping up, 0 = use global default
 
@@ -104,6 +109,7 @@ struct ModInstrument
 
 	TEMPO pitchToTempoLock;      // BPM at which the samples assigned to this instrument loop correctly (0 = unset)
 	CTuning *pTuning = nullptr;  // sample tuning assigned to this instrument
+	InstrumentSynth synth;       // Synth scripts for this instrument
 
 	InstrumentEnvelope VolEnv;    // Volume envelope data
 	InstrumentEnvelope PanEnv;    // Panning envelope data
@@ -122,43 +128,49 @@ struct ModInstrument
 	// WHEN adding new members here, ALSO update InstrumentExtensions.cpp
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-	ModInstrument(SAMPLEINDEX sample = 0);
+	MPT_ATTR_ALWAYSINLINE MPT_CONSTEXPR20_CONTAINER_FUN explicit ModInstrument(SAMPLEINDEX sample = 0)
+		: NoteMap{mpt::generate_array<uint8, 128>([](std::size_t i){ return static_cast<uint8>(NOTE_MIN + i); })}
+		, Keyboard{mpt::init_array<SAMPLEINDEX, 128>(sample)}
+	{
+		return;
+	}
 
 	// Assign all notes to a given sample.
-	void AssignSample(SAMPLEINDEX sample)
+	MPT_ATTR_ALWAYSINLINE MPT_CONSTEXPR20_ALGORITHM_FUN void AssignSample(SAMPLEINDEX sample)
 	{
 		Keyboard.fill(sample);
 	}
 
 	// Reset note mapping (i.e. every note is mapped to itself)
-	void ResetNoteMap()
+	MPT_ATTR_ALWAYSINLINE MPT_CONSTEXPR20_ALGORITHM_FUN void ResetNoteMap()
 	{
-		for(size_t n = 0; n < std::size(NoteMap); n++)
-		{
-			NoteMap[n] = static_cast<uint8>(n + 1);
-		}
+		std::iota(NoteMap.begin(), NoteMap.end(), static_cast<uint8>(NOTE_MIN));
 	}
+
+	// If the instrument has a non-default note mapping and can be simplified to use the default note mapping by transposing samples,
+	// the list of samples that would need to be transposed and the corresponding transpose values are returned - otherwise an empty map.
+	std::map<SAMPLEINDEX, int8> CanConvertToDefaultNoteMap() const;
 
 	// Transpose entire note mapping by given number of semitones
 	void Transpose(int8 amount);
 
-	bool IsCutoffEnabled() const { return (nIFC & 0x80) != 0; }
-	bool IsResonanceEnabled() const { return (nIFR & 0x80) != 0; }
-	uint8 GetCutoff() const { return (nIFC & 0x7F); }
-	uint8 GetResonance() const { return (nIFR & 0x7F); }
-	void SetCutoff(uint8 cutoff, bool enable) { nIFC = std::min(cutoff, uint8(0x7F)) | (enable ? 0x80 : 0x00); }
-	void SetResonance(uint8 resonance, bool enable) { nIFR = std::min(resonance, uint8(0x7F)) | (enable ? 0x80 : 0x00); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsCutoffEnabled() const { return (nIFC & 0x80) != 0; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsResonanceEnabled() const { return (nIFR & 0x80) != 0; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint8 GetCutoff() const { return (nIFC & 0x7F); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint8 GetResonance() const { return (nIFR & 0x7F); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr void SetCutoff(uint8 cutoff, bool enable) { nIFC = std::min(cutoff, uint8(0x7F)) | (enable ? 0x80 : 0x00); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr void SetResonance(uint8 resonance, bool enable) { nIFR = std::min(resonance, uint8(0x7F)) | (enable ? 0x80 : 0x00); }
 
-	bool HasValidMIDIChannel() const { return (nMidiChannel >= 1 && nMidiChannel <= 17); }
-	uint8 GetMIDIChannel(const CSoundFile &sndFile, CHANNELINDEX chn) const;
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool HasValidMIDIChannel() const { return (nMidiChannel >= 1 && nMidiChannel <= 17); }
+	uint8 GetMIDIChannel(const ModChannel &channel, CHANNELINDEX chn) const;
 
-	void SetTuning(CTuning *pT)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr void SetTuning(CTuning *pT)
 	{
 		pTuning = pT;
 	}
 
 	// Get a reference to a specific envelope of this instrument
-	const InstrumentEnvelope &GetEnvelope(EnvelopeType envType) const
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr const InstrumentEnvelope &GetEnvelope(EnvelopeType envType) const
 	{
 		switch(envType)
 		{

@@ -15,36 +15,169 @@
 
 
 
-// Advanced inline attributes
 #if MPT_COMPILER_MSVC
-#define MPT_FORCEINLINE __forceinline
-#define MPT_NOINLINE    __declspec(noinline)
-#elif MPT_COMPILER_GCC || MPT_COMPILER_CLANG
-#define MPT_FORCEINLINE __attribute__((always_inline)) inline
-#define MPT_NOINLINE    __attribute__((noinline))
+#if MPT_MSVC_AT_LEAST(2022, 0)
+#define MPT_ATTR_FLATTEN [[msvc::flatten]]
 #else
-#define MPT_FORCEINLINE inline
-#define MPT_NOINLINE
+#define MPT_ATTR_FLATTEN
+#endif
+#elif MPT_COMPILER_GCC || MPT_COMPILER_CLANG
+#define MPT_ATTR_FLATTEN [[gnu::flatten]]
+#else
+#define MPT_ATTR_FLATTEN
 #endif
 
 
 
-// constexpr
-#define MPT_CONSTEXPRINLINE constexpr MPT_FORCEINLINE
-#if MPT_CXX_AT_LEAST(20)
-#define MPT_CONSTEXPR20_FUN constexpr MPT_FORCEINLINE
+#if MPT_COMPILER_MSVC
+#if MPT_MSVC_AT_LEAST(2019, 1) && MPT_CXX_AT_LEAST(20)
+#define MPT_ATTR_NOINLINE [[msvc::noinline]]
+#else
+#define MPT_ATTR_NOINLINE
+#endif
+#elif MPT_COMPILER_GCC
+// https://godbolt.org/z/1P8758q89
+#if MPT_GCC_AT_LEAST(8, 1, 0)
+#define MPT_ATTR_NOINLINE [[gnu::noinline]] [[gnu::noclone]] [[gnu::no_icf]] [[gnu::noipa]]
+#else
+#define MPT_ATTR_NOINLINE [[gnu::noinline]] [[gnu::noclone]] [[gnu::no_icf]]
+#endif
+#elif MPT_COMPILER_CLANG
+#if MPT_CLANG_AT_LEAST(15, 0, 0)
+#define MPT_ATTR_NOINLINE [[clang::noinline]]
+#else
+#define MPT_ATTR_NOINLINE [[gnu::noinline]]
+#endif
+#else
+#define MPT_ATTR_NOINLINE
+#endif
+
+
+
+#if MPT_COMPILER_MSVC
+#if MPT_MSVC_AT_LEAST(2019, 1) && MPT_CXX_AT_LEAST(20)
+#define MPT_ATTR_ALWAYSINLINE [[msvc::forceinline]]
+#else
+#define MPT_ATTR_ALWAYSINLINE
+#endif
+#elif MPT_COMPILER_GCC
+#define MPT_ATTR_ALWAYSINLINE [[gnu::always_inline]]
+#elif MPT_COMPILER_CLANG
+#if MPT_CLANG_AT_LEAST(15, 0, 0)
+#define MPT_ATTR_ALWAYSINLINE [[clang::always_inline]]
+#else
+#define MPT_ATTR_ALWAYSINLINE [[gnu::always_inline]]
+#endif
+#else
+#define MPT_ATTR_ALWAYSINLINE
+#endif
+
+
+
+// for compilers that do not support C++ attribute syntax for noinline
+#if MPT_COMPILER_MSVC && (MPT_MSVC_BEFORE(2019, 1) || MPT_CXX_BEFORE(20))
+#define MPT_DECL_NOINLINE __declspec(noinline)
+#else
+#define MPT_DECL_NOINLINE
+#endif
+
+
+
+// for compilers that do not support C++ attribute syntax for forced inline
+#if MPT_COMPILER_MSVC && (MPT_MSVC_BEFORE(2019, 1) || MPT_CXX_BEFORE(20))
+#define MPT_INLINE_FORCE __forceinline
+#else
+#define MPT_INLINE_FORCE inline
+#endif
+
+
+
+#if MPT_CXX_AT_LEAST(23)
+#define MPT_CONSTEXPR20_FUN MPT_INLINE_FORCE constexpr
 #define MPT_CONSTEXPR20_VAR constexpr
-#else // !C++20
-#define MPT_CONSTEXPR20_FUN MPT_FORCEINLINE
+#define MPT_CONSTEXPR23_FUN MPT_INLINE_FORCE constexpr
+#define MPT_CONSTEXPR23_VAR constexpr
+#elif MPT_CXX_AT_LEAST(20)
+#define MPT_CONSTEXPR20_FUN MPT_INLINE_FORCE constexpr
+#define MPT_CONSTEXPR20_VAR constexpr
+#define MPT_CONSTEXPR23_FUN MPT_INLINE_FORCE
+#define MPT_CONSTEXPR23_VAR const
+#else // C++
+#define MPT_CONSTEXPR20_FUN MPT_INLINE_FORCE
 #define MPT_CONSTEXPR20_VAR const
+#define MPT_CONSTEXPR23_FUN MPT_INLINE_FORCE
+#define MPT_CONSTEXPR23_VAR const
+#endif // C++
+
+#if !defined(MPT_LIBCXX_QUIRK_NO_CXX20_CONSTEXPR_ALGORITHM)
+#define MPT_CONSTEXPR20_ALGORITHM_FUN MPT_CONSTEXPR20_FUN
+#define MPT_CONSTEXPR20_ALGORITHM_VAR MPT_CONSTEXPR20_VAR
+#else
+#define MPT_CONSTEXPR20_ALGORITHM_FUN MPT_CONSTEXPR23_FUN
+#define MPT_CONSTEXPR20_ALGORITHM_VAR MPT_CONSTEXPR23_VAR
+#endif
+
+#if !defined(MPT_LIBCXX_QUIRK_NO_CXX20_CONSTEXPR_CONTAINER)
+#define MPT_CONSTEXPR20_CONTAINER_FUN MPT_CONSTEXPR20_FUN
+#define MPT_CONSTEXPR20_CONTAINER_VAR MPT_CONSTEXPR20_VAR
+#else
+#define MPT_CONSTEXPR20_CONTAINER_FUN MPT_CONSTEXPR23_FUN
+#define MPT_CONSTEXPR20_CONTAINER_VAR MPT_CONSTEXPR23_VAR
+#endif
+
+
+
+#if MPT_CXX_AT_LEAST(20)
+#define MPT_CONSTEVAL consteval
+#else // !C++20
+// fallback to constexpr
+#define MPT_CONSTEVAL MPT_INLINE_FORCE constexpr
 #endif // C++20
 
 
 
-#define MPT_FORCE_CONSTEXPR(expr) [&]() { \
+#if MPT_CXX_AT_LEAST(20)
+#define MPT_CONSTEVAL_NOEXCEPT noexcept
+#else // !C++20
+#define MPT_CONSTEVAL_NOEXCEPT
+#endif // C++20
+
+
+
+#define MPT_FORCE_CONSTEXPR_EXPRESSION(expr) [&]() { \
 	constexpr auto x = (expr); \
 	return x; \
 }()
+#define MPT_FORCE_CONSTEXPR_VALUE(val) []() { \
+	constexpr auto x = (val); \
+	return x; \
+}()
+
+
+
+#if MPT_CXX_AT_LEAST(20)
+// this assumes that for C++20, a consteval function will be used
+#define MPT_FORCE_CONSTEVAL_EXPRESSION(expr) (expr)
+#define MPT_FORCE_CONSTEVAL_VALUE(val)       (val)
+#else // !C++20
+#define MPT_FORCE_CONSTEVAL_EXPRESSION(expr) [&]() { \
+	constexpr auto x = (expr); \
+	return x; \
+}()
+#define MPT_FORCE_CONSTEVAL_VALUE(val) []() { \
+	constexpr auto x = (val); \
+	return x; \
+}()
+#endif // C++20
+
+
+
+#if MPT_CXX_AT_LEAST(20)
+#define MPT_CONSTINIT constinit
+#else // !C++20
+// fallback to nothing
+#define MPT_CONSTINIT
+#endif // C++20
 
 
 
@@ -81,8 +214,9 @@
 #define MPT_MAYBE_CONSTANT_IF(x) \
 	_Pragma("clang diagnostic push") \
 	_Pragma("clang diagnostic ignored \"-Wunknown-pragmas\"") \
-	_Pragma("clang diagnostic ignored \"-Wtype-limits\"") \
+	_Pragma("clang diagnostic ignored \"-Wunreachable-code\"") \
 	_Pragma("clang diagnostic ignored \"-Wtautological-constant-out-of-range-compare\"") \
+	_Pragma("clang diagnostic ignored \"-Wtype-limits\"") \
 	if (x) \
 		_Pragma("clang diagnostic pop") \
 /**/
@@ -113,6 +247,30 @@
 #else
 #define MPT_RESTRICT
 #endif
+
+
+
+#if MPT_CXX_AT_LEAST(23) && !MPT_GCC_BEFORE(13, 0, 0) && !MPT_CLANG_BEFORE(19, 0, 0) && !MPT_COMPILER_MSVC
+#define MPT_ASSUME(expr) [[assume(expr)]]
+#else // !C++23
+#if MPT_COMPILER_CLANG
+#define MPT_ASSUME(expr) __builtin_assume(expr)
+#endif
+#if MPT_COMPILER_MSVC
+#define MPT_ASSUME(expr) __assume(expr)
+#endif
+#if MPT_COMPILER_GCC
+#define MPT_ASSUME(expr) \
+	do { \
+		if (!expr) { \
+			__builtin_unreachable(); \
+		} \
+	} while (0)
+#endif
+#if !defined(MPT_ASSUME)
+#define MPT_ASSUME(expr) MPT_DISCARD(expr)
+#endif
+#endif // C++23
 
 
 

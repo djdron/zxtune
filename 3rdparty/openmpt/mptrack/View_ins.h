@@ -12,6 +12,9 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "Globals.h"
+#include "Moddoc.h"
+#include "../soundlib/Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -35,7 +38,6 @@ enum DragPoints
 class CViewInstrument: public CModScrollView
 {
 protected:
-	CImageList m_bmpEnvBar;
 	CPoint m_ptMenu;
 	CRect m_rcClient, m_rcOldClient;
 
@@ -58,6 +60,7 @@ protected:
 
 	float m_zoom = 4;
 	int m_envPointSize = 4;
+	uint32 m_maxTickDrag = 0;  // Maximum tick for scroll size during envelope node dragging
 
 	bool m_bGrid = true;
 	bool m_bGridForceRedraw = false;
@@ -180,9 +183,10 @@ public:
 	//{{AFX_VIRTUAL(CViewInstrument)
 	void OnDraw(CDC *) override;
 	void OnInitialUpdate() override;
+	void OnDPIChanged() override;
 	void UpdateView(UpdateHint hint, CObject *pObj = nullptr) override;
 	BOOL PreTranslateMessage(MSG *pMsg) override;
-	BOOL OnDragonDrop(BOOL, const DRAGONDROP *) override;
+	bool OnDragonDrop(bool doDrop, const DRAGONDROP &dropInfo) override { return GetControlDlg()->OnDragonDrop(doDrop, dropInfo); }
 	LRESULT OnModViewMsg(WPARAM, LPARAM) override;
 	LRESULT OnPlayerNotify(Notification *) override;
 	HRESULT get_accName(VARIANT varChild, BSTR *pszName) override;
@@ -192,9 +196,10 @@ public:
 protected:
 	//{{AFX_MSG(CViewInstrument)
 	afx_msg BOOL OnEraseBkgnd(CDC *) { return TRUE; }
+	// cppcheck-suppress duplInheritedMember
 	afx_msg void OnSetFocus(CWnd *pOldWnd);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
-	afx_msg LRESULT OnDPIChanged(WPARAM = 0, LPARAM = 0);
+	// cppcheck-suppress duplInheritedMember
 	afx_msg void OnNcCalcSize(BOOL bCalcValidRects, NCCALCSIZE_PARAMS* lpncsp);
 	afx_msg LRESULT OnNcHitTest(CPoint point);
 	afx_msg void OnNcPaint();
@@ -204,8 +209,8 @@ protected:
 	afx_msg void OnLButtonDown(UINT, CPoint);
 	afx_msg void OnLButtonUp(UINT, CPoint);
 	afx_msg void OnLButtonDblClk(UINT /*nFlags*/, CPoint point) { InsertAtPoint(point); }
-	afx_msg void OnRButtonDown(UINT, CPoint);
-	afx_msg void OnMButtonDown(UINT, CPoint);
+	afx_msg void OnRButtonUp(UINT, CPoint);
+	afx_msg void OnMButtonUp(UINT, CPoint);
 	afx_msg void OnNcMouseMove(UINT nHitTest, CPoint point);
 	afx_msg void OnNcLButtonDown(UINT, CPoint);
 	afx_msg void OnNcLButtonUp(UINT, CPoint);
@@ -233,6 +238,7 @@ protected:
 	afx_msg void OnDropFiles(HDROP hDropInfo);
 	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM);
 	afx_msg LRESULT OnMidiMsg(WPARAM, LPARAM);
+	// cppcheck-suppress duplInheritedMember
 	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
 	afx_msg void OnXButtonUp(UINT nFlags, UINT nButton, CPoint point);
 	afx_msg void OnEditUndo();

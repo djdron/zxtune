@@ -1,13 +1,14 @@
 --
 -- vs2005_dotnetbase.lua
 -- Generate a Visual Studio 2005+ .NET project.
--- Copyright (c) Jason Perkins and the Premake project
+-- Copyright (c) Jess Perkins and the Premake project
 --
 
 	local p = premake
 	p.vstudio.dotnetbase = {}
 
 	local vstudio = p.vstudio
+	local vs2005 = p.vstudio.vs2005
 	local dotnetbase  = p.vstudio.dotnetbase
 	local project = p.project
 	local config = p.config
@@ -56,11 +57,7 @@
 
 	function dotnetbase.projectElement(prj)
 		if dotnetbase.isNewFormatProject(prj) then
-			if prj.flags.WPF then
-				_p('<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">')
-			else				
-				_p('<Project Sdk="Microsoft.NET.Sdk">')
-			end
+			_p('<Project Sdk="%s">', dotnetbase.netcore.getsdk(prj))
 		else
 			local ver = ''
 			local action = p.action.current()
@@ -84,7 +81,14 @@
 		_p(1,'</PropertyGroup>')
 	end
 
-
+--
+-- Write the available configurations to have correct configuration mapping on vs2022 format and later.
+--
+	function dotnetbase.projectConfigurations(prj)
+		if _ACTION >= "vs2022" and #prj.configurations > 0 then
+			_p(2, '<Configurations>%s</Configurations>', table.implode(prj.configurations, "", "", ";"))
+		end
+	end
 --
 -- Write out the settings for the project configurations.
 --
@@ -156,7 +160,7 @@
 
 			if #contents > 0 or external then
 				_p(2,'<%s%s Include="%s">', info.action, condition, fname)
-				if external then
+				if external and info.action ~= "EmbeddedResource" then
 					_p(3,'<Link>%s</Link>', path.translate(link))
 				end
 				if #contents > 0 then
@@ -232,12 +236,34 @@
 			end
 		end
 
-		local cfg = project.getfirstconfig(prj)
-		if #cfg.prebuildcommands > 0 or #cfg.postbuildcommands > 0 then
-			_p(1,'<PropertyGroup>')
-			output("Pre", cfg.prebuildcommands)
-			output("Post", cfg.postbuildcommands)
-			_p(1,'</PropertyGroup>')
+		for cfg in project.eachconfig(prj) do
+			if #cfg.prebuildcommands > 0 or #cfg.postbuildcommands > 0 then
+				_p(1,'<PropertyGroup %s>', dotnetbase.condition(cfg))
+				output("Pre", cfg.prebuildcommands)
+				output("Post", cfg.postbuildcommands)
+				_p(1,'</PropertyGroup>')
+			end
+		end
+	end
+
+--
+-- Write out the additional props.
+--
+
+	function dotnetbase.additionalProps(cfg)
+		local function recurseTableIfNeeded(tbl, tab_level)
+			for key, value in spairs(tbl) do
+				if (type(value) == "table") then
+					_p(tab_level, '<%s>', key)
+					recurseTableIfNeeded(value, tab_level + 1)
+					_p(tab_level, '</%s>', key)
+				else
+					_p(tab_level, '<%s>%s</%s>', key, vs2005.esc(value), key)
+				end
+			end
+		end
+		for i = 1, #cfg.vsprops do
+			recurseTableIfNeeded(cfg.vsprops[i], 2)
 		end
 	end
 
@@ -252,11 +278,11 @@
 		_p(2,'<ErrorReport>prompt</ErrorReport>')
 		_p(2,'<WarningLevel>4</WarningLevel>')
 
-		if cfg.clr == "Unsafe" then
-			_p(2,'<AllowUnsafeBlocks>true</AllowUnsafeBlocks>')
+		if not dotnetbase.isNewFormatProject(cfg) then
+			dotnetbase.allowUnsafeBlocks(cfg)
 		end
 
-		if cfg.flags.FatalCompileWarnings then
+		if p.hasFatalCompileWarnings(cfg.fatalwarnings) then
 			_p(2,'<TreatWarningsAsErrors>true</TreatWarningsAsErrors>')
 		end
 
@@ -278,11 +304,27 @@
 --
 
 	function dotnetbase.debugProps(cfg)
-		if cfg.symbols == p.ON then
-			_p(2,'<DebugSymbols>true</DebugSymbols>')
-			_p(2,'<DebugType>full</DebugType>')
+		if _ACTION >= "vs2019" then
+			if cfg.symbols == "Full" then
+				_p(2,'<DebugType>full</DebugType>')
+				_p(2,'<DebugSymbols>true</DebugSymbols>')
+			elseif cfg.symbols == p.OFF then
+				_p(2,'<DebugType>none</DebugType>')
+				_p(2,'<DebugSymbols>false</DebugSymbols>')
+			elseif cfg.symbols == p.ON or cfg.symbols == "FastLink" then
+				_p(2,'<DebugType>pdbonly</DebugType>')
+				_p(2,'<DebugSymbols>true</DebugSymbols>')
+			else
+				_p(2,'<DebugType>portable</DebugType>')
+				_p(2,'<DebugSymbols>true</DebugSymbols>')
+			end
 		else
-			_p(2,'<DebugType>pdbonly</DebugType>')
+			if cfg.symbols == p.ON then
+				_p(2,'<DebugSymbols>true</DebugSymbols>')
+				_p(2,'<DebugType>full</DebugType>')
+			else
+				_p(2,'<DebugType>pdbonly</DebugType>')
+			end
 		end
 		_p(2,'<Optimize>%s</Optimize>', iif(config.isOptimizedBuild(cfg), "true", "false"))
 	end
@@ -312,7 +354,7 @@
 -- Write out the references item group.
 --
 
-	dotnetbase.elements.references = function(prj)
+	dotnetbase.elements.references = function(cfg)
 		return {
 			dotnetbase.assemblyReferences,
 			dotnetbase.nuGetReferences,
@@ -320,9 +362,11 @@
 	end
 
 	function dotnetbase.references(prj)
-		_p(1,'<ItemGroup>')
-		p.callArray(dotnetbase.elements.references, prj)
-		_p(1,'</ItemGroup>')
+		for cfg in project.eachconfig(prj) do
+			_p(1,'<ItemGroup %s>', dotnetbase.condition(cfg))
+			p.callArray(dotnetbase.elements.references, cfg)
+			_p(1,'</ItemGroup>')
+		end
 	end
 
 
@@ -330,11 +374,8 @@
 -- Write the list of assembly (system, or non-sibling) references.
 --
 
-	function dotnetbase.assemblyReferences(prj)
-		-- C# doesn't support per-configuration links (does it?) so just use
-		-- the settings from the first available config instead
-		local cfg = project.getfirstconfig(prj)
-
+	function dotnetbase.assemblyReferences(cfg)
+		local prj = cfg.project
 		config.getlinks(cfg, "system", function(original, decorated)
 			local name = path.getname(decorated)
 			if path.getextension(name) == ".dll" then
@@ -405,13 +446,13 @@
 -- Write the list of NuGet references.
 --
 
-	function dotnetbase.nuGetReferences(prj)
+	function dotnetbase.nuGetReferences(cfg)
+		local prj = cfg.project
 		if _ACTION >= "vs2010" and not vstudio.nuget2010.supportsPackageReferences(prj) then
 			for _, package in ipairs(prj.nuget) do
 				local id = vstudio.nuget2010.packageId(package)
 				local packageAPIInfo = vstudio.nuget2010.packageAPIInfo(prj, package)
 
-				local cfg = p.project.getfirstconfig(prj)
 				local action = p.action.current()
 				local targetFramework = cfg.dotnetframework or action.vstudio.targetFramework
 
@@ -683,7 +724,7 @@
 
 
 	function dotnetbase.projectTypeGuids(cfg)
-		if cfg.flags.WPF then
+		if cfg.wpf == p.ON then
 			_p(2,'<ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>')
 		end
 	end
@@ -725,6 +766,7 @@
 		end
 	end
 
+
 	function dotnetbase.targetFrameworkProfile(cfg)
 		if _ACTION == "vs2010" then
 			_p(2,'<TargetFrameworkProfile>')
@@ -739,17 +781,24 @@
 		end
 	end
 
+	function dotnetbase.documentationfile(cfg)
+		if cfg.documentationfile then
+			if _ACTION > "vs2015" and dotnetbase.isNewFormatProject(cfg) and cfg.documentationfile == true  then
+				_p(2,'<GenerateDocumentationFile>true</GenerateDocumentationFile>')
+			else
+				local documentationFile = iif(cfg.documentationfile ~= true, cfg.documentationfile, cfg.targetdir)
+				_p(2, string.format('<DocumentationFile>%s\\%s.xml</DocumentationFile>', vstudio.path(cfg, documentationFile),cfg.project.name))
+			end
+		end
+	end
+
 	function dotnetbase.isNewFormatProject(cfg)
 		local framework = cfg.dotnetframework
 		if not framework then
 			return false
 		end
 
-		if framework:find('^netcoreapp') ~= nil then
-			return true
-		end
-		
-		if framework:find('^netstandard') ~= nil then
+		if framework:find('^net') ~= nil then
 			return true
 		end
 
@@ -769,7 +818,45 @@
 	end
 
 	function dotnetbase.netcore.useWpf(cfg)
-		if cfg.flags.WPF then
+		if cfg.wpf == p.ON then
 			_p(2,'<UseWpf>true</UseWpf>')
+		end
+	end
+
+	function dotnetbase.netcore.getsdk(cfg)
+        local map = {
+			["Default"] = "Microsoft.NET.Sdk",
+            ["Web"] = "Microsoft.NET.Sdk.Web",
+            ["Razor"] = "Microsoft.NET.Sdk.Razor",
+            ["Worker"] = "Microsoft.NET.Sdk.Worker",
+            ["Blazor"] = "Microsoft.NET.Sdk.BlazorWebAssembly",
+            ["WindowsDesktop"] = "Microsoft.NET.Sdk.WindowsDesktop",
+            ["MSTest"] = "MSTest.Sdk",
+        }
+
+		local parts = nil
+
+		if cfg.dotnetsdk then
+			parts = cfg.dotnetsdk:explode("/", true, 1)
+		end
+
+		-- Auto-detect WindowsDesktop SDK if WPF is enabled
+		if not cfg.dotnetsdk and cfg.wpf == p.ON then
+			return map["WindowsDesktop"]
+		end
+
+		local sdk = (parts and #parts > 0 and parts[1]) or cfg.dotnetsdk
+		if not parts or #parts < 2 then
+			return map[sdk or "Default"]
+		elseif parts and #parts == 2 then
+			return string.format("%s/%s", map[parts[1]] or parts[1], parts[2])
+		end
+
+		return map["Default"]
+	end
+
+	function dotnetbase.allowUnsafeBlocks(cfg)
+		if cfg.clr == "Unsafe" then
+			_p(2,'<AllowUnsafeBlocks>true</AllowUnsafeBlocks>')
 		end
 	end

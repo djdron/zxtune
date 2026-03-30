@@ -10,15 +10,20 @@
 
 
 #include "stdafx.h"
-#include "Mptrack.h"
-#include "Mainfrm.h"
-#include "InputHandler.h"
-#include "Moddoc.h"
-#include "View_pat.h"
 #include "PatternEditorDialogs.h"
+#include "FileDialog.h"
+#include "HighDPISupport.h"
+#include "InputHandler.h"
+#include "Mainfrm.h"
+#include "Moddoc.h"
+#include "Mptrack.h"
+#include "Reporting.h"
+#include "resource.h"
 #include "TempoSwingDialog.h"
-#include "../soundlib/mod_specifications.h"
+#include "View_pat.h"
+#include "WindowMessages.h"
 #include "../common/mptStringBuffer.h"
+#include "../soundlib/mod_specifications.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -94,8 +99,7 @@ void getXParam(ModCommand::COMMAND command, PATTERNINDEX nPat, ROWINDEX nRow, CH
 			}
 		} else if(m.command == CMD_OFFSET || m.command == CMD_FINETUNE || m.command == CMD_FINETUNE_SMOOTH)
 		{
-			// No parameter extension to perform (8 bits standard parameter),
-			// just care about offset command special case (16 bits, fake)
+			// Even when no parameter extension is found, extend the offset / finetune parameters to full resolution.
 			mult <<= 8;
 		}
 
@@ -123,47 +127,94 @@ void getXParam(ModCommand::COMMAND command, PATTERNINDEX nPat, ROWINDEX nRow, CH
 /////////////////////////////////////////////////////////////////////////////////////////////
 // CPatternPropertiesDlg
 
-BEGIN_MESSAGE_MAP(CPatternPropertiesDlg, CDialog)
-	ON_COMMAND(IDC_BUTTON_HALF,		&CPatternPropertiesDlg::OnHalfRowNumber)
-	ON_COMMAND(IDC_BUTTON_DOUBLE,	&CPatternPropertiesDlg::OnDoubleRowNumber)
-	ON_COMMAND(IDC_CHECK1,			&CPatternPropertiesDlg::OnOverrideSignature)
-	ON_COMMAND(IDC_BUTTON1,			&CPatternPropertiesDlg::OnTempoSwing)
+BEGIN_MESSAGE_MAP(CPatternPropertiesDlg, DialogBase)
+	ON_WM_VSCROLL()
+	ON_COMMAND(IDC_BUTTON_HALF,   &CPatternPropertiesDlg::OnHalfRowNumber)
+	ON_COMMAND(IDC_BUTTON_DOUBLE, &CPatternPropertiesDlg::OnDoubleRowNumber)
+	ON_COMMAND(IDC_CHECK1,        &CPatternPropertiesDlg::OnOverrideSignature)
+	ON_COMMAND(IDC_BUTTON1,       &CPatternPropertiesDlg::OnTempoSwing)
+	ON_COMMAND(IDC_BUTTON2,       &CPatternPropertiesDlg::OnChangeColor)
+	ON_COMMAND(IDC_BUTTON3,       &CPatternPropertiesDlg::OnResetColor)
+	ON_EN_CHANGE(IDC_EDIT1,       &CPatternPropertiesDlg::OnPatternChanged)
 END_MESSAGE_MAP()
+
+
+void CPatternPropertiesDlg::DoDataExchange(CDataExchange *pDX)
+{
+	DialogBase::DoDataExchange(pDX);
+	//{{AFX_DATA_MAP(CPatternPropertiesDlg)
+	DDX_Control(pDX, IDC_COMBO1, m_numRows);
+	DDX_Control(pDX, IDC_SPIN1, m_spinPattern);
+	DDX_Control(pDX, IDC_SPIN2, m_spinRPB);
+	DDX_Control(pDX, IDC_SPIN3, m_spinRPM);
+	//}}AFX_DATA_MAP
+}
+
+CPatternPropertiesDlg::CPatternPropertiesDlg(CModDoc &modParent, PATTERNINDEX nPat, CWnd *parent)
+	: DialogBase{IDD_PATTERN_PROPERTIES, parent}
+	, m_modDoc{modParent}
+	, m_nPattern{nPat}
+{
+}
+
 
 BOOL CPatternPropertiesDlg::OnInitDialog()
 {
-	CComboBox *combo;
-	CDialog::OnInitDialog();
-	combo = (CComboBox *)GetDlgItem(IDC_COMBO1);
-	const CSoundFile &sndFile = modDoc.GetSoundFile();
+	DialogBase::OnInitDialog();
 
-	if(m_nPattern < sndFile.Patterns.Size() && combo)
+	COMBOBOXINFO cbi{};
+	cbi.cbSize = sizeof(cbi);
+	GetComboBoxInfo(m_numRows, &cbi);
+	CWnd::FromHandle(cbi.hwndItem)->ModifyStyle(0, ES_NUMBER);
+
+	const CSoundFile &sndFile = m_modDoc.GetSoundFile();
+	const CModSpecifications &specs = sndFile.GetModSpecifications();
+	m_numRows.SetRedraw(FALSE);
+	for(ROWINDEX irow = specs.patternRowsMin; irow <= specs.patternRowsMax; irow++)
 	{
-		CString s;
-		const CPattern &pattern = sndFile.Patterns[m_nPattern];
-		ROWINDEX nrows = pattern.GetNumRows();
+		m_numRows.AddString(mpt::cfmt::dec(irow));
+	}
+	m_numRows.SetRedraw(TRUE);
+	m_numRows.SetFocus();
+	m_spinRPB.SetRange32(1, MAX_ROWS_PER_BEAT);
+	m_spinRPM.SetRange32(1, MAX_ROWS_PER_MEASURE);
+	m_spinPattern.SetRange32(-1, 1);
+	SetDlgItemInt(IDC_EDIT1, m_nPattern);
+	CheckRadioButton(IDC_RADIO1, IDC_RADIO2, IDC_RADIO2);
+	static_cast<CEdit *>(GetDlgItem(IDC_EDIT2))->SetLimitText(MAX_PATTERNNAME - 1);
 
-		const CModSpecifications &specs = sndFile.GetModSpecifications();
-		combo->SetRedraw(FALSE);
-		for(UINT irow = specs.patternRowsMin; irow <= specs.patternRowsMax; irow++)
-		{
-			combo->AddString(mpt::cfmt::dec(irow));
-		}
-		combo->SetCurSel(nrows - specs.patternRowsMin);
-		combo->SetRedraw(TRUE);
+	m_colorBtn.SubclassDlgItem(IDC_BUTTON2, this);
 
-		CheckRadioButton(IDC_RADIO1, IDC_RADIO2, IDC_RADIO2);
+	m_locked = false;
+	SetCurrentPattern(m_nPattern);
 
-		s = MPT_CFORMAT("Pattern #{}: {} row{} ({}K)")(
-			m_nPattern,
-			pattern.GetNumRows(),
-			(pattern.GetNumRows() == 1) ? CString(_T("")) : CString(_T("s")),
-			static_cast<int>((pattern.GetNumRows() * sndFile.GetNumChannels() * sizeof(ModCommand)) / 1024));
-		SetDlgItemText(IDC_TEXT1, s);
+	return FALSE;
+}
+
+
+void CPatternPropertiesDlg::SetCurrentPattern(PATTERNINDEX pat)
+{
+	if(m_locked)
+		return;
+	const CSoundFile &sndFile = m_modDoc.GetSoundFile();
+	const bool validPat = sndFile.Patterns.IsValidPat(pat);
+
+	for(auto id : { IDC_EDIT2, IDC_COMBO1, IDC_BUTTON_HALF, IDC_BUTTON_DOUBLE, IDC_RADIO1, IDC_RADIO2, IDC_CHECK2, IDC_BUTTON1, IDC_ROWSPERBEAT, IDC_ROWSPERMEASURE, IDC_SPIN2, IDC_SPIN3 })
+	{
+		GetDlgItem(id)->EnableWindow(validPat ? TRUE : FALSE);
+	}
+	GetDlgItem(IDC_CHECK1)->EnableWindow((sndFile.GetModSpecifications().hasPatternSignatures && validPat) ? TRUE : FALSE);
+	if(validPat)
+	{
+		m_nPattern = pat;
+		PatternProperties &prop = GetPatternProperties();
+		m_numRows.SetCurSel(prop.numRows - sndFile.GetModSpecifications().patternRowsMin);
+		CheckRadioButton(IDC_RADIO1, IDC_RADIO2, prop.resizeAtEnd ? IDC_RADIO2 : IDC_RADIO1);
 
 		// Window title
-		const CString patternName = mpt::ToCString(sndFile.GetCharsetInternal(), pattern.GetName());
-		s = MPT_CFORMAT("Pattern Properties for Pattern #{}")(m_nPattern);
+		const CString patternName = mpt::ToCString(sndFile.GetCharsetInternal(), prop.name);
+		SetDlgItemText(IDC_EDIT2, patternName);
+		CString s = MPT_CFORMAT("Pattern Properties for Pattern #{}")(m_nPattern);
 		if(!patternName.IsEmpty())
 		{
 			s += _T(" (");
@@ -173,30 +224,189 @@ BOOL CPatternPropertiesDlg::OnInitDialog()
 		SetWindowText(s);
 
 		// Pattern time signature
-		const bool bOverride = pattern.GetOverrideSignature();
-		ROWINDEX nRPB = pattern.GetRowsPerBeat(), nRPM = pattern.GetRowsPerMeasure();
-		if(nRPB == 0 || !bOverride)
-			nRPB = sndFile.m_nDefaultRowsPerBeat;
-		if(nRPM == 0 || !bOverride)
-			nRPM = sndFile.m_nDefaultRowsPerMeasure;
+		const bool overrideSignature = prop.rowsPerBeat != 0 || prop.rowsPerMeasure != 0;
+		ROWINDEX rpb = prop.rowsPerBeat, rpm = prop.rowsPerMeasure;
+		if(rpb == 0 || !overrideSignature)
+			rpb = sndFile.m_nDefaultRowsPerBeat;
+		if(rpm == 0 || !overrideSignature)
+			rpm = sndFile.m_nDefaultRowsPerMeasure;
 
-		m_tempoSwing = pattern.HasTempoSwing() ? pattern.GetTempoSwing() : sndFile.m_tempoSwing;
-
-		GetDlgItem(IDC_CHECK1)->EnableWindow(sndFile.GetModSpecifications().hasPatternSignatures ? TRUE : FALSE);
-		CheckDlgButton(IDC_CHECK1, bOverride ? BST_CHECKED : BST_UNCHECKED);
-		SetDlgItemInt(IDC_ROWSPERBEAT, nRPB, FALSE);
-		SetDlgItemInt(IDC_ROWSPERMEASURE, nRPM, FALSE);
+		CheckDlgButton(IDC_CHECK1, overrideSignature ? BST_CHECKED : BST_UNCHECKED);
+		CheckDlgButton(IDC_CHECK2, prop.repeatContents ? BST_CHECKED : BST_UNCHECKED);
+		SetDlgItemInt(IDC_ROWSPERBEAT, rpb, FALSE);
+		SetDlgItemInt(IDC_ROWSPERMEASURE, rpm, FALSE);
 		OnOverrideSignature();
+
+		m_colorBtn.SetColor(prop.color);
+	} else
+	{
+		MessageBeep(MB_ICONWARNING);
 	}
-	return TRUE;
+}
+
+
+void CPatternPropertiesDlg::StorePatternProperties()
+{
+	if(m_locked)
+		return;
+	auto &prop = GetPatternProperties();
+	CString str;
+	GetDlgItemText(IDC_EDIT2, str);
+	prop.name = mpt::ToCharset(m_modDoc.GetSoundFile().GetCharsetInternal(), str);
+	prop.numRows = GetDlgItemInt(IDC_COMBO1);
+	prop.resizeAtEnd = IsDlgButtonChecked(IDC_RADIO2) != BST_UNCHECKED;
+	prop.repeatContents = IsDlgButtonChecked(IDC_CHECK2) != BST_UNCHECKED;
+	if(IsDlgButtonChecked(IDC_CHECK1) != BST_UNCHECKED)
+	{
+		prop.rowsPerBeat = GetDlgItemInt(IDC_ROWSPERBEAT);
+		prop.rowsPerMeasure = GetDlgItemInt(IDC_ROWSPERMEASURE);
+	} else
+	{
+		prop.rowsPerBeat = prop.rowsPerMeasure = 0;
+	}
+}
+
+
+bool CPatternPropertiesDlg::ValidatePatternProperties()
+{
+	StorePatternProperties();
+
+	CSoundFile &sndFile = m_modDoc.GetSoundFile();
+	auto &prop = GetPatternProperties();
+	// Check for valid time signatures
+	if((prop.rowsPerBeat != 0 || prop.rowsPerMeasure != 0) && !CPattern::IsValidSignature(prop.rowsPerBeat, prop.rowsPerMeasure))
+	{
+		Reporting::Error("Invalid time signature!", "Pattern Properties");
+		SetCurrentPattern(m_nPattern);
+		SetDlgItemInt(IDC_EDIT1, m_nPattern);
+		GetDlgItem(IDC_ROWSPERBEAT)->SetFocus();
+		return false;
+	}
+
+	// Check if any pattern data would be removed.
+	CPattern &pattern = sndFile.Patterns[m_nPattern];
+	const ROWINDEX newSize = prop.numRows;
+	const ROWINDEX oldSize = pattern.GetNumRows();
+	if(pattern.IsValid() && newSize < oldSize
+		&& (prop.resizeWarningShown != newSize || prop.resizeWarningAtEnd != prop.resizeAtEnd))
+	{
+		ROWINDEX firstRow = prop.resizeAtEnd ? newSize : 0;
+		ROWINDEX lastRow = prop.resizeAtEnd ? oldSize : oldSize - newSize;
+		for(ROWINDEX row = firstRow; row < lastRow; row++)
+		{
+			if(!pattern.IsEmptyRow(row))
+			{
+				bool resize = (Reporting::Confirm(MPT_AFORMAT("Data at the {} of pattern {} will be lost.\nDo you want to continue?")(prop.resizeAtEnd ? "end" : "start", m_nPattern), "Shrink Pattern") == cnfYes);
+				if(!resize)
+				{
+					SetCurrentPattern(m_nPattern);
+					SetDlgItemInt(IDC_EDIT1, m_nPattern);
+					m_numRows.SetFocus();
+					return false;
+				}
+				break;
+			}
+		}
+		prop.resizeWarningShown = prop.numRows;
+		prop.resizeWarningAtEnd = prop.resizeAtEnd;
+	}
+	return true;
+}
+
+
+void CPatternPropertiesDlg::OnPatternChanged()
+{
+	auto pat = GetDlgItemInt(IDC_EDIT1);
+	if(m_locked || pat == m_nPattern)
+		return;
+	if(!ValidatePatternProperties())
+		return;
+	SetCurrentPattern(mpt::saturate_cast<PATTERNINDEX>(pat));
+}
+
+
+void CPatternPropertiesDlg::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
+{
+	DialogBase::OnVScroll(nSBCode, nPos, pScrollBar);
+
+	const int direction = m_spinPattern.GetPos32();
+	const auto &patterns = m_modDoc.GetSoundFile().Patterns;
+	if(!direction || !patterns.IsValidPat(m_nPattern))
+		return;
+	int pattern = std::clamp(static_cast<int>(GetDlgItemInt(IDC_EDIT1)), 0, patterns.Size() - 1);
+	const int startPattern = pattern;
+	do
+	{
+		pattern += direction;
+		if(pattern < 0)
+			pattern = patterns.Size() - 1;
+		else if(pattern >= patterns.Size())
+			pattern = 0;
+		else if(pattern == startPattern)
+			break;  // Couldn't find any other pattern, abort
+	} while(!patterns.IsValidPat(static_cast<PATTERNINDEX>(pattern)));
+	m_spinPattern.SetPos32(0);
+	SetDlgItemInt(IDC_EDIT1, static_cast<PATTERNINDEX>(pattern));
+}
+
+
+CPatternPropertiesDlg::PatternProperties& CPatternPropertiesDlg::GetPatternProperties(PATTERNINDEX pat)
+{
+	if(auto p = m_properties.find(pat); p != m_properties.end())
+		return p->second;
+
+	const CSoundFile &sndFile = m_modDoc.GetSoundFile();
+	PatternProperties prop;
+	if(sndFile.Patterns.IsValidPat(pat))
+	{
+		const CPattern &pattern = sndFile.Patterns[pat];
+		prop.name = pattern.GetName();
+		if(pattern.HasTempoSwing())
+			prop.tempoSwing = pattern.GetTempoSwing();
+		else
+			prop.tempoSwing = sndFile.m_tempoSwing;
+		prop.numRows = pattern.GetNumRows();
+		prop.rowsPerBeat = pattern.GetRowsPerBeat();
+		prop.rowsPerMeasure = pattern.GetRowsPerMeasure();
+		prop.color = pattern.GetColor();
+	}
+	// Take whatever was selected for the previous pattern to be the default for this newly-edited pattern as well
+	prop.resizeAtEnd = IsDlgButtonChecked(IDC_RADIO2) != BST_UNCHECKED;
+	prop.repeatContents = IsDlgButtonChecked(IDC_CHECK2) != BST_UNCHECKED;
+	return m_properties.insert(std::make_pair(pat, std::move(prop))).first->second;
+}
+
+
+void CPatternPropertiesDlg::OnChangeColor()
+{
+	const auto &patterns = m_modDoc.GetSoundFile().Patterns;
+	const PATTERNINDEX numPatterns = patterns.GetNumPatterns();
+	std::vector<COLORREF> colors(numPatterns, CPattern::INVALID_COLOR);
+	for(PATTERNINDEX pat = 0; pat < numPatterns; pat++)
+	{
+		if(auto it = m_properties.find(pat); it != m_properties.end())
+			colors[pat] = it->second.color;
+		else if(patterns.IsValidPat(pat))
+			colors[pat] = patterns[pat].GetColor();
+	}
+
+	if(auto color = m_colorBtn.PickPatternColor(mpt::as_span(colors), m_nPattern); color.has_value())
+		GetPatternProperties().color = *color;
+}
+
+
+void CPatternPropertiesDlg::OnResetColor()
+{
+	GetPatternProperties().color = CPattern::INVALID_COLOR;
+	m_colorBtn.SetColor(CPattern::INVALID_COLOR);
 }
 
 
 void CPatternPropertiesDlg::OnHalfRowNumber()
 {
-	const CSoundFile &sndFile = modDoc.GetSoundFile();
+	const CSoundFile &sndFile = m_modDoc.GetSoundFile();
 
-	UINT nRows = GetDlgItemInt(IDC_COMBO1, NULL, FALSE);
+	UINT nRows = GetDlgItemInt(IDC_COMBO1, nullptr, FALSE);
 	nRows /= 2;
 	if(nRows < sndFile.GetModSpecifications().patternRowsMin)
 		nRows = sndFile.GetModSpecifications().patternRowsMin;
@@ -206,9 +416,9 @@ void CPatternPropertiesDlg::OnHalfRowNumber()
 
 void CPatternPropertiesDlg::OnDoubleRowNumber()
 {
-	const CSoundFile &sndFile = modDoc.GetSoundFile();
+	const CSoundFile &sndFile = m_modDoc.GetSoundFile();
 
-	UINT nRows = GetDlgItemInt(IDC_COMBO1, NULL, FALSE);
+	UINT nRows = GetDlgItemInt(IDC_COMBO1, nullptr, FALSE);
 	nRows *= 2;
 	if(nRows > sndFile.GetModSpecifications().patternRowsMax)
 		nRows = sndFile.GetModSpecifications().patternRowsMax;
@@ -218,28 +428,30 @@ void CPatternPropertiesDlg::OnDoubleRowNumber()
 
 void CPatternPropertiesDlg::OnOverrideSignature()
 {
-	GetDlgItem(IDC_ROWSPERBEAT)->EnableWindow(IsDlgButtonChecked(IDC_CHECK1));
-	GetDlgItem(IDC_ROWSPERMEASURE)->EnableWindow(IsDlgButtonChecked(IDC_CHECK1));
-	GetDlgItem(IDC_BUTTON1)->EnableWindow(IsDlgButtonChecked(IDC_CHECK1) && modDoc.GetSoundFile().m_nTempoMode == TempoMode::Modern);
+	const BOOL enableTimeSignature = IsDlgButtonChecked(IDC_CHECK1);
+	GetDlgItem(IDC_ROWSPERBEAT)->EnableWindow(enableTimeSignature);
+	GetDlgItem(IDC_ROWSPERMEASURE)->EnableWindow(enableTimeSignature);
+	GetDlgItem(IDC_BUTTON1)->EnableWindow(enableTimeSignature && m_modDoc.GetSoundFile().m_nTempoMode == TempoMode::Modern);
 }
 
 
 void CPatternPropertiesDlg::OnTempoSwing()
 {
-	CPattern &pat = modDoc.GetSoundFile().Patterns[m_nPattern];
+	CPattern &pat = m_modDoc.GetSoundFile().Patterns[m_nPattern];
 	const ROWINDEX oldRPB = pat.GetRowsPerBeat();
 	const ROWINDEX oldRPM = pat.GetRowsPerMeasure();
 
 	// Temporarily apply new tempo signature for preview
-	ROWINDEX newRPB = std::max(1u, GetDlgItemInt(IDC_ROWSPERBEAT));
-	ROWINDEX newRPM = std::max(newRPB, GetDlgItemInt(IDC_ROWSPERMEASURE));
+	const ROWINDEX newRPB = std::clamp(static_cast<ROWINDEX>(GetDlgItemInt(IDC_ROWSPERBEAT)), ROWINDEX(1), MAX_ROWS_PER_BEAT);
+	const ROWINDEX newRPM = std::clamp(static_cast<ROWINDEX>(GetDlgItemInt(IDC_ROWSPERMEASURE)), newRPB, MAX_ROWS_PER_BEAT);
 	pat.SetSignature(newRPB, newRPM);
 
-	m_tempoSwing.resize(newRPB, TempoSwing::Unity);
-	CTempoSwingDlg dlg(this, m_tempoSwing, modDoc.GetSoundFile(), m_nPattern);
+	TempoSwing &tempoSwing = GetPatternProperties().tempoSwing;
+	tempoSwing.resize(newRPB, TempoSwing::Unity);
+	CTempoSwingDlg dlg(this, tempoSwing, m_modDoc.GetSoundFile(), m_nPattern);
 	if(dlg.DoModal() == IDOK)
 	{
-		m_tempoSwing = dlg.m_tempoSwing;
+		tempoSwing = dlg.m_tempoSwing;
 	}
 	pat.SetSignature(oldRPB, oldRPM);
 }
@@ -247,77 +459,106 @@ void CPatternPropertiesDlg::OnTempoSwing()
 
 void CPatternPropertiesDlg::OnOK()
 {
-	CSoundFile &sndFile = modDoc.GetSoundFile();
-	CPattern &pattern = sndFile.Patterns[m_nPattern];
-	// Update pattern signature if necessary
-	if(sndFile.GetModSpecifications().hasPatternSignatures)
+	if(!ValidatePatternProperties())
+		return;
+
+	CSoundFile &sndFile = m_modDoc.GetSoundFile();
+	bool modified = false;
+	for(const auto &[pat, prop] : m_properties)
 	{
-		if(IsDlgButtonChecked(IDC_CHECK1))
+		PatternHint updateHint = PatternHint{pat};
+
+		CPattern &pattern = sndFile.Patterns[pat];
+		// Update pattern signature if necessary
+		if(sndFile.GetModSpecifications().hasPatternSignatures)
 		{
-			// Enable signature
-			ROWINDEX nNewBeat = (ROWINDEX)GetDlgItemInt(IDC_ROWSPERBEAT, NULL, FALSE), nNewMeasure = (ROWINDEX)GetDlgItemInt(IDC_ROWSPERMEASURE, NULL, FALSE);
-			if(nNewBeat != pattern.GetRowsPerBeat() || nNewMeasure != pattern.GetRowsPerMeasure() || m_tempoSwing != pattern.GetTempoSwing())
+			if(prop.rowsPerBeat != 0 || prop.rowsPerMeasure != 0)
 			{
-				if(!pattern.SetSignature(nNewBeat, nNewMeasure))
+				// Enable signature
+				const ROWINDEX newRPB = prop.rowsPerBeat;
+				const ROWINDEX newRPM = prop.rowsPerMeasure;
+				TempoSwing tempoSwing = prop.tempoSwing;
+				if(newRPB != pattern.GetRowsPerBeat() || newRPM != pattern.GetRowsPerMeasure() || tempoSwing != pattern.GetTempoSwing())
 				{
-					Reporting::Error("Invalid time signature!", "Pattern Properties");
-					GetDlgItem(IDC_ROWSPERBEAT)->SetFocus();
-					return;
+					pattern.SetSignature(newRPB, newRPM);
+					tempoSwing.resize(newRPB, TempoSwing::Unity);
+					pattern.SetTempoSwing(tempoSwing);
+					updateHint.Data();
 				}
-				m_tempoSwing.resize(nNewBeat, TempoSwing::Unity);
-				pattern.SetTempoSwing(m_tempoSwing);
-				modDoc.SetModified();
-			}
-		} else
-		{
-			// Disable signature
-			if(pattern.GetOverrideSignature() || pattern.HasTempoSwing())
+			} else
 			{
-				pattern.RemoveSignature();
-				pattern.RemoveTempoSwing();
-				modDoc.SetModified();
+				// Disable signature
+				if(pattern.GetOverrideSignature() || pattern.HasTempoSwing())
+				{
+					pattern.RemoveSignature();
+					pattern.RemoveTempoSwing();
+					updateHint.Data();
+				}
 			}
 		}
-	}
 
+		const ROWINDEX newSize = prop.numRows;
 
-	const ROWINDEX newSize = (ROWINDEX)GetDlgItemInt(IDC_COMBO1, NULL, FALSE);
-
-	// Check if any pattern data would be removed.
-	bool resize = (newSize != sndFile.Patterns[m_nPattern].GetNumRows());
-	bool resizeAtEnd = IsDlgButtonChecked(IDC_RADIO2) != BST_UNCHECKED;
-	if(newSize < sndFile.Patterns[m_nPattern].GetNumRows())
-	{
-		ROWINDEX firstRow = resizeAtEnd ? newSize : 0;
-		ROWINDEX lastRow = resizeAtEnd ? sndFile.Patterns[m_nPattern].GetNumRows() : sndFile.Patterns[m_nPattern].GetNumRows() - newSize;
-		for(ROWINDEX row = firstRow; row < lastRow; row++)
+		// Check if any pattern data would be removed.
+		const ROWINDEX oldSize = pattern.GetNumRows();
+		bool resize = newSize != oldSize;
+		const bool resizeAtEnd = prop.resizeAtEnd;
+		if(resize)
 		{
-			if(!sndFile.Patterns[m_nPattern].IsEmptyRow(row))
+			const bool copyContents = (newSize > oldSize) && prop.repeatContents;
+			m_modDoc.BeginWaitCursor();
+			m_modDoc.GetPatternUndo().PrepareUndo(m_nPattern, 0, 0, sndFile.Patterns[m_nPattern].GetNumChannels(), oldSize, "Resize");
+			if(sndFile.Patterns[m_nPattern].Resize(newSize, true, resizeAtEnd))
 			{
-				resize = (Reporting::Confirm(MPT_AFORMAT("Data at the {} of the pattern will be lost.\nDo you want to continue?")(resizeAtEnd ? "end" : "start"), "Shrink Pattern") == cnfYes);
-				break;
+				if(copyContents)
+				{
+					const ROWINDEX copyRows = newSize - oldSize;
+					const ROWINDEX sourceBaseRow = resizeAtEnd ? 0 : copyRows;
+					const ROWINDEX baseOffset = resizeAtEnd ? 0 : (oldSize - copyRows % oldSize);
+					ROWINDEX destRow = resizeAtEnd ? oldSize : 0;
+					for(ROWINDEX row = 0; row < copyRows; row++, destRow++)
+					{
+						ROWINDEX sourceRow = sourceBaseRow + (baseOffset + row) % oldSize;
+						const auto sourceRowData = pattern.GetRow(sourceRow);
+						auto destRowData = pattern.GetRow(destRow);
+						std::copy(sourceRowData.begin(), sourceRowData.end(), destRowData.begin());
+					}
+				}
+				updateHint.Data();
 			}
+			m_modDoc.EndWaitCursor();
+		}
+		if(pattern.GetName() != prop.name)
+		{
+			pattern.SetName(prop.name);
+			updateHint.Names();
+		}
+		if(pattern.GetColor() != prop.color)
+		{
+			pattern.SetColor(prop.color);
+			if(m_modDoc.GetModType() == MOD_TYPE_MPT)
+				modified = true;
+			m_modDoc.UpdateAllViews(nullptr, SequenceHint{SEQUENCEINDEX_INVALID}.Data());
+		}
+
+		if(updateHint.GetType() != HINT_NONE)
+		{
+			m_modDoc.UpdateAllViews(nullptr, updateHint, this);
+			modified = true;
 		}
 	}
 
-	if(resize)
-	{
-		modDoc.BeginWaitCursor();
-		modDoc.GetPatternUndo().PrepareUndo(m_nPattern, 0, 0, sndFile.Patterns[m_nPattern].GetNumChannels(), sndFile.Patterns[m_nPattern].GetNumRows(), "Resize");
-		if(sndFile.Patterns[m_nPattern].Resize(newSize, true, resizeAtEnd))
-		{
-			modDoc.SetModified();
-		}
-		modDoc.EndWaitCursor();
-	}
-	CDialog::OnOK();
+	if(modified)
+		m_modDoc.SetModified();
+
+	DialogBase::OnOK();
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 // CEditCommand
 
-BEGIN_MESSAGE_MAP(CEditCommand, CDialog)
+BEGIN_MESSAGE_MAP(CEditCommand, DialogBase)
 	ON_WM_ACTIVATE()
 	ON_WM_CLOSE()
 
@@ -332,8 +573,8 @@ END_MESSAGE_MAP()
 
 void CEditCommand::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CSplitKeyboadSettings)
+	DialogBase::DoDataExchange(pDX);
+	//{{AFX_DATA_MAP(CEditCommand)
 	DDX_Control(pDX, IDC_COMBO1,	cbnNote);
 	DDX_Control(pDX, IDC_COMBO2,	cbnInstr);
 	DDX_Control(pDX, IDC_COMBO3,	cbnVolCmd);
@@ -348,7 +589,7 @@ void CEditCommand::DoDataExchange(CDataExchange* pDX)
 CEditCommand::CEditCommand(CSoundFile &sndFile)
     : sndFile(sndFile), effectInfo(sndFile)
 {
-	CDialog::Create(IDD_PATTERN_EDITCOMMAND);
+	DialogBase::Create(IDD_PATTERN_EDITCOMMAND);
 }
 
 
@@ -362,7 +603,7 @@ BOOL CEditCommand::PreTranslateMessage(MSG *pMsg)
 			return TRUE;
 		}
 	}
-	return CDialog::PreTranslateMessage(pMsg);
+	return DialogBase::PreTranslateMessage(pMsg);
 }
 
 
@@ -407,6 +648,9 @@ bool CEditCommand::ShowEditWindow(PATTERNINDEX pat, const PatternCursor &cursor,
 		break;
 	case PatternCursor::paramColumn:
 		sldParam.SetFocus();
+		break;
+	case PatternCursor::numColumns:
+		MPT_ASSERT_NOTREACHED();
 		break;
 	}
 
@@ -466,8 +710,7 @@ void CEditCommand::InitNote()
 	if(m->IsPcNote())
 	{
 		// control plugin param note
-		cbnInstr.SetItemData(cbnInstr.AddString(_T("No Effect")), 0);
-		AddPluginNamesToCombobox(cbnInstr, sndFile.m_MixPlugins, false);
+		cbnInstr.Update(PluginComboBox::Config{PluginComboBox::ShowNoPlugin | PluginComboBox::ShowEmptySlots}.CurrentSelection(m->instr ? (m->instr - 1) : PLUGINDEX_INVALID), sndFile);
 	} else
 	{
 		// instrument / sample
@@ -485,8 +728,8 @@ void CEditCommand::InitNote()
 				s += mpt::ToCString(sndFile.GetCharsetInternal(), sndFile.m_szNames[i]);
 			cbnInstr.SetItemData(cbnInstr.AddString(s), i);
 		}
+		cbnInstr.SetRawSelection(m->instr);
 	}
-	cbnInstr.SetCurSel(m->instr);
 	cbnInstr.SetRedraw(TRUE);
 }
 
@@ -596,7 +839,7 @@ void CEditCommand::UpdateVolCmdRange()
 		sldVolParam.EnableWindow(TRUE);
 		sldVolParam.SetRange(rangeMin, rangeMax);
 		Limit(m->vol, rangeMin, rangeMax);
-		sldVolParam.SetPos(m->vol);
+		sldVolParam.SetPos(effectInfo.MapVolumeToPos(m->volcmd, m->vol));
 	} else
 	{
 		// Why does this not update the display at all?
@@ -659,9 +902,17 @@ void CEditCommand::OnNoteChanged()
 	if(n >= 0)
 		newNote = static_cast<ModCommand::NOTE>(cbnNote.GetItemData(n));
 
-	n = cbnInstr.GetCurSel();
-	if(n >= 0)
-		newInstr = static_cast<ModCommand::INSTR>(cbnInstr.GetItemData(n));
+	if(wasParamControl)
+	{
+		if(auto sel = cbnInstr.GetSelection(); sel)
+			newInstr = *sel + 1;
+		else
+			newInstr = 0;
+	} else
+	{
+		if(n = cbnInstr.GetRawSelection(); n >= 0)
+			newInstr = static_cast<ModCommand::INSTR>(cbnInstr.GetItemData(n));
+	}
 
 	if(m->note != newNote || m->instr != newInstr)
 	{
@@ -704,7 +955,7 @@ void CEditCommand::OnVolCmdChanged()
 		newVolCmd = effectInfo.GetVolCmdFromIndex(static_cast<UINT>(cbnVolCmd.GetItemData(n)));
 	}
 
-	newVol = static_cast<ModCommand::VOL>(sldVolParam.GetPos());
+	newVol = effectInfo.MapPosToVolume(newVolCmd, sldVolParam.GetPos());
 
 	const bool volCmdChanged = m->volcmd != newVolCmd;
 	if(volCmdChanged || m->vol != newVol)
@@ -736,13 +987,6 @@ void CEditCommand::OnCommandChanged()
 		newCommand = static_cast<ModCommand::COMMAND>((ndx >= 0) ? effectInfo.GetEffectFromIndex(ndx, newParam) : CMD_NONE);
 	}
 
-	if(newCommand == CMD_XPARAM || mpt::contains(ExtendedCommands, newCommand))
-	{
-		xParam = 0;
-		xMultiplier = 1;
-		getXParam(newCommand, editPattern, editRow, editChannel, sndFile, xParam, xMultiplier);
-	}
-
 	if(m->command != newCommand || m->param != newParam)
 	{
 		PrepareUndo("Effect Entry");
@@ -752,6 +996,14 @@ void CEditCommand::OnCommandChanged()
 		{
 			m->param = newParam;
 		}
+
+		xParam = 0;
+		xMultiplier = 1;
+		if(newCommand == CMD_XPARAM || mpt::contains(ExtendedCommands, newCommand))
+		{
+			getXParam(newCommand, editPattern, editRow, editChannel, sndFile, xParam, xMultiplier);
+		}
+
 		UpdateEffectRange(true);
 
 		sndFile.GetpModDoc()->UpdateAllViews(nullptr, RowHint(editRow), nullptr);
@@ -789,7 +1041,7 @@ void CEditCommand::UpdateVolCmdValue()
 	} else
 	{
 		// process as effect
-		effectInfo.GetVolCmdParamInfo(*m, &s);
+		effectInfo.GetVolCmdParamInfo(*m, &s, TrackerSettings::Instance().patternVolColHex);
 	}
 	SetDlgItemText(IDC_TEXT2, s);
 }
@@ -814,7 +1066,7 @@ void CEditCommand::UpdateEffectValue(bool set)
 		if(fxndx >= 0)
 		{
 			newParam = static_cast<ModCommand::PARAM>(effectInfo.MapPosToValue(fxndx, sldParam.GetPos()));
-			effectInfo.GetEffectNameEx(s, fxndx, newParam * xMultiplier + xParam, editChannel);
+			effectInfo.GetEffectNameEx(s, *m, newParam * xMultiplier + xParam, editChannel);
 		}
 	}
 	SetDlgItemText(IDC_TEXT1, s);
@@ -867,7 +1119,7 @@ void CEditCommand::OnHScroll(UINT, UINT, CScrollBar *bar)
 
 void CEditCommand::OnActivate(UINT nState, CWnd *pWndOther, BOOL bMinimized)
 {
-	CDialog::OnActivate(nState, pWndOther, bMinimized);
+	DialogBase::OnActivate(nState, pWndOther, bMinimized);
 	if(nState == WA_INACTIVE)
 		ShowWindow(SW_HIDE);
 }
@@ -955,6 +1207,13 @@ BOOL CChordEditor::OnInitDialog()
 	// Update Dialog
 	OnChordChanged();
 	return TRUE;
+}
+
+
+void CChordEditor::OnDPIChanged()
+{
+	ResizableDialog::OnDPIChanged();
+	m_Keyboard.SendMessage(WM_DPICHANGED);
 }
 
 
@@ -1076,14 +1335,14 @@ void CChordEditor::UpdateKeyboard()
 	const int baseNote = (chord.key == MPTChord::relativeMode) ? 0 : (chord.key % 12);
 	for(int i = CHORD_MIN; i < CHORD_MAX; i++)
 	{
-		uint8 b = CKeyboardControl::KEYFLAG_NORMAL;
+		FlagSet<CKeyboardControl::KeyFlag> b = CKeyboardControl::KeyFlag::Normal;
 		for(const auto note : chord.notes)
 		{
 			if(i == note)
-				b |= CKeyboardControl::KEYFLAG_REDDOT;
+				b.set(CKeyboardControl::KeyFlag::RedDot);
 		}
 		if(i == baseNote)
-			b |= CKeyboardControl::KEYFLAG_BRIGHTDOT;
+			b.set(CKeyboardControl::KeyFlag::BrightDot);
 		m_Keyboard.SetFlags(i - CHORD_MIN, b);
 	}
 	m_Keyboard.InvalidateRect(nullptr, FALSE);
@@ -1115,14 +1374,14 @@ void CChordEditor::OnNoteChanged(int noteIndex)
 ////////////////////////////////////////////////////////////////////////////////////////////
 // Keyboard Split Settings (pattern editor)
 
-BEGIN_MESSAGE_MAP(CSplitKeyboardSettings, CDialog)
+BEGIN_MESSAGE_MAP(CSplitKeyboardSettings, DialogBase)
 	ON_CBN_SELCHANGE(IDC_COMBO_OCTAVEMODIFIER, &CSplitKeyboardSettings::OnOctaveModifierChanged)
 END_MESSAGE_MAP()
 
 
 void CSplitKeyboardSettings::DoDataExchange(CDataExchange *pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	DialogBase::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(CSplitKeyboadSettings)
 	DDX_Control(pDX, IDC_COMBO_SPLITINSTRUMENT, m_CbnSplitInstrument);
 	DDX_Control(pDX, IDC_COMBO_SPLITNOTE,       m_CbnSplitNote);
@@ -1132,12 +1391,20 @@ void CSplitKeyboardSettings::DoDataExchange(CDataExchange *pDX)
 }
 
 
+CSplitKeyboardSettings::CSplitKeyboardSettings(CWnd *parent, CSoundFile &sf, SplitKeyboardSettings &settings)
+	: DialogBase{IDD_KEYBOARD_SPLIT, parent}
+	, sndFile{sf}
+	, m_Settings{settings}
+{
+}
+
+
 BOOL CSplitKeyboardSettings::OnInitDialog()
 {
 	if(sndFile.GetpModDoc() == nullptr)
 		return TRUE;
 
-	CDialog::OnInitDialog();
+	DialogBase::OnInitDialog();
 
 	CString s;
 
@@ -1210,7 +1477,7 @@ BOOL CSplitKeyboardSettings::OnInitDialog()
 
 void CSplitKeyboardSettings::OnOK()
 {
-	CDialog::OnOK();
+	DialogBase::OnOK();
 
 	m_Settings.splitNote = static_cast<ModCommand::NOTE>(m_CbnSplitNote.GetItemData(m_CbnSplitNote.GetCurSel()) - 1);
 	m_Settings.octaveModifier = m_CbnOctaveModifier.GetCurSel() - SplitKeyboardSettings::splitOctaveRange;
@@ -1222,7 +1489,7 @@ void CSplitKeyboardSettings::OnOK()
 
 void CSplitKeyboardSettings::OnCancel()
 {
-	CDialog::OnCancel();
+	DialogBase::OnCancel();
 }
 
 
@@ -1235,7 +1502,7 @@ void CSplitKeyboardSettings::OnOctaveModifierChanged()
 /////////////////////////////////////////////////////////////////////////
 // Show channel properties from pattern editor
 
-BEGIN_MESSAGE_MAP(QuickChannelProperties, CDialog)
+BEGIN_MESSAGE_MAP(QuickChannelProperties, DialogBase)
 	ON_WM_HSCROLL()		// Sliders
 	ON_WM_ACTIVATE()	// Catch Window focus change
 	ON_EN_UPDATE(IDC_EDIT1,	&QuickChannelProperties::OnVolChanged)
@@ -1250,7 +1517,6 @@ BEGIN_MESSAGE_MAP(QuickChannelProperties, CDialog)
 	ON_COMMAND(IDC_BUTTON5, &QuickChannelProperties::OnPickPrevColor)
 	ON_COMMAND(IDC_BUTTON6, &QuickChannelProperties::OnPickNextColor)
 	ON_MESSAGE(WM_MOD_KEYCOMMAND,	&QuickChannelProperties::OnCustomKeyMsg)
-	ON_NOTIFY_EX_RANGE(TTN_NEEDTEXT, 0, 0xFFFF, &QuickChannelProperties::OnToolTipText)
 END_MESSAGE_MAP()
 
 
@@ -1287,7 +1553,6 @@ void QuickChannelProperties::Show(CModDoc *modDoc, CHANNELINDEX chn, CPoint posi
 	if(!m_hWnd)
 	{
 		Create(IDD_CHANNELSETTINGS, nullptr);
-		EnableToolTips();
 		m_colorBtn.SubclassDlgItem(IDC_BUTTON4, this);
 		m_colorBtnPrev.SubclassDlgItem(IDC_BUTTON5, this);
 		m_colorBtnNext.SubclassDlgItem(IDC_BUTTON6, this);
@@ -1299,8 +1564,6 @@ void QuickChannelProperties::Show(CModDoc *modDoc, CHANNELINDEX chn, CPoint posi
 		m_panSlider.SetRange(0, 64);
 		m_panSlider.SetTicFreq(8);
 		m_panSpin.SetRange(0, 256);
-
-		m_nameEdit.SetFocus();
 	}
 	m_document = modDoc;
 	m_channel = chn;
@@ -1315,8 +1578,6 @@ void QuickChannelProperties::Show(CModDoc *modDoc, CHANNELINDEX chn, CPoint posi
 	    Clamp(static_cast<int>(position.x) - rect.Width() / 2, 0, static_cast<int>(screenRect.right) - rect.Width()),
 	    Clamp(static_cast<int>(position.y) - rect.Height() / 2, 0, static_cast<int>(screenRect.bottom) - rect.Height()));
 	MoveWindow(rect);
-
-	SetWindowText(MPT_TFORMAT("Settings for Channel {}")(chn + 1).c_str());
 
 	UpdateDisplay();
 
@@ -1337,6 +1598,7 @@ void QuickChannelProperties::Show(CModDoc *modDoc, CHANNELINDEX chn, CPoint posi
 	// Channel name
 	m_nameEdit.EnableWindow((m_document->GetModType() & (MOD_TYPE_IT | MOD_TYPE_MPT | MOD_TYPE_XM)) ? TRUE : FALSE);
 
+	SetFocusToFirstControl();
 	ShowWindow(SW_SHOW);
 	m_visible = true;
 }
@@ -1344,6 +1606,9 @@ void QuickChannelProperties::Show(CModDoc *modDoc, CHANNELINDEX chn, CPoint posi
 
 void QuickChannelProperties::UpdateDisplay()
 {
+	const CWnd *oldFocusWnd = GetFocus();
+	SetWindowText(MPT_TFORMAT("Settings for Channel {}")(m_channel + 1).c_str());
+
 	// Set up channel properties
 	m_visible = false;
 	const ModChannelSettings &settings = m_document->GetSoundFile().ChnSettings[m_channel];
@@ -1375,6 +1640,18 @@ void QuickChannelProperties::UpdateDisplay()
 
 	::EnableWindow(::GetDlgItem(m_hWnd, IDC_BUTTON1), isFirst ? FALSE : TRUE);
 	::EnableWindow(::GetDlgItem(m_hWnd, IDC_BUTTON2), isLast ? FALSE : TRUE);
+
+	// Avoid focus trap if we just navigated to the first or last channel
+	const int PrevNextButtons[] = {IDC_BUTTON1, IDC_BUTTON2, IDC_BUTTON5, IDC_BUTTON6};
+	for(int button : PrevNextButtons)
+	{
+		const CWnd *wnd = GetDlgItem(button);
+		if (oldFocusWnd == wnd && !wnd->IsWindowEnabled())
+		{
+			SetFocusToFirstControl();
+			break;
+		}
+	}
 }
 
 void QuickChannelProperties::PrepareUndo()
@@ -1436,7 +1713,7 @@ void QuickChannelProperties::OnHScroll(UINT, UINT, CScrollBar *bar)
 	bool update = false;
 
 	// Volume slider
-	if(bar == reinterpret_cast<CScrollBar *>(&m_volSlider))
+	if(bar->m_hWnd == m_volSlider.m_hWnd)
 	{
 		uint16 pos = static_cast<uint16>(m_volSlider.GetPos());
 		PrepareUndo();
@@ -1447,7 +1724,7 @@ void QuickChannelProperties::OnHScroll(UINT, UINT, CScrollBar *bar)
 		}
 	}
 	// Pan slider
-	if(bar == reinterpret_cast<CScrollBar *>(&m_panSlider))
+	if(bar->m_hWnd == m_panSlider.m_hWnd)
 	{
 		uint16 pos = static_cast<uint16>(m_panSlider.GetPos());
 		PrepareUndo();
@@ -1517,7 +1794,7 @@ void QuickChannelProperties::OnNameChanged()
 void QuickChannelProperties::OnChangeColor()
 {
 	m_settingColor = true;
-	if(auto color = m_colorBtn.PickColor(m_document->GetSoundFile(), m_channel); color.has_value())
+	if(auto color = m_colorBtn.PickChannelColor(m_document->GetSoundFile(), m_channel); color.has_value())
 	{
 		PrepareUndo();
 		m_document->GetSoundFile().ChnSettings[m_channel].color = *color;
@@ -1587,21 +1864,14 @@ BOOL QuickChannelProperties::PreTranslateMessage(MSG *pMsg)
 			(pMsg->message == WM_SYSKEYDOWN) || (pMsg->message == WM_KEYDOWN))
 		{
 			CInputHandler *ih = CMainFrame::GetInputHandler();
-
-			//Translate message manually
-			UINT nChar = static_cast<UINT>(pMsg->wParam);
-			UINT nRepCnt = LOWORD(pMsg->lParam);
-			UINT nFlags = HIWORD(pMsg->lParam);
-			KeyEventType kT = ih->GetKeyEventType(nFlags);
-
-			if(ih->KeyEvent(kCtxChannelSettings, nChar, nRepCnt, nFlags, kT, this) != kcNull)
+			if(ih->KeyEvent(kCtxChannelSettings, ih->Translate(*pMsg), this) != kcNull)
 			{
 				return TRUE;  // Mapped to a command, no need to pass message on.
 			}
 		}
 	}
 
-	return CDialog::PreTranslateMessage(pMsg);
+	return DialogBase::PreTranslateMessage(pMsg);
 }
 
 
@@ -1630,23 +1900,15 @@ LRESULT QuickChannelProperties::OnCustomKeyMsg(WPARAM wParam, LPARAM)
 }
 
 
-BOOL QuickChannelProperties::OnToolTipText(UINT, NMHDR *pNMHDR, LRESULT *pResult)
+CString QuickChannelProperties::GetToolTipText(UINT id, HWND) const
 {
-	auto pTTT = reinterpret_cast<TOOLTIPTEXT *>(pNMHDR);
-	UINT_PTR id = pNMHDR->idFrom;
-	if(pTTT->uFlags & TTF_IDISHWND)
-	{
-		// idFrom is actually the HWND of the tool
-		id = static_cast<UINT_PTR>(::GetDlgCtrlID(reinterpret_cast<HWND>(id)));
-	}
-
-	mpt::tstring text;
+	CString text;
 	CommandID cmd = kcNull;
-	switch (id)
+	switch(id)
 	{
 	case IDC_EDIT1:
 	case IDC_SLIDER1:
-		text = CModDoc::LinearToDecibels(m_document->GetSoundFile().ChnSettings[m_channel].nVolume, 64.0);
+		text = CModDoc::LinearToDecibelsString(m_document->GetSoundFile().ChnSettings[m_channel].nVolume, 64.0);
 		break;
 	case IDC_EDIT2:
 	case IDC_SLIDER2:
@@ -1668,24 +1930,213 @@ BOOL QuickChannelProperties::OnToolTipText(UINT, NMHDR *pNMHDR, LRESULT *pResult
 		text = _T("Take color from next channel");
 		cmd = kcChnColorFromNext;
 		break;
-	default:
-		return FALSE;
 	}
-	
+
 	if(cmd != kcNull)
 	{
 		auto keyText = CMainFrame::GetInputHandler()->m_activeCommandSet->GetKeyTextFromCommand(cmd, 0);
 		if(!keyText.IsEmpty())
-			text += MPT_TFORMAT(" ({})")(keyText);
+			text += MPT_CFORMAT(" ({})")(keyText);
 	}
 
-	mpt::String::WriteWinBuf(pTTT->szText) = text;
-	*pResult = 0;
+	return text;
+}
 
-	// bring the tooltip window above other popup windows
-	::SetWindowPos(pNMHDR->hwndFrom, HWND_TOP, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOMOVE | SWP_NOOWNERZORDER);
 
-	return TRUE;  // message was handled
+/////////////////////////////////////////////////////////////////////////
+// Metronome settings
+
+static constexpr float METRONOME_VOLUME_SCALE = 0.2f;
+
+BEGIN_MESSAGE_MAP(MetronomeSettingsDlg, DialogBase)
+	ON_WM_HSCROLL()
+
+	ON_COMMAND(IDC_CHECK1,       &MetronomeSettingsDlg::OnToggleMetronome)
+	ON_COMMAND(IDC_BUTTON1,      &MetronomeSettingsDlg::OnBrowseMeasure)
+	ON_COMMAND(IDC_BUTTON2,      &MetronomeSettingsDlg::OnBrowseBeat)
+	ON_CBN_SELCHANGE(IDC_COMBO1, &MetronomeSettingsDlg::OnSampleChanged)
+	ON_CBN_SELCHANGE(IDC_COMBO2, &MetronomeSettingsDlg::OnSampleChanged)
+	ON_EN_KILLFOCUS(IDC_EDIT1,   &MetronomeSettingsDlg::OnSampleChanged)
+	ON_EN_KILLFOCUS(IDC_EDIT2,   &MetronomeSettingsDlg::OnSampleChanged)
+END_MESSAGE_MAP()
+
+
+void MetronomeSettingsDlg::DoDataExchange(CDataExchange* pDX)
+{
+	DDX_Control(pDX, IDC_SLIDER1, m_volumeSlider);
+	DDX_Control(pDX, IDC_COMBO1,  m_measureCombo);
+	DDX_Control(pDX, IDC_COMBO2,  m_beatCombo);
+	DDX_Control(pDX, IDC_EDIT1,   m_measureEdit);
+	DDX_Control(pDX, IDC_EDIT2,   m_beatEdit);
+	DDX_Control(pDX, IDC_BUTTON1, m_measureButton);
+	DDX_Control(pDX, IDC_BUTTON2, m_beatButton);
+}
+
+
+MetronomeSettingsDlg::MetronomeSettingsDlg(CWnd *parent)
+	: DialogBase{IDD_METRONOME_SETTINGS, parent}
+{ }
+
+
+void MetronomeSettingsDlg::SetSampleInfo(const mpt::PathString &path, CComboBox &combo, CEdit &edit, CButton &browseButton)
+{
+	BOOL enable = FALSE;
+	if(path.empty())
+	{
+		combo.SetCurSel(0);
+	} else if(path == TrackerSettings::GetDefaultMetronomeSample())
+	{
+		combo.SetCurSel(1);
+	} else
+	{
+		combo.SetCurSel(2);
+		edit.SetWindowText(path.AsNative().c_str());
+		enable = TRUE;
+	}
+	edit.EnableWindow(enable);
+	browseButton.EnableWindow(enable);
+}
+
+
+BOOL MetronomeSettingsDlg::OnInitDialog()
+{
+	DialogBase::OnInitDialog();
+	CheckDlgButton(IDC_CHECK1, TrackerSettings::Instance().metronomeEnabled ? BST_CHECKED : BST_UNCHECKED);
+	m_volumeSlider.SetRange(static_cast<int>(-48 / METRONOME_VOLUME_SCALE), 0, TRUE);
+	m_volumeSlider.SetPos(mpt::saturate_round<int>(TrackerSettings::Instance().metronomeVolume / METRONOME_VOLUME_SCALE));
+	m_volumeSlider.SetTicFreq(static_cast<int>(3 / METRONOME_VOLUME_SCALE));
+	static const TCHAR *Options[] = {_T("Off"), _T("Default (Sine)"), _T("Custom Sample")};
+	for(const TCHAR *option : Options)
+	{
+		m_measureCombo.AddString(option);
+		m_beatCombo.AddString(option);
+	}
+	SetSampleInfo(TrackerSettings::Instance().metronomeSampleMeasure, m_measureCombo, m_measureEdit, m_measureButton);
+	SetSampleInfo(TrackerSettings::Instance().metronomeSampleBeat, m_beatCombo, m_beatEdit, m_beatButton);
+	GetDlgItem(IDC_VOLUME)->SetWindowText(GetVolumeString());
+	return TRUE;
+}
+
+
+CString MetronomeSettingsDlg::GetVolumeString() const
+{
+	CString s = (m_volumeSlider.GetPos() >= 0) ? _T("+") : _T("");
+	s.AppendFormat(_T("%.2f dB"), m_volumeSlider.GetPos() * METRONOME_VOLUME_SCALE);
+	return s;
+}
+
+
+void MetronomeSettingsDlg::OnHScroll(UINT, UINT, CScrollBar *bar)
+{
+	if(bar == static_cast<CWnd *>(&m_volumeSlider))
+	{
+		TrackerSettings::Instance().metronomeVolume = m_volumeSlider.GetPos() * METRONOME_VOLUME_SCALE;
+		CMainFrame::GetMainFrame()->UpdateMetronomeVolume();
+		GetDlgItem(IDC_VOLUME)->SetWindowText(GetVolumeString());
+	}
+}
+
+
+void MetronomeSettingsDlg::OnToggleMetronome()
+{
+	TrackerSettings::Instance().metronomeEnabled = IsDlgButtonChecked(IDC_CHECK1) != BST_UNCHECKED;
+	CMainFrame::GetMainFrame()->UpdateMetronomeSamples();
+}
+
+
+bool MetronomeSettingsDlg::GetSampleInfo(Setting<mpt::PathString> &path, CComboBox &combo, CEdit &edit, CButton &browseButton)
+{
+	CString s;
+	bool modified = false;
+	BOOL enable = FALSE;
+	switch(combo.GetCurSel())
+	{
+	case 0:
+		if(path != mpt::PathString{})
+		{
+			modified = true;
+			path = {};
+		}
+		break;
+	case 1:
+		if(path != TrackerSettings::GetDefaultMetronomeSample())
+		{
+			modified = true;
+			path = TrackerSettings::GetDefaultMetronomeSample();
+		}
+		break;
+	case 2:
+		edit.GetWindowText(s);
+		if(auto newPath = mpt::PathString::FromCString(s); path != newPath)
+		{
+			path = newPath;
+			modified = true;
+		}
+		enable = TRUE;
+		break;
+	}
+	edit.EnableWindow(enable);
+	browseButton.EnableWindow(enable);
+	return modified;
+}
+
+
+void MetronomeSettingsDlg::OnSampleChanged()
+{
+	bool modified = GetSampleInfo(TrackerSettings::Instance().metronomeSampleMeasure, m_measureCombo, m_measureEdit, m_measureButton);
+	modified |= GetSampleInfo(TrackerSettings::Instance().metronomeSampleBeat, m_beatCombo, m_beatEdit, m_beatButton);
+	if(modified)
+		CMainFrame::GetMainFrame()->LoadMetronomeSamples();
+}
+
+
+mpt::PathString MetronomeSettingsDlg::BrowseForSample(const mpt::PathString &path)
+{
+	static int lastIndex = 0;
+	FileDialog dlg = OpenFileDialog()
+		.EnableAudioPreview()
+		.ExtensionFilter(ConstructSampleFormatFileFilter(false))
+		.WorkingDirectory(path.empty() ? TrackerSettings::Instance().PathSamples.GetWorkingDir() : path.GetDirectoryWithDrive())
+		.DefaultFilename(path.GetFilename())
+		.FilterIndex(&lastIndex);
+	if(!dlg.Show(this))
+		return {};
+	TrackerSettings::Instance().PathSamples.SetWorkingDir(dlg.GetWorkingDirectory());
+	return dlg.GetFirstFile();
+}
+
+
+void MetronomeSettingsDlg::OnBrowseMeasure()
+{
+	auto newPath = BrowseForSample(TrackerSettings::Instance().metronomeSampleMeasure);
+	if(newPath.empty())
+		return;
+	m_measureEdit.SetWindowText(newPath.ToCString());
+	OnSampleChanged();
+}
+
+
+void MetronomeSettingsDlg::OnBrowseBeat()
+{
+	auto newPath = BrowseForSample(TrackerSettings::Instance().metronomeSampleBeat);
+	if(newPath.empty())
+		return;
+	m_beatEdit.SetWindowText(newPath.ToCString());
+	OnSampleChanged();
+}
+
+
+CString MetronomeSettingsDlg::GetToolTipText(UINT id, HWND) const
+{
+	CString s;
+	switch(id)
+	{
+	case IDC_SLIDER1:
+		s = GetVolumeString();
+		break;
+	}
+
+	return s;
 }
 
 

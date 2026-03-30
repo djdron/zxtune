@@ -65,10 +65,21 @@ struct MDLInfoBlock
 	char     composer[20];
 	uint16le numOrders;
 	uint16le restartPos;
-	uint8le  globalVol;	// 1...255
-	uint8le  speed;		// 1...255
-	uint8le  tempo;		// 4...255
+	uint8le  globalVol;  // 1...255
+	uint8le  speed;      // 1...255
+	uint8le  tempo;      // 4...255
 	uint8le  chnSetup[32];
+
+	uint8 GetNumChannels() const
+	{
+		uint8 numChannels = 0;
+		for(uint8 c = 0; c < 32; c++)
+		{
+			if(!(chnSetup[c] & 0x80))
+				numChannels = c + 1;
+		}
+		return numChannels;
+	}
 };
 
 MPT_BINARY_STRUCT(MDLInfoBlock, 91)
@@ -155,7 +166,7 @@ enum
 
 static constexpr VibratoType MDLVibratoType[] = { VIB_SINE, VIB_RAMP_DOWN, VIB_SQUARE, VIB_SINE };
 
-static constexpr ModCommand::COMMAND MDLEffTrans[] =
+static constexpr EffectCommand MDLEffTrans[] =
 {
 	/* 0 */ CMD_NONE,
 	/* 1st column only */
@@ -168,7 +179,7 @@ static constexpr ModCommand::COMMAND MDLEffTrans[] =
 	/* Either column */
 	/* 7 */ CMD_TEMPO,
 	/* 8 */ CMD_PANNING8,
-	/* 9 */ CMD_SETENVPOSITION,
+	/* 9 */ CMD_S3MCMDEX,
 	/* A */ CMD_NONE,
 	/* B */ CMD_POSITIONJUMP,
 	/* C */ CMD_GLOBALVOLUME,
@@ -186,15 +197,13 @@ static constexpr ModCommand::COMMAND MDLEffTrans[] =
 
 
 // receive an MDL effect, give back a 'normal' one.
-static void ConvertMDLCommand(uint8 &cmd, uint8 &param)
+static std::pair<EffectCommand, uint8> ConvertMDLCommand(const uint8 command, uint8 param)
 {
-	if(cmd >= std::size(MDLEffTrans))
-		return;
+	if(command >= std::size(MDLEffTrans))
+		return {CMD_NONE, uint8(0)};
 
-	uint8 origCmd = cmd;
-	cmd = MDLEffTrans[cmd];
-
-	switch(origCmd)
+	EffectCommand cmd = MDLEffTrans[command];
+	switch(command)
 	{
 #ifdef MODPLUG_TRACKER
 	case 0x07: // Tempo
@@ -205,12 +214,22 @@ static void ConvertMDLCommand(uint8 &cmd, uint8 &param)
 	case 0x08: // Panning
 		param = (param & 0x7F) * 2u;
 		break;
+	case 0x09: // Set Envelope (we can only have one envelope per type...)
+		if(param < 0x40)
+			param = 0x78;  // Enable the one volume envelope we have
+		else if (param < 0x80)
+			param = 0x7A;  // Enable the one panning envelope we have
+		else if(param < 0xC0)
+			param = 0x7C;  // Enable the one pitch envelope we have
+		else
+			cmd = CMD_NONE;
+		break;
 	case 0x0C:	// Global volume
-		param = (param + 1) / 2u;
+		param = static_cast<uint8>((param + 1) / 2u);
 		break;
 	case 0x0D: // Pattern Break
 		// Convert from BCD
-		param = 10 * (param >> 4) + (param & 0x0F);
+		param = static_cast<uint8>(10 * (param >> 4) + (param & 0x0F));
 		break;
 	case 0x0E: // Special
 		switch(param >> 4)
@@ -247,11 +266,11 @@ static void ConvertMDLCommand(uint8 &cmd, uint8 &param)
 			break;
 		case 0xA: // Global vol slide up
 			cmd = CMD_GLOBALVOLSLIDE;
-			param = 0xF0 & (((param & 0x0F) + 1) << 3);
+			param = static_cast<uint8>(0xF0 & (((param & 0x0F) + 1) << 3));
 			break;
 		case 0xB: // Global vol slide down
 			cmd = CMD_GLOBALVOLSLIDE;
-			param = ((param & 0x0F) + 1) >> 1;
+			param = static_cast<uint8>(((param & 0x0F) + 1) >> 1);
 			break;
 		case 0xC: // Note cut
 		case 0xD: // Note delay
@@ -298,18 +317,19 @@ static void ConvertMDLCommand(uint8 &cmd, uint8 &param)
 		}
 		break;
 	}
+	return {cmd, param};
 }
 
 
 // Returns true if command was lost
-static bool ImportMDLCommands(ModCommand &m, uint8 vol, uint8 e1, uint8 e2, uint8 p1, uint8 p2)
+static bool ImportMDLCommands(ModCommand &m, uint8 vol, uint8 cmd1, uint8 cmd2, uint8 param1, uint8 param2)
 {
 	// Map second effect values 1-6 to effects G-L
-	if(e2 >= 1 && e2 <= 6)
-		e2 += 15;
+	if(cmd2 >= 1 && cmd2 <= 6)
+		cmd2 += 15;
 
-	ConvertMDLCommand(e1, p1);
-	ConvertMDLCommand(e2, p2);
+	auto [e1, p1] = ConvertMDLCommand(cmd1, param1);
+	auto [e2, p2] = ConvertMDLCommand(cmd2, param2);
 	/* From the Digitrakker documentation:
 		* EFx -xx - Set Sample Offset
 		This  is a  double-command.  It starts the
@@ -324,60 +344,62 @@ static bool ImportMDLCommands(ModCommand &m, uint8 vol, uint8 e1, uint8 e2, uint
 
 	What's more is, if there's another effect in the second column, it's ALSO processed in addition to the
 	offset, and the second data byte is shared between the two effects. */
+	uint32 offset = uint32_max;
+	EffectCommand otherCmd = CMD_NONE;
 	if(e1 == CMD_OFFSET)
 	{
 		// EFy -xx => offset yxx00
+		offset = ((p1 & 0x0F) << 8) | p2;
 		p1 = (p1 & 0x0F) ? 0xFF : p2;
 		if(e2 == CMD_OFFSET)
 			e2 = CMD_NONE;
+		else
+			otherCmd = e2;
 	} else if (e2 == CMD_OFFSET)
 	{
-		// --- EFy => offset y0000 (best we can do without doing a ton of extra work is 0xff00)
+		// --- EFy => offset y0000
+		offset = (p2 & 0x0F) << 8;
 		p2 = (p2 & 0x0F) ? 0xFF : 0;
+		otherCmd = e1;
+	}
+
+	if(offset != uint32_max && offset > 0xFF && ModCommand::GetEffectWeight(otherCmd) < ModCommand::GetEffectWeight(CMD_OFFSET))
+	{
+		m.SetEffectCommand(CMD_OFFSET, static_cast<ModCommand::PARAM>(offset & 0xFF));
+		m.SetVolumeCommand(VOLCMD_OFFSET, static_cast<ModCommand::VOL>(offset >> 8));
+		return otherCmd != CMD_NONE || vol != 0;
 	}
 
 	if(vol)
 	{
-		m.volcmd = VOLCMD_VOLUME;
-		m.vol = (vol + 2) / 4u;
+		m.SetVolumeCommand(VOLCMD_VOLUME, static_cast<ModCommand::VOL>((vol + 2) / 4u));
 	}
 
 	// If we have Dxx + G00, or Dxx + H00, combine them into Lxx/Kxx.
 	ModCommand::CombineEffects(e1, p1, e2, p2);
 
-	bool lostCommand = false;
-	// Try to fit the "best" effect into e2.
-	if(e1 == CMD_NONE)
-	{
-		// Easy
-	} else if(e2 == CMD_NONE)
-	{
-		// Almost as easy
-		e2 = e1;
-		p2 = p1;
-		e1 = CMD_NONE;
-	} else if(e1 == e2 && e1 != CMD_S3MCMDEX)
+	// Try to preserve the "best" effect.
+	if(e1 == CMD_NONE || (e1 == e2 && e1 != CMD_S3MCMDEX))
 	{
 		// Digitrakker processes the effects left-to-right, so if both effects are the same, the
 		// second essentially overrides the first.
-		e1 = CMD_NONE;
+		m.SetEffectCommand(e2, p2);
+		return false;
+	} else if(e2 == CMD_NONE)
+	{
+		m.SetEffectCommand(e1, p1);
+		return false;
 	} else if(!vol)
 	{
-		lostCommand |= (ModCommand::TwoRegularCommandsToMPT(e1, p1, e2, p2).first != CMD_NONE);
-		m.volcmd = e1;
-		m.vol = p1;
+		return m.FillInTwoCommands(e1, p1, e2, p2).first != CMD_NONE;
 	} else
 	{
-		if(ModCommand::GetEffectWeight((ModCommand::COMMAND)e1) > ModCommand::GetEffectWeight((ModCommand::COMMAND)e2))
-		{
-			std::swap(e1, e2);
-			std::swap(p1, p2);
-		}
+		if(ModCommand::GetEffectWeight(e1) > ModCommand::GetEffectWeight(e2))
+			m.SetEffectCommand(e1, p1);
+		else
+			m.SetEffectCommand(e2, p2);
+		return true;
 	}
-
-	m.command = e2;
-	m.param = p2;
-	return lostCommand;
 }
 
 
@@ -404,6 +426,28 @@ static void CopyEnvelope(InstrumentEnvelope &mptEnv, uint8 flags, std::vector<MD
 	if(envNum < envelopes.size())
 		envelopes[envNum].ConvertToMPT(mptEnv);
 	mptEnv.dwFlags.set(ENV_ENABLED, (flags & 0x80) && !mptEnv.empty());
+}
+
+
+static uint8 GetMDLPatternChannelCount(FileReader chunk, uint8 numChannels, const uint8 fileVersion)
+{
+	const uint8 numPats = chunk.ReadUint8();
+	for(uint8 pat = 0; pat < numPats && numChannels < 32; pat++)
+	{
+		uint8 readChans = 32;
+		if(fileVersion >= 0x10)
+		{
+			MDLPatternHeader patHead;
+			chunk.ReadStruct(patHead);
+			readChans = patHead.channels;
+		}
+		for(uint8 chn = 0; chn < readChans; chn++)
+		{
+			if(chunk.ReadUint16LE() > 0 && chn >= numChannels && chn < 32)
+				numChannels = chn + 1;
+		}
+	}
+	return numChannels;
 }
 
 
@@ -462,42 +506,42 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 		return false;
 	}
 
-	InitializeGlobals(MOD_TYPE_MDL);
+	// In case any muted channels contain data, be sure that we import them as well.
+	const uint8 numChannels = std::max(GetMDLPatternChannelCount(chunks.GetChunk(MDLChunk::idPats), info.GetNumChannels(), fileHeader.version), uint8(1));
+	InitializeGlobals(MOD_TYPE_MDL, numChannels);
 	m_SongFlags = SONG_ITCOMPATGXX;
 	m_playBehaviour.set(kPerChannelGlobalVolSlide);
+	m_playBehaviour.set(kApplyOffsetWithoutNote);
+	m_playBehaviour.reset(kPeriodsAreHertz);
 	m_playBehaviour.reset(kITVibratoTremoloPanbrello);
 	m_playBehaviour.reset(kITSCxStopsSample);	// Gate effect in underbeat.mdl
 
-	m_modFormat.formatName = U_("Digitrakker");
-	m_modFormat.type = U_("mdl");
+	m_modFormat.formatName = UL_("Digitrakker");
+	m_modFormat.type = UL_("mdl");
 	m_modFormat.madeWithTracker = U_("Digitrakker ") + (
-		(fileHeader.version == 0x11) ? U_("3") // really could be 2.99b - close enough
-		: (fileHeader.version == 0x10) ? U_("2.3")
-		: (fileHeader.version == 0x00) ? U_("2.0 - 2.2b") // there was no 1.x release
-		: U_(""));
+		(fileHeader.version == 0x11) ? UL_("3") // really could be 2.99b - close enough
+		: (fileHeader.version == 0x10) ? UL_("2.3")
+		: (fileHeader.version == 0x00) ? UL_("2.0 - 2.2b") // there was no 1.x release
+		: UL_(""));
 	m_modFormat.charset = mpt::Charset::CP437;
 
 	m_songName = mpt::String::ReadBuf(mpt::String::spacePadded, info.title);
 	m_songArtist = mpt::ToUnicode(mpt::Charset::CP437, mpt::String::ReadBuf(mpt::String::spacePadded, info.composer));
 
 	m_nDefaultGlobalVolume = info.globalVol + 1;
-	m_nDefaultSpeed = Clamp<uint8, uint8>(info.speed, 1, 255);
-	m_nDefaultTempo.Set(Clamp<uint8, uint8>(info.tempo, 4, 255));
+	Order().SetDefaultSpeed(Clamp<uint8, uint8>(info.speed, 1, 255));
+	Order().SetDefaultTempoInt(Clamp<uint8, uint8>(info.tempo, 4, 255));
 
 	ReadOrderFromFile<uint8>(Order(), chunk, info.numOrders);
 	Order().SetRestartPos(info.restartPos);
 
-	m_nChannels = 0;
-	for(CHANNELINDEX c = 0; c < 32; c++)
+	for(CHANNELINDEX c = 0; c < GetNumChannels(); c++)
 	{
-		ChnSettings[c].Reset();
 		ChnSettings[c].nPan = (info.chnSetup[c] & 0x7F) * 2u;
 		if(ChnSettings[c].nPan == 254)
 			ChnSettings[c].nPan = 256;
 		if(info.chnSetup[c] & 0x80)
 			ChnSettings[c].dwFlags.set(CHN_MUTE);
-		else
-			m_nChannels = c + 1;
 		chunk.ReadString<mpt::String::spacePadded>(ChnSettings[c].szName, 8);
 	}
 
@@ -523,6 +567,7 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 
 			ModSample &sample = Samples[sampleIndex];
 			sample.Initialize();
+			sample.Set16BitCuePoints();
 
 			chunk.ReadString<mpt::String::spacePadded>(m_szNames[sampleIndex], 32);
 			chunk.ReadString<mpt::String::spacePadded>(sample.filename, 8);
@@ -609,7 +654,7 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 				CopyEnvelope(mptIns->VolEnv, sampleHeader.volEnvFlags, volEnvs);
 				CopyEnvelope(mptIns->PanEnv, sampleHeader.panEnvFlags, panEnvs);
 				CopyEnvelope(mptIns->PitchEnv, sampleHeader.freqEnvFlags, pitchEnvs);
-				mptIns->nFadeOut = (sampleHeader.fadeout + 1u) / 2u;
+				mptIns->nFadeOut = static_cast<uint16>((sampleHeader.fadeout + 1u) / 2u);
 #ifdef MODPLUG_TRACKER
 				if((mptIns->VolEnv.dwFlags & (ENV_ENABLED | ENV_LOOP)) == ENV_ENABLED)
 				{
@@ -637,7 +682,7 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 				mptSmp.nPan = std::min(static_cast<uint16>(sampleHeader.panning * 2), uint16(254));
 				mptSmp.nVibType = MDLVibratoType[sampleHeader.vibType & 3];
 				mptSmp.nVibSweep = sampleHeader.vibSweep;
-				mptSmp.nVibDepth = (sampleHeader.vibDepth + 3u) / 4u;
+				mptSmp.nVibDepth = static_cast<uint8>((sampleHeader.vibDepth + 3u) / 4u);
 				mptSmp.nVibRate = sampleHeader.vibSpeed;
 				// Convert to IT-like vibrato sweep
 				if(mptSmp.nVibSweep != 0)
@@ -666,27 +711,6 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 	if((loadFlags & loadPatternData) && (chunk = chunks.GetChunk(MDLChunk::idPats)).IsValid())
 	{
 		PATTERNINDEX numPats = chunk.ReadUint8();
-
-		// In case any muted channels contain data, be sure that we import them as well.
-		for(PATTERNINDEX pat = 0; pat < numPats; pat++)
-		{
-			CHANNELINDEX numChans = 32;
-			if(fileHeader.version >= 0x10)
-			{
-				MDLPatternHeader patHead;
-				chunk.ReadStruct(patHead);
-				if(patHead.channels > m_nChannels && patHead.channels <= 32)
-					m_nChannels = patHead.channels;
-				numChans = patHead.channels;
-			}
-			for(CHANNELINDEX chn = 0; chn < numChans; chn++)
-			{
-				if(chunk.ReadUint16LE() > 0 && chn >= m_nChannels)
-					m_nChannels = chn + 1;
-			}
-		}
-		chunk.Seek(1);
-
 		Patterns.ResizeArray(numPats);
 		for(PATTERNINDEX pat = 0; pat < numPats; pat++)
 		{
@@ -712,7 +736,7 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 			for(CHANNELINDEX chn = 0; chn < numChans; chn++)
 			{
 				uint16 trkNum = chunk.ReadUint16LE();
-				if(!trkNum || trkNum >= tracks.size() || chn >= m_nChannels)
+				if(!trkNum || trkNum >= tracks.size() || chn >= GetNumChannels())
 					continue;
 
 				FileReader &track = tracks[trkNum];
@@ -737,7 +761,7 @@ bool CSoundFile::ReadMDL(FileReader &file, ModLoadingFlags loadFlags)
 							do
 							{
 								*m = orig;
-								m += m_nChannels;
+								m += GetNumChannels();
 								row++;
 							} while (row < numRows && x--);
 						}

@@ -56,8 +56,8 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 char *lha_file_header_full_path(LHAFileHeader *header)
 {
-	char *path;
-	char *filename;
+	const char *path;
+	const char *filename;
 	char *result;
 
 	if (header->path != NULL) {
@@ -194,7 +194,7 @@ static void fix_msdos_allcaps(LHAFileHeader *header)
 
 	if (header->path != NULL) {
 		for (i = 0; header->path[i] != '\0'; ++i) {
-			if (islower((unsigned) header->path[i])) {
+			if (islower((int)(unsigned char) header->path[i])) {
 				is_allcaps = 0;
 				break;
 			}
@@ -203,7 +203,7 @@ static void fix_msdos_allcaps(LHAFileHeader *header)
 
 	if (is_allcaps && header->filename != NULL) {
 		for (i = 0; header->filename[i] != '\0'; ++i) {
-			if (islower((unsigned) header->filename[i])) {
+			if (islower((int)(unsigned char) header->filename[i])) {
 				is_allcaps = 0;
 				break;
 			}
@@ -216,13 +216,13 @@ static void fix_msdos_allcaps(LHAFileHeader *header)
 		if (header->path != NULL) {
 			for (i = 0; header->path[i] != '\0'; ++i) {
 				header->path[i]
-				    = tolower((unsigned) header->path[i]);
+				    = tolower((int)(unsigned char) header->path[i]);
 			}
 		}
 		if (header->filename != NULL) {
 			for (i = 0; header->filename[i] != '\0'; ++i) {
 				header->filename[i]
-				    = tolower((unsigned) header->filename[i]);
+				    = tolower((int)(unsigned char) header->filename[i]);
 			}
 		}
 	}
@@ -650,6 +650,8 @@ static int decode_level0_header(LHAFileHeader **header, LHAInputStream *stream)
 
 	(*header)->compressed_length = lha_decode_uint32(&RAW_DATA(header, 7));
 	(*header)->length = lha_decode_uint32(&RAW_DATA(header, 11));
+	(*header)->_old_compressed_length = (*header)->compressed_length;
+	(*header)->_old_length = (*header)->length;
 
 	// Timestamp:
 
@@ -741,6 +743,8 @@ static int decode_level2_header(LHAFileHeader **header, LHAInputStream *stream)
 
 	(*header)->compressed_length = lha_decode_uint32(&RAW_DATA(header, 7));
 	(*header)->length = lha_decode_uint32(&RAW_DATA(header, 11));
+	(*header)->_old_compressed_length = (*header)->compressed_length;
+	(*header)->_old_length = (*header)->length;
 
 	// Timestamp. Unlike level 0/1, this is a Unix-style timestamp.
 
@@ -820,6 +824,8 @@ static int decode_level3_header(LHAFileHeader **header, LHAInputStream *stream)
 
 	(*header)->compressed_length = lha_decode_uint32(&RAW_DATA(header, 7));
 	(*header)->length = lha_decode_uint32(&RAW_DATA(header, 11));
+	(*header)->_old_compressed_length = (*header)->compressed_length;
+	(*header)->_old_length = (*header)->length;
 
 	// Unix-style timestamp.
 
@@ -981,6 +987,17 @@ LHAFileHeader *lha_file_header_read(LHAInputStream *stream)
 		goto fail;
 	}
 
+	// Some Amiga archives have directory entries mistakenly encoded
+	// as -lh0- rather than -lhd-. These look like regular files
+	// without a filename, which is obviously incorrect. So we catch
+	// this case and fix the compress_method field.
+
+	if (header->os_type == LHA_OS_TYPE_AMIGA
+	 && strcmp(header->compress_method, "-lh0-") == 0
+	 && header->length == 0 && header->filename == NULL) {
+		memcpy(header->compress_method, LHA_COMPRESS_TYPE_DIR, 5);
+	}
+
 	// Sanity check that we got some headers, at least.
 	// Directory entries must have a path, and files must have a
 	// filename. Symlinks are stored using the same compression method
@@ -1011,6 +1028,7 @@ LHAFileHeader *lha_file_header_read(LHAInputStream *stream)
 	if (header->os_type == LHA_OS_TYPE_UNKNOWN
 	 || header->os_type == LHA_OS_TYPE_MSDOS
 	 || header->os_type == LHA_OS_TYPE_ATARI
+	 || header->os_type == LHA_OS_TYPE_LHARK
 	 || header->os_type == LHA_OS_TYPE_OS2) {
 		fix_msdos_allcaps(header);
 	}
@@ -1042,6 +1060,15 @@ LHAFileHeader *lha_file_header_read(LHAInputStream *stream)
 	if (LHA_FILE_HAVE_EXTRA(header, LHA_FILE_COMMON_CRC)
 	 && !check_common_crc(header)) {
 		goto fail;
+	}
+
+	// The DOS LHARK tool has its own -lh7- format that is incompatible
+	// with the -lh7- that everyone else uses. As a workaround, we detect
+	// and rename the compression method to -lk7- so as to be able to
+	// distinguish between the two formats.
+	if (header->header_level == 1 && header->os_type == LHA_OS_TYPE_LHARK
+	 && !strncmp(header->compress_method, "-lh7-", 5)) {
+		header->compress_method[2] = 'k';
 	}
 
 	return header;
@@ -1078,4 +1105,3 @@ void lha_file_header_add_ref(LHAFileHeader *header)
 {
 	++header->_refcount;
 }
-

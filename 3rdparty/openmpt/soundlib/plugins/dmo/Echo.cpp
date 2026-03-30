@@ -10,25 +10,22 @@
 
 #include "stdafx.h"
 
-#ifndef NO_PLUGINS
-#include "../../Sndfile.h"
 #include "Echo.h"
-#endif // !NO_PLUGINS
+#include "../../Sndfile.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-#ifndef NO_PLUGINS
 
 namespace DMO
 {
 
-IMixPlugin* Echo::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin* Echo::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) Echo(factory, sndFile, mixStruct);
 }
 
 
-Echo::Echo(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+Echo::Echo(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 	: IMixPlugin(factory, sndFile, mixStruct)
 	, m_bufferSize(0)
 	, m_writePos(0)
@@ -37,12 +34,11 @@ Echo::Echo(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
 {
 	m_param[kEchoWetDry] = 0.5f;
 	m_param[kEchoFeedback] = 0.5f;
-	m_param[kEchoLeftDelay] = 0.25f;
-	m_param[kEchoRightDelay] = 0.25f;
+	m_param[kEchoLeftDelay] = (500.0f - 1.0f) / 1999.0f;
+	m_param[kEchoRightDelay] = (500.0f - 1.0f) / 1999.0f;
 	m_param[kEchoPanDelay] = 0.0f;
 
 	m_mixBuffer.Initialize(2, 2);
-	InsertIntoFactoryList();
 }
 
 
@@ -97,11 +93,11 @@ PlugParamValue Echo::GetParameter(PlugParamIndex index)
 }
 
 
-void Echo::SetParameter(PlugParamIndex index, PlugParamValue value)
+void Echo::SetParameter(PlugParamIndex index, PlugParamValue value, PlayState *, CHANNELINDEX)
 {
 	if(index < kEchoNumParameters)
 	{
-		Limit(value, 0.0f, 1.0f);
+		value = mpt::safe_clamp(value, 0.0f, 1.0f);
 		if(index == kEchoPanDelay)
 			value = mpt::round(value);
 		m_param[index] = value;
@@ -152,9 +148,16 @@ CString Echo::GetParamName(PlugParamIndex param)
 
 CString Echo::GetParamLabel(PlugParamIndex param)
 {
-	if(param == kEchoLeftDelay || param == kEchoRightDelay)
+	switch(param)
+	{
+	case kEchoFeedback:
+		return _T("%");
+	case kEchoLeftDelay:
+	case kEchoRightDelay:
 		return _T("ms");
-	return CString();
+	default:
+		return CString{};
+	}
 }
 
 
@@ -164,12 +167,14 @@ CString Echo::GetParamDisplay(PlugParamIndex param)
 	switch(param)
 	{
 	case kEchoWetDry:
+		s.Format(_T("%.1f : %.1f"), m_param[param] * 100.0f, 100.0f - m_param[param] * 100.0f);
+		break;
 	case kEchoFeedback:
 		s.Format(_T("%.2f"), m_param[param] * 100.0f);
 		break;
 	case kEchoLeftDelay:
 	case kEchoRightDelay:
-		s.Format(_T("%.2f"), m_param[param] * 2000.0f);
+		s.Format(_T("%.2f"), 1.0f + m_param[param] * 1999.0f);
 		break;
 	case kEchoPanDelay:
 		s = (m_param[param] <= 0.5) ? _T("No") : _T("Yes");
@@ -183,16 +188,12 @@ CString Echo::GetParamDisplay(PlugParamIndex param)
 void Echo::RecalculateEchoParams()
 {
 	m_initialFeedback = std::sqrt(1.0f - (m_param[kEchoFeedback] * m_param[kEchoFeedback]));
-	m_delayTime[0] = static_cast<uint32>(m_param[kEchoLeftDelay] * (2 * m_sampleRate));
-	m_delayTime[1] = static_cast<uint32>(m_param[kEchoRightDelay] * (2 * m_sampleRate));
+	m_delayTime[0] = static_cast<uint32>((1.0f + m_param[kEchoLeftDelay] * 1999.0f) / 1000.0f * static_cast<float>(m_sampleRate));
+	m_delayTime[1] = static_cast<uint32>((1.0f + m_param[kEchoRightDelay] * 1999.0f) / 1000.0f * static_cast<float>(m_sampleRate));
 	m_crossEcho = (m_param[kEchoPanDelay]) > 0.5f;
 }
 
 } // namespace DMO
 
-#else
-MPT_MSVC_WORKAROUND_LNK4221(Echo)
-
-#endif // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_END

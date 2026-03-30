@@ -17,18 +17,18 @@ OPENMPT_NAMESPACE_BEGIN
 // File Header
 struct MTMFileHeader
 {
-	char     id[3];			// MTM file marker
-	uint8le  version;		// Tracker version
-	char     songName[20];	// ASCIIZ songname
-	uint16le numTracks;		// Number of tracks saved
-	uint8le  lastPattern;	// Last pattern number saved
-	uint8le  lastOrder;		// Last order number to play (songlength-1)
-	uint16le commentSize;	// Length of comment field
-	uint8le  numSamples;	// Number of samples saved
-	uint8le  attribute;		// Attribute byte (unused)
-	uint8le  beatsPerTrack;	// Numbers of rows in every pattern (MultiTracker itself does not seem to support values != 64)
-	uint8le  numChannels;	// Number of channels used
-	uint8le  panPos[32];	// Channel pan positions
+	char     id[3];          // MTM file marker
+	uint8le  version;        // Tracker version
+	char     songName[20];   // ASCIIZ songname
+	uint16le numTracks;      // Number of tracks saved
+	uint8le  lastPattern;    // Last pattern number saved
+	uint8le  lastOrder;      // Last order number to play (songlength-1)
+	uint16le commentSize;    // Length of comment field
+	uint8le  numSamples;     // Number of samples saved
+	uint8le  attribute;      // Attribute byte (unused)
+	uint8le  beatsPerTrack;  // Numbers of rows in every pattern (MultiTracker itself does not seem to support values != 64)
+	uint8le  numChannels;    // Number of channels used
+	uint8le  panPos[32];     // Channel pan positions
 };
 
 MPT_BINARY_STRUCT(MTMFileHeader, 66)
@@ -56,8 +56,10 @@ struct MTMSampleHeader
 			mptSmp.nLoopStart = loopStart;
 			mptSmp.nLoopEnd = std::max(loopEnd.get(), uint32(1)) - 1;
 			LimitMax(mptSmp.nLoopEnd, mptSmp.nLength);
-			if(mptSmp.nLoopStart + 4 >= mptSmp.nLoopEnd) mptSmp.nLoopStart = mptSmp.nLoopEnd = 0;
-			if(mptSmp.nLoopEnd) mptSmp.uFlags.set(CHN_LOOP);
+			if(mptSmp.nLoopStart + 4 >= mptSmp.nLoopEnd)
+				mptSmp.nLoopStart = mptSmp.nLoopEnd = 0;
+			if(mptSmp.nLoopEnd > 2)
+				mptSmp.uFlags.set(CHN_LOOP);
 			mptSmp.nFineTune = finetune; // Uses MOD units but allows the full int8 range rather than just -8...+7 so we keep the value as-is and convert it during playback
 			mptSmp.nC5Speed = ModSample::TransposeToFrequency(0, finetune * 16);
 
@@ -124,7 +126,7 @@ bool CSoundFile::ReadMTM(FileReader &file, ModLoadingFlags loadFlags)
 	{
 		return false;
 	}
-	if(!file.CanRead(mpt::saturate_cast<FileReader::off_t>(GetHeaderMinimumAdditionalSize(fileHeader))))
+	if(!file.CanRead(mpt::saturate_cast<FileReader::pos_type>(GetHeaderMinimumAdditionalSize(fileHeader))))
 	{
 		return false;
 	}
@@ -133,13 +135,12 @@ bool CSoundFile::ReadMTM(FileReader &file, ModLoadingFlags loadFlags)
 		return true;
 	}
 
-	InitializeGlobals(MOD_TYPE_MTM);
+	InitializeGlobals(MOD_TYPE_MTM, fileHeader.numChannels);
 	m_songName = mpt::String::ReadBuf(mpt::String::maybeNullTerminated, fileHeader.songName);
 	m_nSamples = fileHeader.numSamples;
-	m_nChannels = fileHeader.numChannels;
 	
-	m_modFormat.formatName = U_("MultiTracker");
-	m_modFormat.type = U_("mtm");
+	m_modFormat.formatName = UL_("MultiTracker");
+	m_modFormat.type = UL_("mtm");
 	m_modFormat.madeWithTracker = MPT_UFORMAT("MultiTracker {}.{}")(fileHeader.version >> 4, fileHeader.version & 0x0F);
 	m_modFormat.charset = mpt::Charset::CP437;
 
@@ -155,7 +156,6 @@ bool CSoundFile::ReadMTM(FileReader &file, ModLoadingFlags loadFlags)
 	// Setting Channel Pan Position
 	for(CHANNELINDEX chn = 0; chn < GetNumChannels(); chn++)
 	{
-		ChnSettings[chn].Reset();
 		ChnSettings[chn].nPan = ((fileHeader.panPos[chn] & 0x0F) << 4) + 8;
 	}
 
@@ -170,11 +170,14 @@ bool CSoundFile::ReadMTM(FileReader &file, ModLoadingFlags loadFlags)
 
 	if(loadFlags & loadPatternData)
 		Patterns.ResizeArray(fileHeader.lastPattern + 1);
+
+	bool hasSpeed = false, hasTempo = false;
 	for(PATTERNINDEX pat = 0; pat <= fileHeader.lastPattern; pat++)
 	{
 		if(!(loadFlags & loadPatternData) || !Patterns.Insert(pat, rowsPerPat))
 		{
-			break;
+			file.Skip(64);
+			continue;
 		}
 
 		for(CHANNELINDEX chn = 0; chn < 32; chn++)
@@ -221,12 +224,65 @@ bool CSoundFile::ReadMTM(FileReader &file, ModLoadingFlags loadFlags)
 				}
 				if(cmd != 0 || param != 0)
 				{
-					m->command = cmd;
-					m->param = param;
-					ConvertModCommand(*m);
+					ConvertModCommand(*m, cmd, param);
 #ifdef MODPLUG_TRACKER
 					m->Convert(MOD_TYPE_MTM, MOD_TYPE_S3M, *this);
 #endif
+					if(m->command == CMD_SPEED)
+						hasSpeed = true;
+					else if(m->command == CMD_TEMPO)
+						hasTempo = true;
+				}
+			}
+		}
+	}
+
+	// Curiously, speed commands reset the tempo to 125 in MultiTracker, and tempo commands reset the speed to 6.
+	// External players of the time (e.g. DMP) did not implement this quirk and assumed a more ProTracker-like interpretation of speed and tempo.
+	// Quite a few musicians created MTMs that make use DMP's speed and tempo interpretation, which in return means that they will play too
+	// fast or too slow in MultiTracker. On the other hand there are also a few MTMs that break when using ProTracker-like speed and tempo.
+	// As a way to support as many modules of both types as possible, we will assume a ProTracker-like interpretation if both speed and tempo
+	// commands are found on the same line, and a MultiTracker-like interpretation when they are never found on the same line.
+	if(hasSpeed && hasTempo)
+	{
+		bool hasSpeedAndTempoOnSameRow = false;
+		for(const auto &pattern : Patterns)
+		{
+			for(ROWINDEX row = 0; row < pattern.GetNumRows(); row++)
+			{
+				bool hasSpeedOnRow = false, hasTempoOnRow = false;
+				for(const ModCommand &m : pattern.GetRow(row))
+				{
+					if(m.command == CMD_SPEED)
+						hasSpeedOnRow = true;
+					else if(m.command == CMD_TEMPO)
+						hasTempoOnRow = true;
+				}
+				if(hasSpeedOnRow && hasTempoOnRow)
+				{
+					hasSpeedAndTempoOnSameRow = true;
+					break;
+				}
+			}
+			if(hasSpeedAndTempoOnSameRow)
+				break;
+		}
+
+		if(!hasSpeedAndTempoOnSameRow)
+		{
+			for(auto &pattern : Patterns)
+			{
+				for(ROWINDEX row = 0; row < pattern.GetNumRows(); row++)
+				{
+					for(const ModCommand &m : pattern.GetRow(row))
+					{
+						if(m.command == CMD_SPEED || m.command == CMD_TEMPO)
+						{
+							const bool writeTempo = m.command == CMD_SPEED;
+							pattern.WriteEffect(EffectWriter(writeTempo ? CMD_TEMPO : CMD_SPEED, writeTempo ? 125 : 6).Row(row));
+							break;
+						}
+					}
 				}
 			}
 		}

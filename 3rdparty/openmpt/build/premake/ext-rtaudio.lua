@@ -2,42 +2,29 @@
  project "rtaudio"
   uuid "4886456b-1342-4ec8-ad3f-d92aeb8c1097"
   language "C++"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "rtaudio"
-  dofile "../../build/premake/premake-defaults-LIB.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "static"
   targetname "openmpt-rtaudio"
 	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
+	if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+		defines {
+			"__WINDOWS_DS__",
+		}
+	end
 	filter {}
-	filter { "action:vs2017" }
-		if _OPTIONS["winxp"] then
-			defines {
-				"__WINDOWS_DS__",
-			}
-		else
-			defines {
-				-- WASAPI causes link failure due to confused SDK headers
-			}
-		end
-	filter { "not action:vs2017" }
-		if _OPTIONS["winxp"] then
-			defines {
-				"__WINDOWS_DS__",
-			}
-		else
-			defines {
-				"__WINDOWS_WASAPI__",
-			}
-		end
+	if not MPT_MSVC_BEFORE(2019) then
+		defines {
+			-- WASAPI causes link failure due to confused SDK headers
+			"__WINDOWS_WASAPI__",
+		}
+	end
 	filter {}
   files {
    "../../include/rtaudio/RtAudio.cpp",
    "../../include/rtaudio/RtAudio.h",
   }
-	if _OPTIONS["winxp"] then
-		if _OPTIONS["clang"] then
+	if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+		if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
 			filter { "not kind:StaticLib" }
 				links { "dsound" }
 			filter {}
@@ -47,10 +34,22 @@
 			filter {}
 		end
 	end
-  filter { }
-  filter { "action:vs*" }
-    buildoptions { "/wd4267" }
-  filter {}
-	filter { "action:vs*" }
-		buildoptions { "/wd6031" } -- analyze
 	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		defines { " _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING" }
+		buildoptions { "/wd4267" }
+		buildoptions { "/wd6031" } -- analyze
+	end
+	filter {}
+
+function mpt_use_rtaudio ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/rtaudio",
+	}
+	filter {}
+	links {
+		"rtaudio",
+	}
+	filter {}
+end

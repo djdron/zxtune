@@ -10,18 +10,20 @@
 
 
 #include "stdafx.h"
-#include "Mptrack.h"
-#include "Mainfrm.h"
-#include "View_pat.h"
-#include "PatternFindReplace.h"
 #include "PatternFindReplaceDlg.h"
+#include "DialogBase.h"
+#include "Mptrack.h"
+#include "PatternFindReplace.h"
+#include "resource.h"
+#include "View_pat.h"
+#include "mpt/parse/parse.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
 // CFindRangeDlg: Find a range of values.
 
-class CFindRangeDlg : public CDialog
+class CFindRangeDlg : public DialogBase
 {
 public:
 	enum DisplayMode
@@ -37,7 +39,7 @@ protected:
 	DisplayMode m_displayMode;
 
 public:
-	CFindRangeDlg(CWnd *parent, int minVal, int minDefault, int maxVal, int maxDefault, DisplayMode displayMode) : CDialog(IDD_FIND_RANGE, parent)
+	CFindRangeDlg(CWnd *parent, int minVal, int minDefault, int maxVal, int maxDefault, DisplayMode displayMode) : DialogBase(IDD_FIND_RANGE, parent)
 		, m_minVal(minVal)
 		, m_minDefault(minDefault)
 		, m_maxVal(maxVal)
@@ -49,16 +51,16 @@ public:
 	int GetMaxVal() const { return m_maxVal; }
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX)
+	void DoDataExchange(CDataExchange* pDX) override
 	{
-		CDialog::DoDataExchange(pDX);
+		DialogBase::DoDataExchange(pDX);
 		DDX_Control(pDX, IDC_COMBO1, m_cbnMin);
 		DDX_Control(pDX, IDC_COMBO2, m_cbnMax);
 	}
 
-	virtual BOOL OnInitDialog()
+	BOOL OnInitDialog() override
 	{
-		CDialog::OnInitDialog();
+		DialogBase::OnInitDialog();
 
 		if(m_displayMode == kNotes)
 		{
@@ -94,9 +96,9 @@ protected:
 		return TRUE;
 	}
 
-	virtual void OnOK()
+	void OnOK() override
 	{
-		CDialog::OnOK();
+		DialogBase::OnOK();
 		m_minVal = static_cast<int>(m_cbnMin.GetItemData(m_cbnMin.GetCurSel()));
 		m_maxVal = static_cast<int>(m_cbnMax.GetItemData(m_cbnMax.GetCurSel()));
 		if(m_maxVal < m_minVal)
@@ -130,7 +132,7 @@ END_MESSAGE_MAP()
 
 void CFindReplaceTab::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	CPropertyPage::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_COMBO1, m_cbnNote);
 	DDX_Control(pDX, IDC_COMBO2, m_cbnInstr);
 	DDX_Control(pDX, IDC_COMBO3, m_cbnVolCmd);
@@ -323,11 +325,8 @@ bool CFindReplaceTab::IsPCEvent() const
 {
 	if(m_isReplaceTab)
 	{
-		if(ModCommand::IsPcNote(static_cast<ModCommand::NOTE>(m_settings.replaceNote)))
-			return true;
-		else if(m_settings.replaceFlags[FindReplace::Note])
-			return false;
-		// If we don't replace the note, still show the PC-related settings if we search for PC events.
+		if(m_settings.replaceFlags[FindReplace::Note] && m_settings.replaceNoteAction == FindReplace::ReplaceValue)
+			return ModCommand::IsPcNote(static_cast<ModCommand::NOTE>(m_settings.replaceNote));
 	}
 	return ModCommand::IsPcNote(m_settings.findNoteMin);
 }
@@ -366,11 +365,14 @@ void CFindReplaceTab::UpdateInstrumentList()
 		if(m_settings.findInstrMin < m_settings.findInstrMax)
 			sel = 1;
 	}
+	// Did we switch from an instrument index > MAX_MIXPLUGINS to plugin list?
+	const bool updateInstr = (sel == -1 && isPCEvent && oldSelection > MAX_MIXPLUGINS);
 	if(sel == -1)
 		sel = m_cbnInstr.GetCount() + oldSelection - 1;
+
 	if(isPCEvent)
 	{
-		AddPluginNamesToCombobox(m_cbnInstr, m_sndFile.m_MixPlugins, false);
+		m_cbnInstr.Update(PluginComboBox::Config{PluginComboBox::ShowEmptySlots | PluginComboBox::DoNotResetContent}, m_sndFile);
 	} else
 	{
 		CString s;
@@ -384,9 +386,11 @@ void CFindReplaceTab::UpdateInstrumentList()
 			m_cbnInstr.SetItemData(m_cbnInstr.AddString(s), n);
 		}
 	}
-	m_cbnInstr.SetCurSel(sel);
+	m_cbnInstr.SetRawSelection(sel);
 	m_cbnInstr.SetRedraw(TRUE);
 	m_cbnInstr.Invalidate(FALSE);
+	if(updateInstr)
+		OnInstrChanged();
 }
 
 
@@ -492,25 +496,30 @@ void CFindReplaceTab::UpdateVolumeList()
 	m_cbnParam.EnableWindow(enable);
 
 	// Update plugin parameter list
-	int plug = static_cast<int>(m_cbnInstr.GetItemData(m_cbnInstr.GetCurSel()));
-	if(isPCEvent && (m_cbnPCParam.GetCount() == 0 || GetWindowLongPtr(m_cbnPCParam.m_hWnd, GWLP_USERDATA) != plug))
+	PLUGINDEX plug = PLUGINDEX_INVALID;
+	int plugData = 0;
+	if(int sel = m_cbnInstr.GetRawSelection(); sel >= 0 && m_cbnInstr.GetItemData(sel) < kBeginSpecial)
 	{
-		SetWindowLongPtr(m_cbnPCParam.m_hWnd, GWLP_USERDATA, plug);
+		plug = m_cbnInstr.GetSelection().value_or(PLUGINDEX_INVALID);
+		plugData = (plug != PLUGINDEX_INVALID) ? plug + 1 : 0;
+	}
+	if(isPCEvent && (m_cbnPCParam.GetCount() == 0 || GetWindowLongPtr(m_cbnPCParam.m_hWnd, GWLP_USERDATA) != plugData))
+	{
+		SetWindowLongPtr(m_cbnPCParam.m_hWnd, GWLP_USERDATA, plugData);
 
 		CheckDlgButton(IDC_CHECK5, BST_UNCHECKED);
 		CheckDlgButton(IDC_CHECK6, BST_UNCHECKED);
 
 		int sel = m_isReplaceTab ? m_settings.replaceParam : m_settings.findParamMin;
-		plug--;
 		m_cbnPCParam.SetRedraw(FALSE);
 		m_cbnPCParam.ResetContent();
-		if(plug >= 0 && plug < MAX_MIXPLUGINS && m_sndFile.m_MixPlugins[plug].pMixPlugin != nullptr)
+		if(plug < MAX_MIXPLUGINS && m_sndFile.m_MixPlugins[plug].pMixPlugin != nullptr)
 		{
 			AddPluginParameternamesToCombobox(m_cbnPCParam, *m_sndFile.m_MixPlugins[plug].pMixPlugin);
 		} else
 		{
-			m_cbnPCParam.InitStorage(ModCommand::maxColumnValue, 20);
-			for(int i = 0; i < ModCommand::maxColumnValue; i++)
+			m_cbnPCParam.InitStorage(ModCommand::maxColumnValue + 1, 20);
+			for(int i = 0; i <= ModCommand::maxColumnValue; i++)
 			{
 				wsprintf(s, _T("%02u: Parameter %02u"), static_cast<unsigned int>(i), static_cast<unsigned int>(i));
 				m_cbnPCParam.SetItemData(m_cbnPCParam.AddString(s), i);
@@ -656,7 +665,15 @@ void CFindReplaceTab::OnNoteChanged()
 void CFindReplaceTab::OnInstrChanged()
 {
 	CheckOnChange(IDC_CHECK2);
-	int item = static_cast<int>(m_cbnInstr.GetItemData(m_cbnInstr.GetCurSel()));
+	int item = static_cast<int>(m_cbnInstr.GetItemData(m_cbnInstr.GetRawSelection()));
+	if(item < kBeginSpecial && IsPCEvent())
+	{
+		if(auto sel = m_cbnInstr.GetSelection(); sel)
+			item = *sel + 1;
+		else
+			item = 0;
+	}
+
 	if(m_isReplaceTab)
 	{
 		m_settings.replaceInstrAction = FindReplace::ReplaceRelative;
@@ -704,6 +721,13 @@ void CFindReplaceTab::OnInstrChanged()
 }
 
 
+void CFindReplaceTab::OnVolCmdChanged()
+{
+	CheckOnChange(IDC_CHECK3);
+	UpdateVolumeList();
+};
+
+
 void CFindReplaceTab::RelativeOrMultiplyPrompt(CComboBox &comboBox, FindReplace::ReplaceMode &action, int &value, int range, bool isHex)
 {
 	int sel = comboBox.GetCurSel();
@@ -735,10 +759,10 @@ void CFindReplaceTab::RelativeOrMultiplyPrompt(CComboBox &comboBox, FindReplace:
 				int len = ::GetWindowTextLengthA(m_cbnParam);
 				std::string sHex(len, 0);
 				::GetWindowTextA(m_cbnParam, &sHex[0], len + 1);
-				item = mpt::String::Parse::HexToUnsignedInt(sHex);
+				item = mpt::parse_hex<unsigned int>(sHex);
 			} else
 			{
-				item = ConvertStrTo<int>(s);
+				item = mpt::parse<int>(s);
 			}
 		}
 	}
@@ -818,6 +842,13 @@ void CFindReplaceTab::OnVolumeChanged()
 }
 
 
+void CFindReplaceTab::OnEffectChanged()
+{
+	CheckOnChange(IDC_CHECK5);
+	UpdateParamList();
+};
+
+
 void CFindReplaceTab::OnParamChanged()
 {
 	CheckOnChange(IDC_CHECK6);
@@ -830,7 +861,7 @@ void CFindReplaceTab::OnParamChanged()
 		int len = ::GetWindowTextLengthA(m_cbnParam);
 		std::string s(len, 0);
 		::GetWindowTextA(m_cbnParam, &s[0], len + 1);
-		item = mpt::String::Parse::HexToUnsignedInt(s);
+		item = mpt::parse_hex<unsigned int>(s);
 	}
 
 	// Apply parameter value mask if required (e.g. SDx has mask D0).
@@ -892,6 +923,36 @@ void CFindReplaceTab::OnPCParamChanged()
 		}
 	}
 }
+
+
+void CFindReplaceTab::OnCheckNote()
+{
+	CheckReplace(IDC_CHECK1);
+	if(m_isReplaceTab && IsPCEvent() != !!GetWindowLongPtr(m_cbnInstr.m_hWnd, GWLP_USERDATA))
+	{
+		UpdateInstrumentList();
+		UpdateVolumeList();
+	}
+}
+
+void CFindReplaceTab::OnCheckInstr() { CheckReplace(IDC_CHECK2); }
+void CFindReplaceTab::OnCheckVolCmd() { CheckReplace(IDC_CHECK3); }
+void CFindReplaceTab::OnCheckVolume() { CheckReplace(IDC_CHECK4); }
+void CFindReplaceTab::OnCheckEffect() { CheckReplace(IDC_CHECK5); }
+void CFindReplaceTab::OnCheckParam() { CheckReplace(IDC_CHECK6); }
+
+
+void CFindReplaceTab::CheckReplace(int buttonID)
+{
+	if(m_isReplaceTab && IsDlgButtonChecked(buttonID))
+		CheckDlgButton(IDC_CHECK7, BST_CHECKED);
+
+	if(buttonID == IDC_CHECK1)
+	{
+		FlagSet<FindReplace::Flags> &flags = m_isReplaceTab ? m_settings.replaceFlags : m_settings.findFlags;
+		flags.set(FindReplace::Note, !!IsDlgButtonChecked(IDC_CHECK1));
+	}
+};
 
 
 void CFindReplaceTab::OnCheckChannelSearch()

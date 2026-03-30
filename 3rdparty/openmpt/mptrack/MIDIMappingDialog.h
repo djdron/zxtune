@@ -12,10 +12,10 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#ifndef NO_PLUGINS
-
-#include "MIDIMapping.h"
 #include "CListCtrl.h"
+#include "MIDIMapping.h"
+#include "ResizableDialog.h"
+#include "PluginComboBox.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -23,7 +23,7 @@ OPENMPT_NAMESPACE_BEGIN
 class CSoundFile;
 class CMIDIMapper;
 
-class CMIDIMappingDialog : public CDialog
+class CMIDIMappingDialog : public ResizableDialog
 {
 public:
 	CMIDIMappingDirective m_Setting;
@@ -35,7 +35,7 @@ protected:
 
 	// Dialog Data
 	CComboBox m_ControllerCBox;
-	CComboBox m_PluginCBox;
+	PluginComboBox m_PluginCBox;
 	CComboBox m_PlugParamCBox;
 	CComboBox m_ChannelCBox;
 	CComboBox m_EventCBox;
@@ -59,11 +59,11 @@ protected:
 
 	BOOL OnInitDialog() override;
 	void DoDataExchange(CDataExchange* pDX) override;	// DDX/DDV support
+	CString GetToolTipText(UINT id, HWND hwnd) const override;
 
 	DECLARE_MESSAGE_MAP()
 
 	afx_msg void OnSelectionChanged(NMHDR *pNMHDR = nullptr, LRESULT *pResult = nullptr);
-	afx_msg BOOL OnToolTipNotify(UINT id, NMHDR* pNMHDR, LRESULT* pResult);
 	
 	afx_msg void OnBnClickedCheckactive();
 	afx_msg void OnBnClickedCheckCapture();
@@ -81,5 +81,3 @@ protected:
 };
 
 OPENMPT_NAMESPACE_END
-
-#endif // NO_PLUGINS

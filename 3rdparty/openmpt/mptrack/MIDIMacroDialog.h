@@ -13,24 +13,35 @@
 #include "openmpt/all/BuildSettings.hpp"
 
 #include "ColourEdit.h"
+#include "DialogBase.h"
+#include "PluginComboBox.h"
 #include "../common/misc_util.h"
 #include "../soundlib/MIDIMacros.h"
 #include "mpt/base/alloc.hpp"
 
 OPENMPT_NAMESPACE_BEGIN
 
-class CMidiMacroSetup: public CDialog
+class CSoundFile;
+
+class CMidiMacroSetup : public DialogBase
 {
 protected:
-	CComboBox m_CbnSFx, m_CbnSFxPreset, m_CbnZxx, m_CbnZxxPreset, m_CbnMacroPlug, m_CbnMacroParam, m_CbnMacroCC;
+	CComboBox m_CbnSFx, m_CbnSFxPreset, m_CbnZxx, m_CbnZxxPreset, m_CbnMacroParam, m_CbnMacroCC;
+	PluginComboBox m_CbnMacroPlug;
 	CEdit m_EditSFx, m_EditZxx;
-	CColourEdit m_EditMacroValue[NUM_MACROS], m_EditMacroType[NUM_MACROS];
-	CButton m_EditMacro[NUM_MACROS], m_BtnMacroShowAll[NUM_MACROS];
+	struct MacroEdit
+	{
+		CButton Button;
+		CColourEdit Value;
+		CColourEdit Type;
+		CButton ShowAll;
+	};
+	std::vector<MacroEdit> m_EditMacro = std::vector<MacroEdit>(static_cast<int>(kSFxMacros));
 
 	CSoundFile &m_SndFile;
 
 public:
-	CMidiMacroSetup(CSoundFile &sndFile, CWnd *parent = nullptr) : CDialog(IDD_MIDIMACRO, parent), m_SndFile(sndFile), m_vMidiCfg(sndFile.m_MidiCfg), m_MidiCfg(*m_vMidiCfg) { }
+	CMidiMacroSetup(CSoundFile &sndFile, CWnd *parent = nullptr);
 private:
 	mpt::heap_value<MIDIMacroConfig> m_vMidiCfg;
 public:
@@ -39,8 +50,6 @@ public:
 protected:
 	BOOL OnInitDialog() override;
 	void DoDataExchange(CDataExchange* pDX) override;
-
-	bool ValidateMacroString(CEdit &wnd, char *lastMacro, bool isParametric);
 
 	void UpdateMacroList(int macro=-1);
 	void ToggleBoxes(UINT preset, UINT sfx);

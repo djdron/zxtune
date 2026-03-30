@@ -9,26 +9,52 @@
 
 
 #include "stdafx.h"
-#include "Mainfrm.h"
 #include "ColorConfigDlg.h"
-#include "Settings.h"
-#include "FileDialog.h"
 #include "ColorSchemes.h"
+#include "FileDialog.h"
+#include "HighDPISupport.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
+#include "Reporting.h"
+#include "resource.h"
+#include "Settings.h"
+#include "SettingsIni.h"
+#include "WindowMessages.h"
 #include "../common/mptStringBuffer.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
+
+class CFontDialogEx : public CFontDialog
+{
+	using CFontDialog::CFontDialog;
+
+public:
+	INT_PTR DoModal() override
+	{
+		// CHOOSEFONT is not compatible with mixed-DPI. Temporarily disable mixed-DPI awareness just for this dialog.
+		// https://blogs.windows.com/windowsdeveloper/2016/10/24/high-dpi-scaling-improvements-for-desktop-applications-and-mixed-mode-dpi-scaling-in-the-windows-10-anniversary-update/
+		HighDPISupport::DPIAwarenessBypass bypass;
+		HDC dc = ::GetDC(nullptr);
+		uint32 dpi = ::GetDeviceCaps(dc, LOGPIXELSX);
+		::ReleaseDC(nullptr, dc);
+		m_cf.lpLogFont->lfHeight = -MulDiv(m_cf.lpLogFont->lfHeight, dpi, 720);
+		return CFontDialog::DoModal();
+	}
+};
+
+
 static constexpr struct ColorDescriptions
 {
 	const TCHAR *name;
 	int previewImage;
-	ModColor colorIndex[3];
-	const TCHAR *descText[3];
+	std::array<ModColor, 3> colorIndex;
+	std::array<const TCHAR *, 3> descText;
 } colorDefs[] =
 {
 	{ _T("Pattern Editor"),      0, { MODCOLOR_BACKNORMAL, MODCOLOR_TEXTNORMAL, MODCOLOR_BACKHILIGHT }, { _T("Background:"), _T("Foreground:"), _T("Highlighted:") } },
-	{ _T("Active Row"),          0, { MODCOLOR_BACKCURROW, MODCOLOR_TEXTCURROW, {} }, { _T("Background:"), _T("Foreground:"), nullptr } },
+	{ _T("Active Row"),          0, { MODCOLOR_BACKCURROW, MODCOLOR_TEXTCURROW, MODCOLOR_BACKRECORDROW }, { _T("Background:"), _T("Foreground:"), _T("Background (Record):")}},
 	{ _T("Pattern Selection"),   0, { MODCOLOR_BACKSELECTED, MODCOLOR_TEXTSELECTED, {} }, { _T("Background:"), _T("Foreground:"), nullptr } },
 	{ _T("Play Cursor"),         0, { MODCOLOR_BACKPLAYCURSOR, MODCOLOR_TEXTPLAYCURSOR, {} }, { _T("Background:"), _T("Foreground:"), nullptr } },
 	{ _T("Note Highlight"),      0, { MODCOLOR_NOTE, MODCOLOR_INSTRUMENT, MODCOLOR_VOLUME }, { _T("Note:"), _T("Instrument:"), _T("Volume:") } },
@@ -50,28 +76,30 @@ static constexpr struct ColorDescriptions
 BEGIN_MESSAGE_MAP(COptionsColors, CPropertyPage)
 	ON_WM_DRAWITEM()
 	ON_WM_VSCROLL()
-	ON_CBN_SELCHANGE(IDC_COMBO1,		&COptionsColors::OnColorSelChanged)
-	ON_CBN_SELCHANGE(IDC_COMBO2,		&COptionsColors::OnSettingsChanged)
-	ON_CBN_SELCHANGE(IDC_COMBO3,		&COptionsColors::OnPresetChange)
-	ON_EN_CHANGE(IDC_PRIMARYHILITE,		&COptionsColors::OnSettingsChanged)
-	ON_EN_CHANGE(IDC_SECONDARYHILITE,	&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_BUTTON1,				&COptionsColors::OnSelectColor1)
-	ON_COMMAND(IDC_BUTTON2,				&COptionsColors::OnSelectColor2)
-	ON_COMMAND(IDC_BUTTON3,				&COptionsColors::OnSelectColor3)
-	ON_COMMAND(IDC_BUTTON9,				&COptionsColors::OnChoosePatternFont)
-	ON_COMMAND(IDC_BUTTON10,			&COptionsColors::OnChooseCommentFont)
-	ON_COMMAND(IDC_BUTTON11,			&COptionsColors::OnClearWindowCache)
-	ON_COMMAND(IDC_LOAD_COLORSCHEME,	&COptionsColors::OnLoadColorScheme)
-	ON_COMMAND(IDC_SAVE_COLORSCHEME,	&COptionsColors::OnSaveColorScheme)
-	ON_COMMAND(IDC_CHECK1,				&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_CHECK2,				&COptionsColors::OnPreviewChanged)
-	ON_COMMAND(IDC_CHECK3,				&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_CHECK4,				&COptionsColors::OnPreviewChanged)
-	ON_COMMAND(IDC_CHECK5,				&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO1,				&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO2,				&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO3,				&COptionsColors::OnSettingsChanged)
-	ON_COMMAND(IDC_RADIO4,				&COptionsColors::OnSettingsChanged)
+	ON_CBN_SELCHANGE(IDC_COMBO1,      &COptionsColors::OnColorSelChanged)
+	ON_CBN_SELCHANGE(IDC_COMBO2,      &COptionsColors::OnSettingsChanged)
+	ON_CBN_SELCHANGE(IDC_COMBO3,      &COptionsColors::OnPresetChange)
+	ON_CBN_SELCHANGE(IDC_COMBO4,      &COptionsColors::OnSettingsChanged)
+	ON_EN_CHANGE(IDC_PRIMARYHILITE,   &COptionsColors::OnSettingsChanged)
+	ON_EN_CHANGE(IDC_SECONDARYHILITE, &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_BUTTON1,           &COptionsColors::OnSelectColor1)
+	ON_COMMAND(IDC_BUTTON2,           &COptionsColors::OnSelectColor2)
+	ON_COMMAND(IDC_BUTTON3,           &COptionsColors::OnSelectColor3)
+	ON_COMMAND(IDC_BUTTON9,           &COptionsColors::OnChoosePatternFont)
+	ON_COMMAND(IDC_BUTTON10,          &COptionsColors::OnChooseCommentFont)
+	ON_COMMAND(IDC_BUTTON11,          &COptionsColors::OnClearWindowCache)
+	ON_COMMAND(IDC_LOAD_COLORSCHEME,  &COptionsColors::OnLoadColorScheme)
+	ON_COMMAND(IDC_SAVE_COLORSCHEME,  &COptionsColors::OnSaveColorScheme)
+	ON_COMMAND(IDC_CHECK1,            &COptionsColors::OnHighlightsChanged)
+	ON_COMMAND(IDC_CHECK2,            &COptionsColors::OnPreviewChanged)
+	ON_COMMAND(IDC_CHECK3,            &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_CHECK4,            &COptionsColors::OnHighlightsChanged)
+	ON_COMMAND(IDC_CHECK5,            &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO1,            &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO2,            &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO3,            &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO4,            &COptionsColors::OnSettingsChanged)
+	ON_COMMAND(IDC_RADIO5,            &COptionsColors::OnSettingsChanged)
 END_MESSAGE_MAP()
 
 
@@ -79,23 +107,40 @@ void COptionsColors::DoDataExchange(CDataExchange* pDX)
 {
 	CPropertyPage::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(COptionsColors)
-	DDX_Control(pDX, IDC_COMBO1,		m_ComboItem);
-	DDX_Control(pDX, IDC_COMBO2,		m_ComboFont);
-	DDX_Control(pDX, IDC_COMBO3,		m_ComboPreset);
-	DDX_Control(pDX, IDC_BUTTON4,		m_BtnPreview);
-	DDX_Control(pDX, IDC_TEXT1,			m_TxtColor[0]);
-	DDX_Control(pDX, IDC_TEXT2,			m_TxtColor[1]);
-	DDX_Control(pDX, IDC_TEXT3,			m_TxtColor[2]);
-	DDX_Control(pDX, IDC_SPIN1,			m_ColorSpin);
+	DDX_Control(pDX, IDC_COMBO1,          m_ComboItem);
+	DDX_Control(pDX, IDC_COMBO2,          m_ComboFont);
+	DDX_Control(pDX, IDC_COMBO3,          m_ComboPreset);
+	DDX_Control(pDX, IDC_COMBO4,          m_ComboDPIAwareness);
+	DDX_Control(pDX, IDC_BUTTON1,         m_BtnColor[0]);
+	DDX_Control(pDX, IDC_BUTTON2,         m_BtnColor[1]);
+	DDX_Control(pDX, IDC_BUTTON3,         m_BtnColor[2]);
+	DDX_Control(pDX, IDC_BUTTON4,         m_BtnPreview);
+	DDX_Control(pDX, IDC_TEXT1,           m_TxtColor[0]);
+	DDX_Control(pDX, IDC_TEXT2,           m_TxtColor[1]);
+	DDX_Control(pDX, IDC_TEXT3,           m_TxtColor[2]);
+	DDX_Control(pDX, IDC_SPIN1,           m_ColorSpin);
+	DDX_Control(pDX, IDC_SPIN2,           m_spinRowsPerMeasure);
+	DDX_Control(pDX, IDC_SPIN3,           m_spinRowsPerBeat);
+	DDX_Control(pDX, IDC_PRIMARYHILITE,   m_rpmEdit);
+	DDX_Control(pDX, IDC_SECONDARYHILITE, m_rpbEdit);
 	//}}AFX_DATA_MAP
 }
 
 
 COptionsColors::COptionsColors()
-    : CPropertyPage(IDD_OPTIONS_COLORS)
-    , CustomColors(TrackerSettings::Instance().rgbCustomColors)
+    : CPropertyPage{IDD_OPTIONS_COLORS}
+    , CustomColors{TrackerSettings::Instance().rgbCustomColors}
 {
+	m_rpbEdit.SetAccessibleSuffix(_T("rows per beat"));
+	m_rpmEdit.SetAccessibleSuffix(_T("rows per measure"));
 }
+
+
+COptionsColors::~COptionsColors()
+{
+	delete m_pPreviewDib;
+}
+
 
 static CString FormatFontName(const FontSetting &font)
 {
@@ -106,31 +151,56 @@ static CString FormatFontName(const FontSetting &font)
 BOOL COptionsColors::OnInitDialog()
 {
 	CPropertyPage::OnInitDialog();
+	
 	m_pPreviewDib = LoadDib(MAKEINTRESOURCE(IDB_COLORSETUP));
+	
+	m_ComboDPIAwareness.SetRedraw(FALSE);
+	static constexpr std::pair<const TCHAR *, DPIAwarenessMode> DPIModes[] =
+	{
+		{_T("Not DPI-Aware"),                DPIAwarenessMode::NoDPIAwareness           },
+		{_T("Not DPI-Aware; GDI upscaling"), DPIAwarenessMode::NoDPIAwarenessGDIUpscaled},
+		{_T("System DPI-Aware"),             DPIAwarenessMode::SystemDPIAware           },
+		{_T("Per-Monitor DPI-Aware"),        DPIAwarenessMode::PerMonitorDPIAware       },
+	};
+	const DPIAwarenessMode currentDPIMode = TrackerSettings::Instance().dpiAwareness;
+	for(const auto dpiMode : DPIModes)
+	{
+		int item = m_ComboDPIAwareness.AddString(dpiMode.first);
+		m_ComboDPIAwareness.SetItemData(item, static_cast<DWORD_PTR>(dpiMode.second));
+		if(currentDPIMode == dpiMode.second)
+			m_ComboDPIAwareness.SetCurSel(item);
+	}
+	m_ComboDPIAwareness.SetRedraw(TRUE);
+	
+	m_ComboItem.SetRedraw(FALSE);
 	for (size_t i = 0; i < std::size(colorDefs); i++)
 	{
 		m_ComboItem.SetItemData(m_ComboItem.AddString(colorDefs[i].name), i);
 	}
+	m_ComboItem.SetRedraw(TRUE);
 	m_ComboItem.SetCurSel(0);
-
-	m_BtnColor[0].SubclassDlgItem(IDC_BUTTON1, this);
-	m_BtnColor[1].SubclassDlgItem(IDC_BUTTON2, this);
-	m_BtnColor[2].SubclassDlgItem(IDC_BUTTON3, this);
 
 	m_BtnPreview.SetWindowPos(nullptr,
 		0, 0,
-		Util::ScalePixels(PREVIEWBMP_WIDTH * 2, m_hWnd) + 2, Util::ScalePixels(PREVIEWBMP_HEIGHT * 2, m_hWnd) + 2,
+		HighDPISupport::ScalePixels(PREVIEWBMP_WIDTH * 2, m_hWnd) + 2, HighDPISupport::ScalePixels(PREVIEWBMP_HEIGHT * 2, m_hWnd) + 2,
 		SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-	if (TrackerSettings::Instance().m_dwPatternSetup & PATTERN_STDHIGHLIGHT) CheckDlgButton(IDC_CHECK1, BST_CHECKED);
-	if (TrackerSettings::Instance().m_dwPatternSetup & PATTERN_EFFECTHILIGHT) CheckDlgButton(IDC_CHECK2, BST_CHECKED);
-	if (TrackerSettings::Instance().m_dwPatternSetup & PATTERN_2NDHIGHLIGHT) CheckDlgButton(IDC_CHECK4, BST_CHECKED);
+	const FlagSet<PatternSetup> patternSetup = TrackerSettings::Instance().patternSetup;
+	if(patternSetup[PatternSetup::HighlightMeasures]) CheckDlgButton(IDC_CHECK1, BST_CHECKED);
+	if(patternSetup[PatternSetup::EffectHighlight]) CheckDlgButton(IDC_CHECK2, BST_CHECKED);
+	if(patternSetup[PatternSetup::HighlightBeats]) CheckDlgButton(IDC_CHECK4, BST_CHECKED);
+	CheckDlgButton(IDC_CHECK3, TrackerSettings::Instance().patternIgnoreSongTimeSignature ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHECK5, TrackerSettings::Instance().rememberSongWindows ? BST_CHECKED : BST_UNCHECKED);
-	SetDlgItemInt(IDC_PRIMARYHILITE, TrackerSettings::Instance().m_nRowHighlightMeasures);
-	SetDlgItemInt(IDC_SECONDARYHILITE, TrackerSettings::Instance().m_nRowHighlightBeats);
 	CheckRadioButton(IDC_RADIO1, IDC_RADIO2, TrackerSettings::Instance().accidentalFlats ? IDC_RADIO2 : IDC_RADIO1);
 	CheckRadioButton(IDC_RADIO3, IDC_RADIO5, IDC_RADIO3 + static_cast<int>(TrackerSettings::Instance().defaultRainbowChannelColors.Get()));
+	GetDlgItem(IDC_CHECK3)->EnableWindow((IsDlgButtonChecked(IDC_CHECK1) || IsDlgButtonChecked(IDC_CHECK4)) ? TRUE : FALSE);
+
+	SetDlgItemInt(IDC_PRIMARYHILITE, TrackerSettings::Instance().m_nRowHighlightMeasures);
+	SetDlgItemInt(IDC_SECONDARYHILITE, TrackerSettings::Instance().m_nRowHighlightBeats);
+	m_spinRowsPerMeasure.SetRange32(0, MAX_ROWS_PER_MEASURE);
+	m_spinRowsPerBeat.SetRange32(0, MAX_ROWS_PER_BEAT);
 
 	patternFont = TrackerSettings::Instance().patternFont;
+	m_ComboFont.SetRedraw(FALSE);
 	m_ComboFont.AddString(_T("Built-in (small)"));
 	m_ComboFont.AddString(_T("Built-in (large)"));
 	m_ComboFont.AddString(_T("Built-in (small, x2)"));
@@ -149,6 +219,7 @@ BOOL COptionsColors::OnInitDialog()
 		m_ComboFont.AddString(FormatFontName(patternFont));
 		sel = 6;
 	}
+	m_ComboFont.SetRedraw(TRUE);
 	m_ComboFont.SetCurSel(sel);
 
 	commentFont = TrackerSettings::Instance().commentsFont;
@@ -190,18 +261,32 @@ BOOL COptionsColors::OnKillActive()
 
 void COptionsColors::OnOK()
 {
-	TrackerSettings::Instance().m_dwPatternSetup &= ~(PATTERN_STDHIGHLIGHT|PATTERN_2NDHIGHLIGHT|PATTERN_EFFECTHILIGHT);
-	if(IsDlgButtonChecked(IDC_CHECK1)) TrackerSettings::Instance().m_dwPatternSetup |= PATTERN_STDHIGHLIGHT;
-	if(IsDlgButtonChecked(IDC_CHECK2)) TrackerSettings::Instance().m_dwPatternSetup |= PATTERN_EFFECTHILIGHT;
-	if(IsDlgButtonChecked(IDC_CHECK4)) TrackerSettings::Instance().m_dwPatternSetup |= PATTERN_2NDHIGHLIGHT;
+	if(m_ComboDPIAwareness.GetCurSel() >= 0)
+	{
+		const DPIAwarenessMode currentDPIMode = TrackerSettings::Instance().dpiAwareness;
+		const DPIAwarenessMode newDPIMode = static_cast<DPIAwarenessMode>(m_ComboDPIAwareness.GetItemData(m_ComboDPIAwareness.GetCurSel()));
+		if(newDPIMode != currentDPIMode)
+		{
+			TrackerSettings::Instance().dpiAwareness = newDPIMode;
+			Reporting::Information(_T("You need to restart OpenMPT for the new DPI-awareness setting to take effect."));
+		}
+	}
+
+	FlagSet<PatternSetup> patternSetup = TrackerSettings::Instance().patternSetup;
+	patternSetup.set(PatternSetup::HighlightMeasures, IsDlgButtonChecked(IDC_CHECK1) != BST_UNCHECKED);
+	patternSetup.set(PatternSetup::EffectHighlight, IsDlgButtonChecked(IDC_CHECK2) != BST_UNCHECKED);
+	patternSetup.set(PatternSetup::HighlightBeats, IsDlgButtonChecked(IDC_CHECK4) != BST_UNCHECKED);
+	TrackerSettings::Instance().patternSetup = patternSetup;
+	TrackerSettings::Instance().patternIgnoreSongTimeSignature = IsDlgButtonChecked(IDC_CHECK3) != BST_UNCHECKED;
 	TrackerSettings::Instance().rememberSongWindows = IsDlgButtonChecked(IDC_CHECK5) != BST_UNCHECKED;
 	TrackerSettings::Instance().accidentalFlats = IsDlgButtonChecked(IDC_RADIO2) != BST_UNCHECKED;
 
-	if(IsDlgButtonChecked(IDC_RADIO3))
+	int channelColors = GetCheckedRadioButton(IDC_RADIO3, IDC_RADIO5);
+	if(channelColors == IDC_RADIO3)
 		TrackerSettings::Instance().defaultRainbowChannelColors = DefaultChannelColors::NoColors;
-	else if(IsDlgButtonChecked(IDC_RADIO4))
+	else if(channelColors == IDC_RADIO4)
 		TrackerSettings::Instance().defaultRainbowChannelColors = DefaultChannelColors::Rainbow;
-	else if(IsDlgButtonChecked(IDC_RADIO5))
+	else
 		TrackerSettings::Instance().defaultRainbowChannelColors = DefaultChannelColors::Random;
 
 	FontSetting newPatternFont = patternFont;
@@ -252,11 +337,11 @@ void COptionsColors::OnChoosePatternFont()
 	MemsetZero(lf);
 	const int32 size = patternFont.size < 10 ? 120 : patternFont.size;
 	// Point size to pixels
-	lf.lfHeight = -MulDiv(size, Util::GetDPIy(m_hWnd), 720);
+	lf.lfHeight = size;
 	lf.lfWeight = patternFont.flags[FontSetting::Bold] ? FW_BOLD : FW_NORMAL;
 	lf.lfItalic = patternFont.flags[FontSetting::Italic] ? TRUE : FALSE;
 	mpt::String::WriteWinBuf(lf.lfFaceName) = mpt::ToWin(patternFont.name);
-	CFontDialog dlg(&lf);
+	CFontDialogEx dlg(&lf);
 	dlg.m_cf.hwndOwner = m_hWnd;
 	if(patternFont.name != PATTERNFONT_SMALL && patternFont.name != PATTERNFONT_LARGE)
 	{
@@ -287,11 +372,11 @@ void COptionsColors::OnChooseCommentFont()
 	LOGFONT lf;
 	MemsetZero(lf);
 	// Point size to pixels
-	lf.lfHeight = -MulDiv(commentFont.size, Util::GetDPIy(m_hWnd), 720);
+	lf.lfHeight = commentFont.size;
 	lf.lfWeight = commentFont.flags[FontSetting::Bold] ? FW_BOLD : FW_NORMAL;
 	lf.lfItalic = commentFont.flags[FontSetting::Italic] ? TRUE : FALSE;
 	mpt::String::WriteWinBuf(lf.lfFaceName) = mpt::ToWin(commentFont.name);
-	CFontDialog dlg(&lf);
+	CFontDialogEx dlg(&lf);
 	dlg.m_cf.hwndOwner = m_hWnd;
 	dlg.m_cf.lpLogFont = &lf;
 	dlg.m_cf.Flags &= ~CF_EFFECTS;
@@ -313,7 +398,7 @@ void COptionsColors::OnDrawItem(int nIdCtl, LPDRAWITEMSTRUCT lpdis)
 {
 	if(!lpdis || nIdCtl != IDC_BUTTON4 || !m_pPreviewDib)
 	{
-		CDialog::OnDrawItem(nIdCtl, lpdis);
+		CPropertyPage::OnDrawItem(nIdCtl, lpdis);
 		return;
 	}
 
@@ -455,6 +540,14 @@ void COptionsColors::OnColorSelChanged()
 	}
 }
 
+
+void COptionsColors::OnHighlightsChanged()
+{
+	GetDlgItem(IDC_CHECK3)->EnableWindow((IsDlgButtonChecked(IDC_CHECK1) || IsDlgButtonChecked(IDC_CHECK4)) ? TRUE : FALSE);
+	OnSettingsChanged();
+}
+
+
 void COptionsColors::OnSettingsChanged()
 {
 	SetModified(TRUE);
@@ -510,8 +603,8 @@ void COptionsColors::OnPresetChange()
 void COptionsColors::OnLoadColorScheme()
 {
 	FileDialog dlg = OpenFileDialog()
-		.DefaultExtension("mptcolor")
-		.ExtensionFilter("OpenMPT Color Schemes|*.mptcolor||")
+		.DefaultExtension(U_("mptcolor"))
+		.ExtensionFilter(U_("OpenMPT Color Schemes|*.mptcolor||"))
 		.WorkingDirectory(theApp.GetConfigPath());
 	if(!dlg.Show(this)) return;
 
@@ -522,6 +615,9 @@ void COptionsColors::OnLoadColorScheme()
 		for(uint32 i = 0; i < MAX_MODCOLORS; i++)
 		{
 			CustomColors[i] = file.Read<int32>(U_("Colors"), MPT_UFORMAT("Color{}")(mpt::ufmt::dec0<2>(i)), CustomColors[i]);
+			// For old color schemes that don't have this color yet
+			if(i == MODCOLOR_BACKCURROW)
+				CustomColors[MODCOLOR_BACKRECORDROW] = CustomColors[MODCOLOR_BACKCURROW];
 		}
 	}
 	OnPreviewChanged();
@@ -530,8 +626,8 @@ void COptionsColors::OnLoadColorScheme()
 void COptionsColors::OnSaveColorScheme()
 {
 	FileDialog dlg = SaveFileDialog()
-		.DefaultExtension("mptcolor")
-		.ExtensionFilter("OpenMPT Color Schemes|*.mptcolor||")
+		.DefaultExtension(U_("mptcolor"))
+		.ExtensionFilter(U_("OpenMPT Color Schemes|*.mptcolor||"))
 		.WorkingDirectory(theApp.GetConfigPath());
 	if(!dlg.Show(this)) return;
 
@@ -549,7 +645,7 @@ void COptionsColors::OnClearWindowCache()
 {
 	SettingsContainer &settings = theApp.GetSongSettings();
 	// First, forget all settings...
-	settings.ForgetAll();
+	settings.InvalidateCache();
 	// Then make sure they are gone for good.
 	::DeleteFile(theApp.GetSongSettingsFilename().AsNative().c_str());
 }

@@ -1,5 +1,5 @@
 /*
- * Snd_Defs.h
+ * Snd_defs.h
  * ----------
  * Purpose: Basic definitions of data types, enums, etc. for the playback engine core.
  * Notes  : (currently none)
@@ -27,7 +27,8 @@ using ORDERINDEX = uint16;
 inline constexpr ORDERINDEX ORDERINDEX_INVALID = uint16_max;
 inline constexpr ORDERINDEX ORDERINDEX_MAX = uint16_max - 1;
 using PATTERNINDEX = uint16;
-inline constexpr PATTERNINDEX PATTERNINDEX_INVALID = uint16_max;
+inline constexpr PATTERNINDEX PATTERNINDEX_INVALID = uint16_max;   // "---" in order list
+inline constexpr PATTERNINDEX PATTERNINDEX_SKIP = uint16_max - 1;  // "+++" in order list
 using PLUGINDEX = uint8;
 inline constexpr PLUGINDEX PLUGINDEX_INVALID = uint8_max;
 using SAMPLEINDEX = uint16;
@@ -42,7 +43,12 @@ using SmpLength = uint32;
 
 inline constexpr SmpLength MAX_SAMPLE_LENGTH = 0x10000000; // Sample length in frames. Sample size in bytes can be more than this (= 256 MB).
 
-inline constexpr ROWINDEX MAX_PATTERN_ROWS       = 1024;
+inline constexpr ROWINDEX MAX_ROWS_PER_MEASURE     = 65536;
+inline constexpr ROWINDEX MAX_ROWS_PER_BEAT        = 65536;
+inline constexpr ROWINDEX DEFAULT_ROWS_PER_BEAT    = 4;
+inline constexpr ROWINDEX DEFAULT_ROWS_PER_MEASURE = 16;
+
+inline constexpr ROWINDEX MAX_PATTERN_ROWS       = 4096;
 inline constexpr ORDERINDEX MAX_ORDERS           = ORDERINDEX_MAX + 1;
 inline constexpr PATTERNINDEX MAX_PATTERNS       = 4000;
 inline constexpr SAMPLEINDEX MAX_SAMPLES         = 4000;
@@ -51,10 +57,15 @@ inline constexpr PLUGINDEX MAX_MIXPLUGINS        = 250;
 
 inline constexpr SEQUENCEINDEX MAX_SEQUENCES     = 50;
 
-inline constexpr CHANNELINDEX MAX_BASECHANNELS   = 127; // Maximum pattern channels.
+inline constexpr CHANNELINDEX MAX_BASECHANNELS   = 192; // Maximum pattern channels.
 inline constexpr CHANNELINDEX MAX_CHANNELS       = 256; // Maximum number of mixing channels.
 
 enum { FREQ_FRACBITS = 4 }; // Number of fractional bits in return value of CSoundFile::GetFreqFromPeriod()
+
+using samplecount_t = uint32;  // Number of rendered samples
+
+using PlugParamIndex = uint32;
+using PlugParamValue = float;
 
 // String lengths (including trailing null char)
 enum
@@ -100,24 +111,48 @@ enum MODTYPE
 	MOD_TYPE_STP  = 0x8000000,
 	MOD_TYPE_PLM  = 0x10000000,
 	MOD_TYPE_SFX  = 0x20000000,
+
+	MOD_TYPE_MOD_PC = MOD_TYPE_MOD | MOD_TYPE_XM,
 };
 DECLARE_FLAGSET(MODTYPE)
 
 
-enum MODCONTAINERTYPE
+enum class ModContainerType
 {
-	MOD_CONTAINERTYPE_NONE = 0x0,
-	MOD_CONTAINERTYPE_UMX  = 0x3,
-	MOD_CONTAINERTYPE_XPK  = 0x4,
-	MOD_CONTAINERTYPE_PP20 = 0x5,
-	MOD_CONTAINERTYPE_MMCMP= 0x6,
-	MOD_CONTAINERTYPE_WAV  = 0x7, // WAV as module
-	MOD_CONTAINERTYPE_UAX  = 0x8, // Unreal sample set as module
+	None,
+	UMX,
+	XPK,
+	PP20,
+	MMCMP,
+	WAV,      // WAV as module
+	UAX,      // Unreal sample set as module
+	Generic,  // Generic CUnarchiver container
+};
+
+
+enum class AutoSlideCommand
+{
+	TonePortamento,
+	TonePortamentoWithDuration,
+	PortamentoUp,
+	PortamentoDown,
+	FinePortamentoUp,
+	FinePortamentoDown,
+	PortamentoFC,
+	FineVolumeSlideUp,
+	FineVolumeSlideDown,
+	VolumeDownETX,
+	VolumeSlideSTK,
+	VolumeDownWithDuration,
+	GlobalVolumeSlide,
+	Vibrato,
+	Tremolo,
+	NumCommands
 };
 
 
 // Module channel / sample flags
-enum ChannelFlags
+enum ChannelFlags : uint32
 {
 	// Sample Flags
 	CHN_16BIT           = 0x01,        // 16-bit sample
@@ -148,9 +183,8 @@ enum ChannelFlags
 	CHN_EXTRALOUD       = 0x400000,    // Force sample to play at 0dB
 	CHN_REVERB          = 0x800000,    // Apply reverb on this channel
 	CHN_NOREVERB        = 0x1000000,   // Disable reverb on this channel
-	CHN_SOLO            = 0x2000000,   // Solo channel
-	CHN_NOFX            = 0x4000000,   // Dry channel (no plugins)
-	CHN_SYNCMUTE        = 0x8000000,   // Keep sample sync on mute
+	CHN_NOFX            = 0x2000000,   // Dry channel (no plugins)
+	CHN_SYNCMUTE        = 0x4000000,   // Keep sample sync on mute
 
 	// Sample flags (only present in ModSample::uFlags, may overlap with CHN_CHANNELFLAGS)
 	SMP_MODIFIED        = 0x2000,      // Sample data has been edited in the tracker
@@ -159,8 +193,8 @@ enum ChannelFlags
 };
 DECLARE_FLAGSET(ChannelFlags)
 
-#define CHN_SAMPLEFLAGS (CHN_16BIT | CHN_LOOP | CHN_PINGPONGLOOP | CHN_SUSTAINLOOP | CHN_PINGPONGSUSTAIN | CHN_PANNING | CHN_STEREO | CHN_PINGPONGFLAG | CHN_REVERSE | CHN_SURROUND | CHN_ADLIB)
-#define CHN_CHANNELFLAGS (~CHN_SAMPLEFLAGS | CHN_SURROUND)
+inline constexpr ChannelFlags CHN_SAMPLEFLAGS = (CHN_16BIT | CHN_LOOP | CHN_PINGPONGLOOP | CHN_SUSTAINLOOP | CHN_PINGPONGSUSTAIN | CHN_PANNING | CHN_STEREO | CHN_PINGPONGFLAG | CHN_REVERSE | CHN_SURROUND | CHN_ADLIB).as_enum();
+inline constexpr ChannelFlags CHN_CHANNELFLAGS = (~CHN_SAMPLEFLAGS | CHN_SURROUND).as_enum();
 
 // Sample flags fit into the first 16 bits, and with the current memory layout, storing them as a 16-bit integer packs struct ModSample nicely.
 using SampleFlags = FlagSet<ChannelFlags, uint16>;
@@ -179,10 +213,10 @@ DECLARE_FLAGSET(EnvelopeFlags)
 
 
 // Envelope value boundaries
-#define ENVELOPE_MIN   0   // Vertical min value of a point
-#define ENVELOPE_MID   32  // Vertical middle line
-#define ENVELOPE_MAX   64  // Vertical max value of a point
-#define MAX_ENVPOINTS  240 // Maximum length of each instrument envelope
+inline constexpr uint8 ENVELOPE_MIN = 0;     // Vertical min value of a point
+inline constexpr uint8 ENVELOPE_MID = 32;    // Vertical middle line
+inline constexpr uint8 ENVELOPE_MAX = 64;    // Vertical max value of a point
+inline constexpr uint8 MAX_ENVPOINTS = 240;  // Maximum length of each instrument envelope
 
 
 // Instrument-specific flags
@@ -241,35 +275,47 @@ enum class DuplicateNoteAction : uint8
 };
 
 
-// Module flags - contains both song configuration and playback state... Use SONG_FILE_FLAGS and SONG_PLAY_FLAGS distinguish between the two.
+enum PlayFlags : uint16
+{
+	SONG_PATTERNLOOP     =  0x01,  // Loop current pattern (pattern editor)
+	SONG_STEP            =  0x02,  // Song is in "step" mode (pattern editor)
+	SONG_PAUSED          =  0x04,  // Song is paused (no tick processing, just rendering audio)
+	SONG_FADINGSONG      =  0x08,  // Song is fading out
+	SONG_ENDREACHED      =  0x10,  // Song is finished
+	SONG_FIRSTTICK       =  0x20,  // Is set when the current tick is the first tick of the row
+	SONG_MPTFILTERMODE   =  0x40,  // Local filter mode (reset filter on each note)
+	SONG_SURROUNDPAN     =  0x80,  // Pan in the rear channels
+	SONG_POSJUMP         = 0x100,  // Position jump encountered
+	SONG_BREAKTOROW      = 0x200,  // Break to row command encountered
+	SONG_POSITIONCHANGED = 0x400,  // Report to plugins that we jumped around in the module
+};
+DECLARE_FLAGSET(PlayFlags)
+
+
 enum SongFlags
 {
-	SONG_FASTVOLSLIDES =       0x02,  // Old Scream Tracker 3.0 volume slides
-	SONG_ITOLDEFFECTS  =       0x04,  // Old Impulse Tracker effect implementations
-	SONG_ITCOMPATGXX   =       0x08,  // IT "Compatible Gxx" (IT's flag to behave more like other trackers w/r/t portamento effects)
-	SONG_LINEARSLIDES  =       0x10,  // Linear slides vs. Amiga slides
-	SONG_PATTERNLOOP   =       0x20,  // Loop current pattern (pattern editor)
-	SONG_STEP          =       0x40,  // Song is in "step" mode (pattern editor)
-	SONG_PAUSED        =       0x80,  // Song is paused (no tick processing, just rendering audio)
-	SONG_FADINGSONG    =     0x0100,  // Song is fading out
-	SONG_ENDREACHED    =     0x0200,  // Song is finished
-	SONG_FIRSTTICK     =     0x1000,  // Is set when the current tick is the first tick of the row
-	SONG_MPTFILTERMODE =     0x2000,  // Local filter mode (reset filter on each note)
-	SONG_SURROUNDPAN   =     0x4000,  // Pan in the rear channels
-	SONG_EXFILTERRANGE =     0x8000,  // Cutoff Filter has double frequency range (up to ~10Khz)
-	SONG_AMIGALIMITS   =   0x1'0000,  // Enforce amiga frequency limits
-	SONG_S3MOLDVIBRATO =   0x2'0000,  // ScreamTracker 2 vibrato in S3M files
-	SONG_BREAKTOROW    =   0x8'0000,  // Break to row command encountered (internal flag, do not touch)
-	SONG_POSJUMP       =  0x10'0000,  // Position jump encountered (internal flag, do not touch)
-	SONG_PT_MODE       =  0x20'0000,  // ProTracker 1/2 playback mode
-	SONG_PLAYALLSONGS  =  0x40'0000,  // Play all subsongs consecutively (libopenmpt)
-	SONG_ISAMIGA       =  0x80'0000,  // Is an Amiga module and thus qualifies to be played using the Paula BLEP resampler
-	SONG_IMPORTED      = 0x100'0000,  // Song type does not represent actual module format / was imported from a different format (OpenMPT)
+	SONG_FASTPORTAS          =     0x01,  // Portamentos are executed on every tick
+	SONG_FASTVOLSLIDES       =     0x02,  // Old Scream Tracker 3.0 volume slides (executed on every tick)
+	SONG_ITOLDEFFECTS        =     0x04,  // Old Impulse Tracker effect implementations
+	SONG_ITCOMPATGXX         =     0x08,  // IT "Compatible Gxx" (IT's flag to behave more like other trackers w/r/t portamento effects)
+	SONG_LINEARSLIDES        =     0x10,  // Linear slides vs. Amiga slides
+	SONG_EXFILTERRANGE       =     0x20,  // Cutoff Filter has double frequency range (up to ~10Khz)
+	SONG_AMIGALIMITS         =     0x40,  // Enforce amiga frequency limits
+	SONG_S3MOLDVIBRATO       =     0x80,  // ScreamTracker 2 vibrato in S3M files
+	SONG_PT_MODE             =    0x100,  // ProTracker 1/2 playback mode
+	SONG_ISAMIGA             =    0x200,  // Is an Amiga module and thus qualifies to be played using the Paula BLEP resampler
+	SONG_IMPORTED            =    0x400,  // Song type does not represent actual module format / was imported from a different format (OpenMPT)
+	SONG_PLAYALLSONGS        =    0x800,  // Play all subsongs consecutively (libopenmpt)
+	SONG_AUTO_TONEPORTA      =   0x1000,  // Tone portamento command is continued automatically
+	SONG_AUTO_TONEPORTA_CONT =   0x2000,  // Auto tone portamento is not interruped by a tone portamento with parameter 0
+	SONG_AUTO_GLOBALVOL      =   0x4000,  // Global volume slide command is continued automatically
+	SONG_AUTO_VIBRATO        =   0x8000,  // Vibrato command is continued automatically
+	SONG_AUTO_TREMOLO        = 0x1'8000,  // Tremolo command is continued automatically
+	SONG_AUTO_VOLSLIDE_STK   = 0x2'0000,  // Automatic volume slide command is interpreted like in STK files (rather than like in STP files)
+	SONG_FORMAT_NO_VOLCOL    = 0x4'0000,  // The original (imported) format has no volume column, so it can be hidden in the pattern editor.
 };
 DECLARE_FLAGSET(SongFlags)
 
-#define SONG_FILE_FLAGS (SONG_FASTVOLSLIDES|SONG_ITOLDEFFECTS|SONG_ITCOMPATGXX|SONG_LINEARSLIDES|SONG_EXFILTERRANGE|SONG_AMIGALIMITS|SONG_S3MOLDVIBRATO|SONG_PT_MODE|SONG_ISAMIGA|SONG_IMPORTED)
-#define SONG_PLAY_FLAGS (~SONG_FILE_FLAGS)
 
 // Global Options (Renderer)
 #ifndef NO_AGC
@@ -294,7 +340,18 @@ DECLARE_FLAGSET(SongFlags)
 #define SNDMIX_MUTECHNMODE    0x100000 // Notes are not played on muted channels
 
 
-#define MAX_GLOBAL_VOLUME 256u
+inline constexpr uint32 MAX_GLOBAL_VOLUME = 256;
+inline constexpr uint32 MAX_PREAMP = 2000;
+
+// When to execute a position override event
+enum class OrderTransitionMode : uint8
+{
+	AtPatternEnd,
+	AtMeasureEnd,
+	AtBeatEnd,
+	AtRowEnd,
+};
+
 
 // Resampling modes
 enum ResamplingMode : uint8
@@ -540,6 +597,29 @@ enum PlayBehaviour
 	kOPLNoteOffOnNoteChange,        // Send note-off events for old note on every note change
 	kFT2PortaResetDirection,        // Reset portamento direction when reaching portamento target from below
 	kApplyUpperPeriodLimit,         // Enforce m_nMaxPeriod
+	kApplyOffsetWithoutNote,        // Offset commands even work when there's no note next to them (e.g. DMF, MDL, PLM formats)
+	kITPitchPanSeparation,          // Pitch/Pan Separation can be overridden by panning commands (this also fixes a bug where any "special" notes affect PPS)
+	kImprecisePingPongLoops,        // Use old (less precise) ping-pong overshoot calculation
+	kPluginIgnoreTonePortamento,    // Use old tone portamento behaviour for plugins (XM: no plugin pitch slides with commands E1x/E2x/X1x/X2x)
+	kST3TonePortaWithAdlibNote,     // Adlib note next to tone portamento is delayed until next row
+	kITResetFilterOnPortaSmpChange, // Filter is reset on portamento if sample is swapped
+	kITInitialNoteMemory,           // Initial "last note memory" for each channel is C-0 and not "no note"
+	kPluginDefaultProgramAndBank1,  // Default program and bank is set to 1 for plugins, so if an instrument is set to either of those, the program / bank change event is not sent to the plugin
+	kITNoSustainOnPortamento,       // Do not re-enable sustain loop on portamento, even when switching between samples
+	kITEmptyNoteMapSlotIgnoreCell,  // IT ignores the entire pattern cell when trying to play an unmapped note of an instrument
+	kITOffsetWithInstrNumber,       // IT applies offset commands even if just an instrument number without note is present
+	kContinueSampleWithoutInstr,    // FTM: A note without instrument number continues looped samples with the new pitch instead of retriggering them
+	kMIDINotesFromChannelPlugin,    // Behaviour before OpenMPT 1.26: Channel plugin can be used to send MIDI notes
+	kITDoublePortamentoSlides,      // IT only reads parameters once per row, so if two commands sharing effect parameters are found in the two effect columns, they influence each other
+	kS3MIgnoreCombinedFineSlides,   // S3M commands Kxy and Lxy ignore fine slides
+	kFT2AutoVibratoAbortSweep,      // Key-off before auto-vibrato sweep-in is complete resets auto-vibrato depth
+	kLegacyPPQpos,                  // Report fake PPQ position to VST plugins
+	kLegacyPluginNNABehaviour,      // Plugin notes with NNA=continue are affected by note-offs etc.
+	kITCarryAfterNoteOff,           // Envelope Carry continues to function as normal even after note-off
+	kFT2OffsetMemoryRequiresNote,   // Offset memory is only updated when offset command is next to a note
+	kITNoteCutWithPorta,            // Note Cut (SCx) resets note frequency and interacts with tone portamento with row delay
+	kITVolColNoSlidePropagation,    // Don't propagate volume command c/d parameter to regular command D memory
+	kITStoppedFilterEnvAtStart,     // Stopped filter envelope is still applied even when its first tick has not been processed yet
 
 	// Add new play behaviours here.
 
@@ -573,41 +653,41 @@ protected:
 public:
 	static constexpr uint32 fractMax = 0xFFFFFFFFu;
 
-	MPT_CONSTEXPRINLINE SamplePosition() { }
-	MPT_CONSTEXPRINLINE explicit SamplePosition(value_t pos) : v(pos) { }
-	MPT_CONSTEXPRINLINE SamplePosition(int32 intPart, uint32 fractPart) : v((static_cast<value_t>(intPart) * (1ll << 32)) | fractPart) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition() { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr explicit SamplePosition(value_t pos) : v(pos) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition(int32 intPart, uint32 fractPart) : v((static_cast<value_t>(intPart) * (1ll << 32)) | fractPart) { }
 	static SamplePosition Ratio(uint32 dividend, uint32 divisor) { return SamplePosition((static_cast<int64>(dividend) << 32) / divisor); }
 	static SamplePosition FromDouble(double pos) { return SamplePosition(static_cast<value_t>(pos * 4294967296.0)); }
-	double ToDouble() const { return v / 4294967296.0; }
+	double ToDouble() const { return static_cast<double>(v) / 4294967296.0; }
 
 	// Set integer and fractional part
-	MPT_CONSTEXPRINLINE SamplePosition &Set(int32 intPart, uint32 fractPart = 0) { v = (static_cast<int64>(intPart) << 32) | fractPart; return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition &Set(int32 intPart, uint32 fractPart = 0) { v = (static_cast<int64>(intPart) << 32) | fractPart; return *this; }
 	// Set integer part, keep fractional part
-	MPT_CONSTEXPRINLINE SamplePosition &SetInt(int32 intPart) { v = (static_cast<value_t>(intPart) << 32) | GetFract(); return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition &SetInt(int32 intPart) { v = (static_cast<value_t>(intPart) << 32) | GetFract(); return *this; }
 	// Get integer part (as sample length / position)
-	MPT_CONSTEXPRINLINE SmpLength GetUInt() const { return static_cast<SmpLength>(static_cast<unsigned_value_t>(v) >> 32); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SmpLength GetUInt() const { return static_cast<SmpLength>(static_cast<unsigned_value_t>(v) >> 32); }
 	// Get integer part
-	MPT_CONSTEXPRINLINE int32 GetInt() const { return static_cast<int32>(static_cast<unsigned_value_t>(v) >> 32); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr int32 GetInt() const { return static_cast<int32>(static_cast<unsigned_value_t>(v) >> 32); }
 	// Get fractional part
-	MPT_CONSTEXPRINLINE uint32 GetFract() const { return static_cast<uint32>(v); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr uint32 GetFract() const { return static_cast<uint32>(v); }
 	// Get the inverted fractional part
-	MPT_CONSTEXPRINLINE SamplePosition GetInvertedFract() const { return SamplePosition(0x100000000ll - GetFract()); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition GetInvertedFract() const { return SamplePosition(0x100000000ll - GetFract()); }
 	// Get the raw fixed-point value
-	MPT_CONSTEXPRINLINE int64 GetRaw() const { return v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr int64 GetRaw() const { return v; }
 	// Negate the current value
-	MPT_CONSTEXPRINLINE SamplePosition &Negate() { v = -v; return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition &Negate() { v = -v; return *this; }
 	// Multiply and divide by given integer scalars
-	MPT_CONSTEXPRINLINE SamplePosition &MulDiv(uint32 mul, uint32 div) { v = (v * mul) / div; return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition &MulDiv(uint32 mul, uint32 div) { v = (v * mul) / div; return *this; }
 	// Removes the integer part, only keeping fractions
-	MPT_CONSTEXPRINLINE SamplePosition &RemoveInt() { v &= fractMax; return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr SamplePosition &RemoveInt() { v &= fractMax; return *this; }
 	// Check if value is 1.0
-	MPT_CONSTEXPRINLINE bool IsUnity() const { return v == 0x100000000ll; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsUnity() const { return v == 0x100000000ll; }
 	// Check if value is 0
-	MPT_CONSTEXPRINLINE bool IsZero() const { return v == 0; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsZero() const { return v == 0; }
 	// Check if value is > 0
-	MPT_CONSTEXPRINLINE bool IsPositive() const { return v > 0; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsPositive() const { return v > 0; }
 	// Check if value is < 0
-	MPT_CONSTEXPRINLINE bool IsNegative() const { return v < 0; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool IsNegative() const { return v < 0; }
 
 	// Addition / subtraction of another fixed-point number
 	SamplePosition operator+ (const SamplePosition &other) const { return SamplePosition(v + other.v); }
@@ -626,12 +706,12 @@ public:
 	// Division by scalar; returns fractional point number
 	SamplePosition operator/ (int div) const { return SamplePosition(v / div); }
 
-	MPT_CONSTEXPRINLINE bool operator==(const SamplePosition &other) const { return v == other.v; }
-	MPT_CONSTEXPRINLINE bool operator!=(const SamplePosition &other) const { return v != other.v; }
-	MPT_CONSTEXPRINLINE bool operator<=(const SamplePosition &other) const { return v <= other.v; }
-	MPT_CONSTEXPRINLINE bool operator>=(const SamplePosition &other) const { return v >= other.v; }
-	MPT_CONSTEXPRINLINE bool operator<(const SamplePosition &other) const { return v < other.v; }
-	MPT_CONSTEXPRINLINE bool operator>(const SamplePosition &other) const { return v > other.v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator==(const SamplePosition &other) const { return v == other.v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator!=(const SamplePosition &other) const { return v != other.v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator<=(const SamplePosition &other) const { return v <= other.v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator>=(const SamplePosition &other) const { return v >= other.v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator<(const SamplePosition &other) const { return v < other.v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr bool operator>(const SamplePosition &other) const { return v > other.v; }
 };
 
 
@@ -640,46 +720,46 @@ public:
 // This is mostly for the clarity of stored values and to be able to represent any value .0000 to .9999 properly.
 // For easier debugging, use the Debugger Visualizers available in build/vs/debug/
 // to easily display the stored values.
-template<size_t FFact, typename T>
+template <std::size_t FFact, typename T>
 struct FPInt
 {
 protected:
 	T v;
-	MPT_CONSTEXPRINLINE FPInt(T rawValue) : v(rawValue) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt(T rawValue) : v(rawValue) { }
 
 public:
-	enum : size_t { fractFact = FFact };
+	enum : T { fractFact = static_cast<T>(FFact) };
 	using store_t = T;
 
-	MPT_CONSTEXPRINLINE FPInt() : v(0) { }
-	MPT_CONSTEXPRINLINE FPInt(T intPart, T fractPart) : v((intPart * fractFact) + (fractPart % fractFact)) { }
-	explicit MPT_CONSTEXPRINLINE FPInt(float f) : v(static_cast<T>(f * float(fractFact))) { }
-	explicit MPT_CONSTEXPRINLINE FPInt(double f) : v(static_cast<T>(f * double(fractFact))) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt() : v(0) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt(T intPart, T fractPart) : v((intPart * fractFact) + (fractPart % fractFact)) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr explicit FPInt(float f) : v(mpt::saturate_round<T>(f * float(fractFact))) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr explicit FPInt(double f) : v(mpt::saturate_round<T>(f * double(fractFact))) { }
 
 	// Set integer and fractional part
-	MPT_CONSTEXPRINLINE FPInt<fractFact, T> &Set(T intPart, T fractPart = 0) { v = (intPart * fractFact) + (fractPart % fractFact); return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt<fractFact, T> &Set(T intPart, T fractPart = 0) { v = (intPart * fractFact) + (fractPart % fractFact); return *this; }
 	// Set raw internal representation directly
-	MPT_CONSTEXPRINLINE FPInt<fractFact, T> &SetRaw(T value) { v = value; return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt<fractFact, T> &SetRaw(T value) { v = value; return *this; }
 	// Retrieve the integer part of the stored value
-	MPT_CONSTEXPRINLINE T GetInt() const { return v / fractFact; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr T GetInt() const { return v / fractFact; }
 	// Retrieve the fractional part of the stored value
-	MPT_CONSTEXPRINLINE T GetFract() const { return v % fractFact; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr T GetFract() const { return v % fractFact; }
 	// Retrieve the raw internal representation of the stored value
-	MPT_CONSTEXPRINLINE T GetRaw() const { return v; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr T GetRaw() const { return v; }
 	// Formats the stored value as a floating-point value
-	MPT_CONSTEXPRINLINE double ToDouble() const { return v / double(fractFact); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr double ToDouble() const { return v / double(fractFact); }
 
-	MPT_CONSTEXPRINLINE friend FPInt<fractFact, T> operator+ (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return FPInt<fractFact, T>(a.v + b.v); }
-	MPT_CONSTEXPRINLINE friend FPInt<fractFact, T> operator- (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return FPInt<fractFact, T>(a.v - b.v); }
-	MPT_CONSTEXPRINLINE FPInt<fractFact, T> operator+= (const FPInt<fractFact, T> &other) noexcept { v += other.v; return *this; }
-	MPT_CONSTEXPRINLINE FPInt<fractFact, T> operator-= (const FPInt<fractFact, T> &other) noexcept { v -= other.v; return *this; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr FPInt<fractFact, T> operator+ (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return FPInt<fractFact, T>(a.v + b.v); }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr FPInt<fractFact, T> operator- (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return FPInt<fractFact, T>(a.v - b.v); }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt<fractFact, T> operator+= (const FPInt<fractFact, T> &other) noexcept { v += other.v; return *this; }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr FPInt<fractFact, T> operator-= (const FPInt<fractFact, T> &other) noexcept { v -= other.v; return *this; }
 
-	MPT_CONSTEXPRINLINE friend bool operator== (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v == b.v; }
-	MPT_CONSTEXPRINLINE friend bool operator!= (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v != b.v; }
-	MPT_CONSTEXPRINLINE friend bool operator<= (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v <= b.v; }
-	MPT_CONSTEXPRINLINE friend bool operator>= (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v >= b.v; }
-	MPT_CONSTEXPRINLINE friend bool operator< (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v < b.v; }
-	MPT_CONSTEXPRINLINE friend bool operator> (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v > b.v; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr bool operator== (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v == b.v; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr bool operator!= (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v != b.v; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr bool operator<= (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v <= b.v; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr bool operator>= (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v >= b.v; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr bool operator< (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v < b.v; }
+	MPT_ATTR_ALWAYSINLINE friend MPT_INLINE_FORCE constexpr bool operator> (const FPInt<fractFact, T> &a, const FPInt<fractFact, T> &b) noexcept { return a.v > b.v; }
 };
 
 using TEMPO = FPInt<10000, uint32>;

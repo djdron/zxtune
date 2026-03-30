@@ -2,15 +2,10 @@
  project "ogg"
   uuid "d8d5e11c-f959-49ef-b741-b3f6de52ded8"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "ogg"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-ogg"
   includedirs { "../../include/ogg/include" }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   files {
    "../../include/ogg/include/ogg/ogg.h",
@@ -21,7 +16,20 @@
   }
   filter { "kind:SharedLib" }
    files { "../../include/ogg/win32/ogg.def" }
-  filter {}
-  filter { "action:vs*" }
-    buildoptions { "/wd6001", "/wd6011" } -- /analyze
-  filter {}
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd6001", "/wd6011" } -- /analyze
+	end
+	filter {}
+
+function mpt_use_ogg ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/ogg/include",
+	}
+	filter {}
+	links {
+		"ogg",
+	}
+	filter {}
+end

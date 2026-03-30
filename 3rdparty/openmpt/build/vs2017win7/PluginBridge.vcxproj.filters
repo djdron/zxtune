@@ -1,6 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <Filter Include="build">
+      <UniqueIdentifier>{D5562E0F-416B-56C0-0AED-F91F76C052F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="build\vs">
+      <UniqueIdentifier>{4D3A0C18-3907-6723-6220-55CB4E4C9CB1}</UniqueIdentifier>
+    </Filter>
     <Filter Include="common">
       <UniqueIdentifier>{AEFEE3F6-9AA0-0ECD-835B-22216F9C951D}</UniqueIdentifier>
     </Filter>
@@ -15,6 +21,9 @@
     </Filter>
     <Filter Include="src\mpt">
       <UniqueIdentifier>{0D1E30A9-79FD-AE44-8215-3A1BEE7315A6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\arch">
+      <UniqueIdentifier>{BA90CF03-A6F3-5EA8-4F79-975E3BBB2A2B}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\audio">
       <UniqueIdentifier>{EE51C37D-5A12-3FB4-234D-88318FCC8390}</UniqueIdentifier>
@@ -33,6 +42,9 @@
     </Filter>
     <Filter Include="src\mpt\check">
       <UniqueIdentifier>{7A65E07D-E625-5CB4-AF60-A5311BE0A090}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\chrono">
+      <UniqueIdentifier>{8569F439-7137-E83F-5ACB-58664638C4A4}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\crc">
       <UniqueIdentifier>{94D615E1-008C-8ED6-8980-88ADF53485DA}</UniqueIdentifier>
@@ -58,8 +70,8 @@
     <Filter Include="src\mpt\environment">
       <UniqueIdentifier>{B1B8A85D-1D1A-866B-A687-CC1D12E8BC2A}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\mpt\exception_text">
-      <UniqueIdentifier>{6F821773-5B7C-40C5-44E9-D6D53082A631}</UniqueIdentifier>
+    <Filter Include="src\mpt\exception">
+      <UniqueIdentifier>{2B7E92B2-9794-9048-E00B-1C6A4C6161D0}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\format">
       <UniqueIdentifier>{C5847241-B152-6647-9AE6-D66D865342AC}</UniqueIdentifier>
@@ -67,11 +79,29 @@
     <Filter Include="src\mpt\format\tests">
       <UniqueIdentifier>{672FE5C8-53BE-6E92-FCDC-828DE84A7F38}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\mpt\fs">
+      <UniqueIdentifier>{7554AB6B-610C-EDB8-CA13-C614B6EA87A9}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\mpt\io">
       <UniqueIdentifier>{D454AB6B-C00C-EDB8-2914-C61415EB87A9}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\io\tests">
       <UniqueIdentifier>{B68E2391-A287-42E3-CBB9-2768B71122EF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\io_file">
+      <UniqueIdentifier>{D34C5655-3FD8-C319-48E9-460EB4F31F1A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\io_file_adapter">
+      <UniqueIdentifier>{93011107-FF38-599E-0843-BDC174F97F97}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\io_file_atomic">
+      <UniqueIdentifier>{2F089EF9-1B02-C74B-046F-5D5CF0072DB8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\io_file_read">
+      <UniqueIdentifier>{4E9E4D56-3A2D-D71F-E34B-EB1ACFB9E7C5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\io_file_unique">
+      <UniqueIdentifier>{096AD527-F563-FE79-DED0-948ACA6964E6}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\io_read">
       <UniqueIdentifier>{EFCE5C55-5B5A-CA19-646B-4D0ED075261A}</UniqueIdentifier>
@@ -91,6 +121,12 @@
     <Filter Include="src\mpt\osinfo">
       <UniqueIdentifier>{EA69B456-D637-A85C-BFCB-1883AB3884C1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\mpt\osinfo_hx">
+      <UniqueIdentifier>{A9BB4984-15D2-471A-5E49-D33BCA9E18A2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\osinfo_wine">
+      <UniqueIdentifier>{5C52AFBD-C8B3-8CCB-5121-D37DBD81C38A}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\mpt\out_of_memory">
       <UniqueIdentifier>{208F8479-8CFB-3F74-55EF-D7D1C11A62DC}</UniqueIdentifier>
     </Filter>
@@ -102,6 +138,9 @@
     </Filter>
     <Filter Include="src\mpt\path">
       <UniqueIdentifier>{4984D703-35E7-66A8-DE6C-9F5ECAAE322B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\profiler">
+      <UniqueIdentifier>{1FFA2D82-0BF3-4CD4-3425-3259207D2CE0}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\random">
       <UniqueIdentifier>{3DBF705C-298D-6462-1221-D588FE8D40C7}</UniqueIdentifier>
@@ -115,17 +154,20 @@
     <Filter Include="src\mpt\string\tests">
       <UniqueIdentifier>{356DC124-21FC-4AEE-CA1A-5FE9B6885B94}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\mpt\string_convert">
-      <UniqueIdentifier>{F37785A1-DF71-AEF3-C8DE-4404B4771460}</UniqueIdentifier>
+    <Filter Include="src\mpt\string_transcode">
+      <UniqueIdentifier>{F5FA629F-E11F-B21F-0A6B-97AFF6EEB03D}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\mpt\string_convert\tests">
-      <UniqueIdentifier>{154D19CB-0108-0977-AABF-81C196595307}</UniqueIdentifier>
+    <Filter Include="src\mpt\string_transcode\tests">
+      <UniqueIdentifier>{9789C1A1-83AF-8B08-6CF5-10D458BAB0D4}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\system_error">
       <UniqueIdentifier>{EA9E70B3-D62D-FA7C-7F4C-0E786BBA0A23}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\test">
       <UniqueIdentifier>{BCC6D903-A829-69A8-51AF-A15E3DF1342B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mpt\textfile">
+      <UniqueIdentifier>{814B7A60-6D44-99B2-9676-7E3782CE78BE}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\mpt\uuid">
       <UniqueIdentifier>{D395DA03-BFF8-69A8-687E-A25E54C0352B}</UniqueIdentifier>
@@ -174,6 +216,18 @@
     <ClInclude Include="..\..\pluginBridge\BridgeOpCodes.h">
       <Filter>pluginBridge</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\arch\arch.hpp">
+      <Filter>src\mpt\arch</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\arch\feature_fence.hpp">
+      <Filter>src\mpt\arch</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\arch\feature_flags.hpp">
+      <Filter>src\mpt\arch</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\arch\x86_amd64.hpp">
+      <Filter>src\mpt\arch</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\audio\sample.hpp">
       <Filter>src\mpt\audio</Filter>
     </ClInclude>
@@ -207,7 +261,13 @@
     <ClInclude Include="..\..\src\mpt\base\constexpr_throw.hpp">
       <Filter>src\mpt\base</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\base\debugging.hpp">
+      <Filter>src\mpt\base</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\detect.hpp">
+      <Filter>src\mpt\base</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\base\detect_arch.hpp">
       <Filter>src\mpt\base</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\detect_compiler.hpp">
@@ -225,7 +285,7 @@
     <ClInclude Include="..\..\src\mpt\base\detect_quirks.hpp">
       <Filter>src\mpt\base</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\mpt\base\floatingpoint.hpp">
+    <ClInclude Include="..\..\src\mpt\base\float.hpp">
       <Filter>src\mpt\base</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\integer.hpp">
@@ -267,6 +327,9 @@
     <ClInclude Include="..\..\src\mpt\base\semantic_version.hpp">
       <Filter>src\mpt\base</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\base\size.hpp">
+      <Filter>src\mpt\base</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\source_location.hpp">
       <Filter>src\mpt\base</Filter>
     </ClInclude>
@@ -282,6 +345,9 @@
     <ClInclude Include="..\..\src\mpt\base\tests\tests_base_math.hpp">
       <Filter>src\mpt\base\tests</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\base\tests\tests_base_numeric.hpp">
+      <Filter>src\mpt\base\tests</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\tests\tests_base_saturate_cast.hpp">
       <Filter>src\mpt\base\tests</Filter>
     </ClInclude>
@@ -290,6 +356,9 @@
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\tests\tests_base_wrapping_divide.hpp">
       <Filter>src\mpt\base\tests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\base\type_traits.hpp">
+      <Filter>src\mpt\base</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\base\utility.hpp">
       <Filter>src\mpt\base</Filter>
@@ -312,7 +381,13 @@
     <ClInclude Include="..\..\src\mpt\binary\tests\tests_binary.hpp">
       <Filter>src\mpt\binary\tests</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\check\compiler.hpp">
+      <Filter>src\mpt\check</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\check\libc.hpp">
+      <Filter>src\mpt\check</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\check\libcxx.hpp">
       <Filter>src\mpt\check</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\check\mfc.hpp">
@@ -321,11 +396,20 @@
     <ClInclude Include="..\..\src\mpt\check\windows.hpp">
       <Filter>src\mpt\check</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\chrono\system_clock.hpp">
+      <Filter>src\mpt\chrono</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\chrono\unix_clock.hpp">
+      <Filter>src\mpt\chrono</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\crc\crc.hpp">
       <Filter>src\mpt\crc</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\crc\tests\tests_crc.hpp">
       <Filter>src\mpt\crc\tests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\crypto\config.hpp">
+      <Filter>src\mpt\crypto</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\crypto\exception.hpp">
       <Filter>src\mpt\crypto</Filter>
@@ -363,14 +447,32 @@
     <ClInclude Include="..\..\src\mpt\endian\tests\tests_endian_floatingpoint.hpp">
       <Filter>src\mpt\endian\tests</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\endian\tests\tests_endian_int24.hpp">
+      <Filter>src\mpt\endian\tests</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\endian\tests\tests_endian_integer.hpp">
       <Filter>src\mpt\endian\tests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\endian\type_traits.hpp">
+      <Filter>src\mpt\endian</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\environment\environment.hpp">
       <Filter>src\mpt\environment</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\mpt\exception_text\exception_text.hpp">
-      <Filter>src\mpt\exception_text</Filter>
+    <ClInclude Include="..\..\src\mpt\exception\exception.hpp">
+      <Filter>src\mpt\exception</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\exception\exception_text.hpp">
+      <Filter>src\mpt\exception</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\exception\logic_error.hpp">
+      <Filter>src\mpt\exception</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\exception\runtime_error.hpp">
+      <Filter>src\mpt\exception</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\format\concat.hpp">
+      <Filter>src\mpt\format</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\format\default_floatingpoint.hpp">
       <Filter>src\mpt\format</Filter>
@@ -414,6 +516,12 @@
     <ClInclude Include="..\..\src\mpt\format\tests\tests_format_simple.hpp">
       <Filter>src\mpt\format\tests</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\fs\common_directories.hpp">
+      <Filter>src\mpt\fs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\fs\fs.hpp">
+      <Filter>src\mpt\fs</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\io\base.hpp">
       <Filter>src\mpt\io</Filter>
     </ClInclude>
@@ -431,6 +539,33 @@
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\io\tests\tests_io.hpp">
       <Filter>src\mpt\io\tests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file\fileref.hpp">
+      <Filter>src\mpt\io_file</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file\fstream.hpp">
+      <Filter>src\mpt\io_file</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file\inputfile.hpp">
+      <Filter>src\mpt\io_file</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file\outputfile.hpp">
+      <Filter>src\mpt\io_file</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file_adapter\fileadapter.hpp">
+      <Filter>src\mpt\io_file_adapter</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file_atomic\atomic_file.hpp">
+      <Filter>src\mpt\io_file_atomic</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file_read\inputfile_filecursor.hpp">
+      <Filter>src\mpt\io_file_read</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file_unique\unique_basename.hpp">
+      <Filter>src\mpt\io_file_unique</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_file_unique\unique_tempfilename.hpp">
+      <Filter>src\mpt\io_file_unique</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\io_read\callbackstream.hpp">
       <Filter>src\mpt\io_read</Filter>
@@ -471,6 +606,9 @@
     <ClInclude Include="..\..\src\mpt\io_read\filedata_base_unseekable.hpp">
       <Filter>src\mpt\io_read</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\io_read\filedata_base_unseekable_buffer.hpp">
+      <Filter>src\mpt\io_read</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\io_read\filedata_callbackstream.hpp">
       <Filter>src\mpt\io_read</Filter>
     </ClInclude>
@@ -498,8 +636,26 @@
     <ClInclude Include="..\..\src\mpt\osinfo\class.hpp">
       <Filter>src\mpt\osinfo</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\osinfo\dos_memory.hpp">
+      <Filter>src\mpt\osinfo</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\osinfo\dos_version.hpp">
+      <Filter>src\mpt\osinfo</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\osinfo\windows_hx_version.hpp">
+      <Filter>src\mpt\osinfo</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\osinfo\windows_version.hpp">
       <Filter>src\mpt\osinfo</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\osinfo\windows_wine_version.hpp">
+      <Filter>src\mpt\osinfo</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\osinfo_hx\hx.hpp">
+      <Filter>src\mpt\osinfo_hx</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\osinfo_wine\wine.hpp">
+      <Filter>src\mpt\osinfo_wine</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\out_of_memory\out_of_memory.hpp">
       <Filter>src\mpt\out_of_memory</Filter>
@@ -513,8 +669,50 @@
     <ClInclude Include="..\..\src\mpt\parse\tests\tests_parse.hpp">
       <Filter>src\mpt\parse\tests</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\mpt\path\basic_path.hpp">
+      <Filter>src\mpt\path</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\path\native_path.hpp">
+      <Filter>src\mpt\path</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\path\os_path.hpp">
+      <Filter>src\mpt\path</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\path\os_path_long.hpp">
+      <Filter>src\mpt\path</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\src\mpt\path\path.hpp">
       <Filter>src\mpt\path</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock_base.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock_get_tick_count.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock_query_performance_counter.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock_std_chrono.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock_system.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\clock_tsc.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\frequency.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\profiler\profiler.hpp">
+      <Filter>src\mpt\profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\random\any_engine.hpp">
+      <Filter>src\mpt\random</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\random\crand.hpp">
       <Filter>src\mpt\random</Filter>
@@ -555,14 +753,14 @@
     <ClInclude Include="..\..\src\mpt\string\utility.hpp">
       <Filter>src\mpt\string</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\mpt\string_convert\convert.hpp">
-      <Filter>src\mpt\string_convert</Filter>
+    <ClInclude Include="..\..\src\mpt\string_transcode\macros.hpp">
+      <Filter>src\mpt\string_transcode</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\mpt\string_convert\macros.hpp">
-      <Filter>src\mpt\string_convert</Filter>
+    <ClInclude Include="..\..\src\mpt\string_transcode\tests\tests_string_transcode.hpp">
+      <Filter>src\mpt\string_transcode\tests</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\mpt\string_convert\tests\tests_string_convert.hpp">
-      <Filter>src\mpt\string_convert\tests</Filter>
+    <ClInclude Include="..\..\src\mpt\string_transcode\transcode.hpp">
+      <Filter>src\mpt\string_transcode</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\system_error\system_error.hpp">
       <Filter>src\mpt\system_error</Filter>
@@ -572,6 +770,9 @@
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\test\test_macros.hpp">
       <Filter>src\mpt\test</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\mpt\textfile\textfile.hpp">
+      <Filter>src\mpt\textfile</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\mpt\uuid\guid.hpp">
       <Filter>src\mpt\uuid</Filter>
@@ -589,6 +790,12 @@
       <Filter>src\mpt\uuid_namespace</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\openmpt\all\BuildSettings.hpp">
+      <Filter>src\openmpt\all</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\openmpt\all\BuildSettingsCompiler.hpp">
+      <Filter>src\openmpt\all</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\openmpt\all\PlatformFixes.hpp">
       <Filter>src\openmpt\all</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\openmpt\base\Endian.hpp">
@@ -616,8 +823,11 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\pluginBridge\PluginBridge-win7.manifest">
+    <None Include="..\..\pluginBridge\PluginBridge.manifest">
       <Filter>pluginBridge</Filter>
+    </None>
+    <None Include="..\vs\win7.manifest">
+      <Filter>build\vs</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

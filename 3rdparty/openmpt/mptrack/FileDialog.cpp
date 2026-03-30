@@ -10,16 +10,26 @@
 
 #include "stdafx.h"
 #include "FileDialog.h"
-#include "Mainfrm.h"
 #include "InputHandler.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
+#include "TrackerSettings.h"
+#include "mpt/fs/fs.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
 
+enum class FileDialogType
+{
+	OpenFile,
+	SaveFile,
+	BrowseForFolder,
+};
+
 class CFileDialogEx : public CFileDialog
 {
 public:
-	CFileDialogEx(bool bOpenFileDialog,
+	CFileDialogEx(FileDialogType type,
 		LPCTSTR lpszDefExt,
 		LPCTSTR lpszFileName,
 		DWORD dwFlags,
@@ -28,16 +38,36 @@ public:
 		DWORD dwSize,
 		BOOL bVistaStyle,
 		bool preview)
-		: CFileDialog(bOpenFileDialog ? TRUE : FALSE, lpszDefExt, lpszFileName, dwFlags, lpszFilter, pParentWnd, dwSize, bVistaStyle)
+		: CFileDialog((type != FileDialogType::SaveFile) ? TRUE : FALSE, lpszDefExt, lpszFileName, dwFlags, lpszFilter, pParentWnd, dwSize, bVistaStyle)
 		, m_fileNameBuf(65536)
 		, doPreview(preview)
-		, played(false)
 	{
 		// MFC's filename buffer is way too small for multi-selections of a large number of files.
 		_tcsncpy(m_fileNameBuf.data(), lpszFileName, m_fileNameBuf.size());
 		m_fileNameBuf.back() = '\0';
 		m_ofn.lpstrFile = m_fileNameBuf.data();
 		m_ofn.nMaxFile = mpt::saturate_cast<DWORD>(m_fileNameBuf.size());
+
+		if(type == FileDialogType::BrowseForFolder)
+		{
+			m_bPickFoldersMode = TRUE;
+			m_bPickNonFileSysFoldersMode = FALSE;
+		}
+
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
+		const auto places =
+		{
+			&TrackerSettings::Instance().PathPluginPresets,
+			&TrackerSettings::Instance().PathPlugins,
+			&TrackerSettings::Instance().PathSamples,
+			&TrackerSettings::Instance().PathInstruments,
+			&TrackerSettings::Instance().PathSongs,
+		};
+		for(const auto place : places)
+		{
+			AddPlace(place->GetDefaultDir());
+		}
+#endif
 	}
 
 	~CFileDialogEx()
@@ -48,12 +78,12 @@ public:
 		}
 	}
 
-#if NTDDI_VERSION >= NTDDI_VISTA
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 	// MFC's AddPlace() is declared as throw() but can in fact throw if any of the COM calls fail, e.g. because the place does not exist.
 	// Avoid this by re-implementing our own version which doesn't throw.
 	void AddPlace(const mpt::PathString &path)
 	{
-		if(m_bVistaStyle && path.IsDirectory())
+		if(m_bVistaStyle && mpt::native_fs{}.is_directory(path))
 		{
 			CComPtr<IShellItem> shellItem;
 			HRESULT hr = SHCreateItemFromParsingName(path.ToWide().c_str(), nullptr, IID_IShellItem, reinterpret_cast<void **>(&shellItem));
@@ -65,10 +95,16 @@ public:
 	}
 #endif
 
+	static bool CanUseModernStyle()
+	{
+		return !mpt::OS::Windows::IsWine() && mpt::osinfo::windows::Version::Current().IsAtLeast(mpt::osinfo::windows::Version::WinVista);
+	}
+
 protected:
 	std::vector<TCHAR> m_fileNameBuf;
 	CString oldName;
-	bool doPreview, played;
+	const bool doPreview;
+	bool played = false;
 
 	void OnFileNameChange() override
 	{
@@ -95,14 +131,14 @@ bool FileDialog::Show(CWnd *parent)
 	m_filenames.clear();
 
 	// First, set up the dialog...
-	CFileDialogEx dlg(m_load,
+	CFileDialogEx dlg(m_load ? FileDialogType::OpenFile : FileDialogType::SaveFile,
 		m_defaultExtension.empty() ? nullptr : m_defaultExtension.c_str(),
 		m_defaultFilename.c_str(),
 		OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_HIDEREADONLY | OFN_ENABLESIZING | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | (m_multiSelect ? OFN_ALLOWMULTISELECT : 0) | (m_load ? 0 : (OFN_OVERWRITEPROMPT | OFN_NOREADONLYRETURN)),
 		m_extFilter.c_str(),
 		parent != nullptr ? parent : CMainFrame::GetMainFrame(),
 		0,
-		(mpt::OS::Windows::IsWine() || mpt::OS::Windows::Version::Current().IsBefore(mpt::OS::Windows::Version::WinVista)) ? FALSE : TRUE,
+		CFileDialogEx::CanUseModernStyle() ? TRUE : FALSE,
 		m_preview && TrackerSettings::Instance().previewInFileDialogs);
 	OPENFILENAME &ofn = dlg.GetOFN();
 	ofn.nFilterIndex = m_filterIndex != nullptr ? *m_filterIndex : 0;
@@ -110,19 +146,11 @@ bool FileDialog::Show(CWnd *parent)
 	{
 		ofn.lpstrInitialDir = m_workingDirectory.c_str();
 	}
-#if NTDDI_VERSION >= NTDDI_VISTA
-	const auto places =
+	if(!m_caption.IsEmpty())
 	{
-		&TrackerSettings::Instance().PathPluginPresets,
-		&TrackerSettings::Instance().PathPlugins,
-		&TrackerSettings::Instance().PathSamples,
-		&TrackerSettings::Instance().PathInstruments,
-		&TrackerSettings::Instance().PathSongs,
-	};
-	for(const auto place : places)
-	{
-		dlg.AddPlace(place->GetDefaultDir());
+		ofn.lpstrTitle = m_caption;
 	}
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 	for(const auto &place : m_places)
 	{
 		dlg.AddPlace(place);
@@ -142,7 +170,7 @@ bool FileDialog::Show(CWnd *parent)
 
 	if(m_multiSelect)
 	{
-#if NTDDI_VERSION >= NTDDI_VISTA
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
 		// Multiple files might have been selected
 		if(CComPtr<IShellItemArray> shellItems = dlg.GetResults(); shellItems != nullptr)
 		{
@@ -182,8 +210,12 @@ bool FileDialog::Show(CWnd *parent)
 		return false;
 	}
 
-	m_workingDirectory = m_filenames.front().AsNative().substr(0, ofn.nFileOffset);
-	m_extension = m_filenames.front().AsNative().substr(ofn.nFileExtension);
+	// Don't rely on nFileOffset / nFileExtension - it was observed on Windows 10 / 11 that when opening a .lnk file,
+	// those offsets are in terms of the .lnk file, while lpstrFile contains the resolved target of that link.
+	m_workingDirectory = m_filenames.front().GetDirectoryWithDrive();
+	m_extension = m_filenames.front().GetFilenameExtension();
+	if(!m_extension.empty())
+		m_extension.erase(0, 1);
 
 	return true;
 }
@@ -204,13 +236,30 @@ int CALLBACK BrowseForFolder::BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM /*
 // Display the folder dialog.
 bool BrowseForFolder::Show(CWnd *parent)
 {
-	// Note: MFC's CFolderPickerDialog won't work on pre-Vista systems, as it tries to use OPENFILENAME.
 	BypassInputHandler bih;
+
+	// Note: MFC's CFolderPickerDialog won't work on pre-Vista systems, as it tries to use OPENFILENAME unconditionally.
+	if(CFileDialogEx::CanUseModernStyle() && !TrackerSettings::Instance().useOldStyleFolderBrowser)
+	{
+		CFileDialogEx dlg{FileDialogType::BrowseForFolder, nullptr, m_workingDirectory.AsNative().c_str(), 0, nullptr, parent, 0, TRUE, false};
+		dlg.m_ofn.lpstrTitle = m_caption;
+#if MPT_WINNT_AT_LEAST(MPT_WIN_VISTA)
+		for(const auto &place : m_places)
+		{
+			dlg.AddPlace(place);
+		}
+#endif
+		if(dlg.DoModal() != IDOK)
+			return false;
+		m_workingDirectory = mpt::PathString::FromCString(dlg.GetPathName());
+		return true;
+	}
+
 	TCHAR path[MAX_PATH];
-	BROWSEINFO bi;
-	MemsetZero(bi);
+	BROWSEINFO bi{};
 	bi.hwndOwner = (parent != nullptr ? parent : theApp.m_pMainWnd)->m_hWnd;
-	if(!m_caption.IsEmpty()) bi.lpszTitle = m_caption;
+	if(!m_caption.IsEmpty())
+		bi.lpszTitle = m_caption;
 	bi.pszDisplayName = path;
 	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI;
 	bi.lpfn = BrowseCallbackProc;

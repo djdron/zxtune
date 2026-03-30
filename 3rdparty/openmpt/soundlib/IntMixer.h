@@ -22,11 +22,11 @@ OPENMPT_NAMESPACE_BEGIN
 template<int channelsOut, int channelsIn, typename out, typename in, size_t mixPrecision>
 struct IntToIntTraits : public MixerTraits<channelsOut, channelsIn, out, in>
 {
-	typedef MixerTraits<channelsOut, channelsIn, out, in> base_t;
-	typedef typename base_t::input_t input_t;
-	typedef typename base_t::output_t output_t;
+	using base_t = MixerTraits<channelsOut, channelsIn, out, in>;
+	using input_t = typename base_t::input_t;
+	using output_t = typename base_t::output_t;
 
-	static MPT_CONSTEXPRINLINE output_t Convert(const input_t x)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE constexpr static output_t Convert(const input_t x)
 	{
 		static_assert(std::numeric_limits<input_t>::is_integer, "Input must be integer");
 		static_assert(std::numeric_limits<output_t>::is_integer, "Output must be integer");
@@ -36,10 +36,10 @@ struct IntToIntTraits : public MixerTraits<channelsOut, channelsIn, out, in>
 	}
 };
 
-typedef IntToIntTraits<2, 1, mixsample_t, int8,  16> Int8MToIntS;
-typedef IntToIntTraits<2, 1, mixsample_t, int16, 16> Int16MToIntS;
-typedef IntToIntTraits<2, 2, mixsample_t, int8,  16> Int8SToIntS;
-typedef IntToIntTraits<2, 2, mixsample_t, int16, 16> Int16SToIntS;
+using Int8MToIntS = IntToIntTraits<2, 1, mixsample_t, int8,  16>;
+using Int16MToIntS = IntToIntTraits<2, 1, mixsample_t, int16, 16>;
+using Int8SToIntS = IntToIntTraits<2, 2, mixsample_t, int8,  16>;
+using Int16SToIntS = IntToIntTraits<2, 2, mixsample_t, int16, 16>;
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -50,23 +50,34 @@ template<class Traits>
 struct AmigaBlepInterpolation
 {
 	SamplePosition subIncrement;
-	Paula::State *paula;
-	const Paula::BlepArray *WinSincIntegral;
-	int numSteps;
+	Paula::State &paula;
+	const Paula::BlepArray &WinSincIntegral;
+	const int numSteps;
+	unsigned int remainingSamples = 0;
 
-	MPT_FORCEINLINE void Start(ModChannel &chn, const CResampler &resampler)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE AmigaBlepInterpolation(ModChannel &chn, const CResampler &resampler, unsigned int numSamples)
+		: paula{chn.paulaState}
+		, WinSincIntegral{resampler.blepTables.GetAmigaTable(resampler.m_Settings.emulateAmiga, chn.dwFlags[CHN_AMIGAFILTER])}
+		, numSteps{chn.paulaState.numSteps}
 	{
-		paula = &chn.paulaState;
-		numSteps = paula->numSteps;
-		WinSincIntegral = &resampler.blepTables.GetAmigaTable(resampler.m_Settings.emulateAmiga, chn.dwFlags[CHN_AMIGAFILTER]);
 		if(numSteps)
+		{
 			subIncrement = chn.increment / numSteps;
+			// May we read past the start or end of sample if we do partial sample increments?
+			// If that's the case, don't apply any sub increments on the source sample if we reached the last output sample
+			// Note that this should only happen with notes well outside the Amiga note range, e.g. in software-mixed formats like MED
+			const int32 targetPos = (chn.position + chn.increment * numSamples).GetInt();
+			if(static_cast<SmpLength>(targetPos) > chn.nLength)
+				remainingSamples = numSamples;
+		}
+		
 	}
 
-	MPT_FORCEINLINE void End(const ModChannel &) { }
-
-	MPT_FORCEINLINE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
 	{
+		if(--remainingSamples == 0)
+			subIncrement = {};
+
 		SamplePosition pos(0, posLo);
 		// First, process steps of full length (one Amiga clock interval)
 		for(int step = numSteps; step > 0; step--)
@@ -75,26 +86,26 @@ struct AmigaBlepInterpolation
 			int32 posInt = pos.GetInt() * Traits::numChannelsIn;
 			for(int32 i = 0; i < Traits::numChannelsIn; i++)
 				inSample += Traits::Convert(inBuffer[posInt + i]);
-			paula->InputSample(static_cast<int16>(inSample / (4 * Traits::numChannelsIn)));
-			paula->Clock(Paula::MINIMUM_INTERVAL);
+			paula.InputSample(static_cast<int16>(inSample / (4 * Traits::numChannelsIn)));
+			paula.Clock(Paula::MINIMUM_INTERVAL);
 			pos += subIncrement;
 		}
-		paula->remainder += paula->stepRemainder;
+		paula.remainder += paula.stepRemainder;
 
 		// Now, process any remaining integer clock amount < MINIMUM_INTERVAL
-		uint32 remainClocks = paula->remainder.GetInt();
+		uint32 remainClocks = paula.remainder.GetInt();
 		if(remainClocks)
 		{
 			typename Traits::output_t inSample = 0;
 			int32 posInt = pos.GetInt() * Traits::numChannelsIn;
 			for(int32 i = 0; i < Traits::numChannelsIn; i++)
 				inSample += Traits::Convert(inBuffer[posInt + i]);
-			paula->InputSample(static_cast<int16>(inSample / (4 * Traits::numChannelsIn)));
-			paula->Clock(remainClocks);
-			paula->remainder.RemoveInt();
+			paula.InputSample(static_cast<int16>(inSample / (4 * Traits::numChannelsIn)));
+			paula.Clock(remainClocks);
+			paula.remainder.RemoveInt();
 		}
 
-		auto out = paula->OutputSample(*WinSincIntegral);
+		auto out = paula.OutputSample(WinSincIntegral);
 		for(int i = 0; i < Traits::numChannelsOut; i++)
 			outSample[i] = out;
 	}
@@ -104,11 +115,9 @@ struct AmigaBlepInterpolation
 template<class Traits>
 struct LinearInterpolation
 {
-	MPT_FORCEINLINE void Start(const ModChannel &, const CResampler &) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE LinearInterpolation(const ModChannel &, const CResampler &, unsigned int) { }
 
-	MPT_FORCEINLINE void End(const ModChannel &) { }
-
-	MPT_FORCEINLINE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
 	{
 		static_assert(static_cast<int>(Traits::numChannelsIn) <= static_cast<int>(Traits::numChannelsOut), "Too many input channels");
 		const typename Traits::output_t fract = posLo >> 18u;
@@ -127,10 +136,9 @@ struct LinearInterpolation
 template<class Traits>
 struct FastSincInterpolation
 {
-	MPT_FORCEINLINE void Start(const ModChannel &, const CResampler &) { }
-	MPT_FORCEINLINE void End(const ModChannel &) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE FastSincInterpolation(const ModChannel &, const CResampler &, unsigned int) { }
 
-	MPT_FORCEINLINE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
 	{
 		static_assert(static_cast<int>(Traits::numChannelsIn) <= static_cast<int>(Traits::numChannelsOut), "Too many input channels");
 		const int16 *lut = CResampler::FastSincTable + ((posLo >> 22) & 0x3FC);
@@ -152,7 +160,7 @@ struct PolyphaseInterpolation
 {
 	const SINC_TYPE *sinc;
 
-	MPT_FORCEINLINE void Start(const ModChannel &chn, const CResampler &resampler)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE PolyphaseInterpolation(const ModChannel &chn, const CResampler &resampler, unsigned int)
 	{
 		#ifdef MODPLUG_TRACKER
 			// Otherwise causes "warning C4100: 'resampler' : unreferenced formal parameter"
@@ -164,9 +172,7 @@ struct PolyphaseInterpolation
 			(((chn.increment > SamplePosition(0x180000000ll)) || (chn.increment < SamplePosition(-0x180000000ll))) ? resampler.gDownsample2x : resampler.gDownsample13x) : resampler.gKaiserSinc);
 	}
 
-	MPT_FORCEINLINE void End(const ModChannel &) { }
-
-	MPT_FORCEINLINE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
 	{
 		static_assert(static_cast<int>(Traits::numChannelsIn) <= static_cast<int>(Traits::numChannelsOut), "Too many input channels");
 		const SINC_TYPE *lut = sinc + ((posLo >> (32 - SINC_PHASES_BITS)) & SINC_MASK) * SINC_WIDTH;
@@ -192,14 +198,12 @@ struct FIRFilterInterpolation
 {
 	const int16 *WFIRlut;
 
-	MPT_FORCEINLINE void Start(const ModChannel &, const CResampler &resampler)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE FIRFilterInterpolation(const ModChannel &, const CResampler &resampler, unsigned int)
 	{
 		WFIRlut = resampler.m_WindowedFIR.lut;
 	}
 
-	MPT_FORCEINLINE void End(const ModChannel &) { }
-
-	MPT_FORCEINLINE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (typename Traits::outbuf_t &outSample, const typename Traits::input_t * const MPT_RESTRICT inBuffer, const uint32 posLo)
 	{
 		static_assert(static_cast<int>(Traits::numChannelsIn) <= static_cast<int>(Traits::numChannelsOut), "Too many input channels");
 		const int16 * const lut = WFIRlut + ((((posLo >> 16) + WFIR_FRACHALVE) >> WFIR_FRACSHIFT) & WFIR_FRACMASK);
@@ -230,30 +234,30 @@ struct NoRamp
 {
 	typename Traits::output_t lVol, rVol;
 
-	MPT_FORCEINLINE void Start(const ModChannel &chn)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE NoRamp(const ModChannel &chn)
 	{
 		lVol = chn.leftVol;
 		rVol = chn.rightVol;
 	}
-
-	MPT_FORCEINLINE void End(const ModChannel &) { }
 };
 
 
 struct Ramp
 {
+	ModChannel &channel;
 	int32 lRamp, rRamp;
 
-	MPT_FORCEINLINE void Start(const ModChannel &chn)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE Ramp(ModChannel &chn)
+		: channel{chn}
 	{
 		lRamp = chn.rampLeftVol;
 		rRamp = chn.rampRightVol;
 	}
 
-	MPT_FORCEINLINE void End(ModChannel &chn)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE ~Ramp()
 	{
-		chn.rampLeftVol = lRamp; chn.leftVol = lRamp >> VOLUMERAMPPRECISION;
-		chn.rampRightVol = rRamp; chn.rightVol = rRamp >> VOLUMERAMPPRECISION;
+		channel.rampLeftVol = lRamp; channel.leftVol = lRamp >> VOLUMERAMPPRECISION;
+		channel.rampRightVol = rRamp; channel.rightVol = rRamp >> VOLUMERAMPPRECISION;
 	}
 };
 
@@ -262,8 +266,8 @@ struct Ramp
 template<class Traits>
 struct MixMonoFastNoRamp : public NoRamp<Traits>
 {
-	typedef NoRamp<Traits> base_t;
-	MPT_FORCEINLINE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &, typename Traits::output_t * const MPT_RESTRICT outBuffer)
+	using base_t = NoRamp<Traits>;
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &, typename Traits::output_t * const MPT_RESTRICT outBuffer)
 	{
 		typename Traits::output_t vol = outSample[0] * base_t::lVol;
 		for(int i = 0; i < Traits::numChannelsOut; i++)
@@ -277,8 +281,8 @@ struct MixMonoFastNoRamp : public NoRamp<Traits>
 template<class Traits>
 struct MixMonoNoRamp : public NoRamp<Traits>
 {
-	typedef NoRamp<Traits> base_t;
-	MPT_FORCEINLINE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &, typename Traits::output_t * const MPT_RESTRICT outBuffer)
+	using base_t = NoRamp<Traits>;
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &, typename Traits::output_t * const MPT_RESTRICT outBuffer)
 	{
 		outBuffer[0] += outSample[0] * base_t::lVol;
 		outBuffer[1] += outSample[0] * base_t::rVol;
@@ -289,7 +293,7 @@ struct MixMonoNoRamp : public NoRamp<Traits>
 template<class Traits>
 struct MixMonoRamp : public Ramp
 {
-	MPT_FORCEINLINE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &chn, typename Traits::output_t * const MPT_RESTRICT outBuffer)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &chn, typename Traits::output_t * const MPT_RESTRICT outBuffer)
 	{
 		lRamp += chn.leftRamp;
 		rRamp += chn.rightRamp;
@@ -302,8 +306,8 @@ struct MixMonoRamp : public Ramp
 template<class Traits>
 struct MixStereoNoRamp : public NoRamp<Traits>
 {
-	typedef NoRamp<Traits> base_t;
-	MPT_FORCEINLINE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &, typename Traits::output_t * const MPT_RESTRICT outBuffer)
+	using base_t = NoRamp<Traits>;
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &, typename Traits::output_t * const MPT_RESTRICT outBuffer)
 	{
 		outBuffer[0] += outSample[0] * base_t::lVol;
 		outBuffer[1] += outSample[1] * base_t::rVol;
@@ -314,7 +318,7 @@ struct MixStereoNoRamp : public NoRamp<Traits>
 template<class Traits>
 struct MixStereoRamp : public Ramp
 {
-	MPT_FORCEINLINE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &chn, typename Traits::output_t * const MPT_RESTRICT outBuffer)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (const typename Traits::outbuf_t &outSample, const ModChannel &chn, typename Traits::output_t * const MPT_RESTRICT outBuffer)
 	{
 		lRamp += chn.leftRamp;
 		rRamp += chn.rightRamp;
@@ -331,10 +335,9 @@ struct MixStereoRamp : public Ramp
 template<class Traits>
 struct NoFilter
 {
-	MPT_FORCEINLINE void Start(const ModChannel &) { }
-	MPT_FORCEINLINE void End(const ModChannel &) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE NoFilter(const ModChannel &) { }
 
-	MPT_FORCEINLINE void operator() (const typename Traits::outbuf_t &, const ModChannel &) { }
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (const typename Traits::outbuf_t &, const ModChannel &) { }
 };
 
 
@@ -342,10 +345,12 @@ struct NoFilter
 template<class Traits>
 struct ResonantFilter
 {
+	ModChannel &channel;
 	// Filter history
 	typename Traits::output_t fy[Traits::numChannelsIn][2];
 
-	MPT_FORCEINLINE void Start(const ModChannel &chn)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE ResonantFilter(ModChannel &chn)
+		: channel{chn}
 	{
 		for(int i = 0; i < Traits::numChannelsIn; i++)
 		{
@@ -354,12 +359,12 @@ struct ResonantFilter
 		}
 	}
 
-	MPT_FORCEINLINE void End(ModChannel &chn)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE ~ResonantFilter()
 	{
 		for(int i = 0; i < Traits::numChannelsIn; i++)
 		{
-			chn.nFilter_Y[i][0] = fy[i][0];
-			chn.nFilter_Y[i][1] = fy[i][1];
+			channel.nFilter_Y[i][0] = fy[i][0];
+			channel.nFilter_Y[i][1] = fy[i][1];
 		}
 	}
 
@@ -368,7 +373,7 @@ struct ResonantFilter
 	// Filter values are clipped to double the input range
 #define ClipFilter(x) Clamp<typename Traits::output_t, typename Traits::output_t>(x, int16_min * 2 * MIXING_FILTER_PREAMP, int16_max * 2 * MIXING_FILTER_PREAMP)
 
-	MPT_FORCEINLINE void operator() (typename Traits::outbuf_t &outSample, const ModChannel &chn)
+	MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void operator() (typename Traits::outbuf_t &outSample, const ModChannel &chn)
 	{
 		static_assert(static_cast<int>(Traits::numChannelsIn) <= static_cast<int>(Traits::numChannelsOut), "Too many input channels");
 

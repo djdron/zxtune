@@ -9,11 +9,12 @@
 
 
 #include "stdafx.h"
-#include "Mptrack.h"
-#include "Mainfrm.h"
-#include "../soundlib/tuning.h"
 #include "tuningRatioMapWnd.h"
+#include "HighDPISupport.h"
+#include "Mainfrm.h"
+#include "Mptrack.h"
 #include "TuningDialog.h"
+#include "../soundlib/tuning.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -38,7 +39,8 @@ void CTuningRatioMapWnd::OnPaint()
 {
 	CPaintDC dc(this);
 
-	if(!m_pTuning) return;
+	if(!m_pTuning)
+		return;
 
 	CRect rcClient;
 	GetClientRect(&rcClient);
@@ -46,8 +48,20 @@ void CTuningRatioMapWnd::OnPaint()
 	const auto colorText = GetSysColor(COLOR_WINDOWTEXT);
 	const auto colorTextSel = GetSysColor(COLOR_HIGHLIGHTTEXT);
 	const auto highlightBrush = GetSysColorBrush(COLOR_HIGHLIGHT), windowBrush = GetSysColorBrush(COLOR_WINDOW);
+	const int lineWidth = HighDPISupport::ScalePixels(1, *this);
 
-	auto oldFont = dc.SelectObject(CMainFrame::GetGUIFont());
+	if(int dpi = HighDPISupport::GetDpiForWindow(m_hWnd); m_dpi != dpi)
+	{
+		m_font.DeleteObject();
+		m_dpi = dpi;
+	}
+	if(!m_font.m_hObject)
+	{
+		HighDPISupport::CreateGUIFont(m_font, m_hWnd);
+		m_cxFont = m_cyFont = 0;
+	}
+
+	auto oldFont = dc.SelectObject(m_font);
 	dc.SetBkMode(TRANSPARENT);
 	if ((m_cxFont <= 0) || (m_cyFont <= 0))
 	{
@@ -75,7 +89,7 @@ void CTuningRatioMapWnd::OnPaint()
 
 			rect.SetRect(0, ypaint, m_cxFont, ypaint + m_cyFont);
 			const auto noteStr = isValidNote ? mpt::tfmt::val(noteToDraw) : mpt::tstring(_T("..."));
-			DrawButtonRect(dc, &rect, noteStr.c_str(), FALSE, FALSE);
+			DrawButtonRect(dc, lineWidth, m_font, rect, noteStr.c_str(), false, false);
 
 			// Mapped Note
 			const bool highLight = focus && (nPos == (int)m_nNote);
@@ -101,7 +115,7 @@ void CTuningRatioMapWnd::OnPaint()
 
 		}
 		rect.SetRect(rcClient.left + m_cxFont * 4 - 1, rcClient.top, rcClient.left + m_cxFont * 4 + 3, ypaint);
-		DrawButtonRect(dc, &rect, _T(""));
+		DrawButtonRect(dc, lineWidth, m_font, rect, _T(""));
 		if (ypaint < rcClient.bottom)
 		{
 			rect.SetRect(rcClient.left, ypaint, rcClient.right, rcClient.bottom);

@@ -1,7 +1,7 @@
 /*
  * Childfrm.h
  * ----------
- * Purpose: Implementation of tab interface class.
+ * Purpose: Implementation of the MDI document child windows.
  * Notes  : (currently none)
  * Authors: OpenMPT Devs
  * The OpenMPT source code is released under the BSD license. Read LICENSE for more details.
@@ -21,48 +21,65 @@ OPENMPT_NAMESPACE_BEGIN
 class CModControlView;
 class CModControlDlg;
 
-struct GENERALVIEWSTATE
+struct GeneralViewState
 {
 	PlugParamIndex nParam = 0;
 	CHANNELINDEX nTab = 0;
 	PLUGINDEX nPlugin = 0;
 	bool initialized = false;
+
+	std::string Serialize() const { return {}; }
+	void Deserialize(FileReader &) { }
 };
 
 
-struct PATTERNVIEWSTATE
+struct PatternViewState
 {
 	PATTERNINDEX nPattern = 0;
 	PatternCursor cursor = 0;
 	PatternRect selection;
-	PatternCursor::Columns nDetailLevel = PatternCursor::firstColumn;
 	ORDERINDEX nOrder = 0;
 	ORDERINDEX initialOrder = ORDERINDEX_INVALID;
+	std::bitset<PatternCursor::numColumns> visibleColumns;
 	bool initialized = false;
+
+	std::string Serialize() const;
+	void Deserialize(FileReader &f);
 };
 
-struct SAMPLEVIEWSTATE
+struct SampleViewState
 {
 	SmpLength dwScrollPos = 0;
 	SmpLength dwBeginSel = 0;
 	SmpLength dwEndSel = 0;
 	SAMPLEINDEX nSample = 0;
 	SAMPLEINDEX initialSample = 0;
+
+	std::string Serialize() const;
+	void Deserialize(FileReader &f);
 };
 
 
-struct INSTRUMENTVIEWSTATE
+struct InstrumentViewState
 {
+	float zoom = 4;
 	EnvelopeType nEnv = ENV_VOLUME;
 	INSTRUMENTINDEX initialInstrument = 0;
+	INSTRUMENTINDEX instrument = 0;
 	bool bGrid = false;
 	bool initialized = false;
+
+	std::string Serialize() const;
+	void Deserialize(FileReader &f);
 };
 
-struct COMMENTVIEWSTATE
+struct CommentsViewState
 {
 	UINT nId = 0;
 	bool initialized = false;
+
+	std::string Serialize() const { return {}; }
+	void Deserialize(FileReader &) {}
 };
 
 
@@ -73,6 +90,7 @@ class CChildFrame: public CMDIChildWnd
 	DECLARE_DYNCREATE(CChildFrame)
 public:
 	CChildFrame();
+	~CChildFrame() override;
 
 protected:
 	static CChildFrame *m_lastActiveFrame;
@@ -81,64 +99,66 @@ protected:
 // Attributes
 protected:
 	CSplitterWnd m_wndSplitter;
-	HWND m_hWndCtrl, m_hWndView;
-	GENERALVIEWSTATE m_ViewGeneral;
-	PATTERNVIEWSTATE m_ViewPatterns;
-	SAMPLEVIEWSTATE m_ViewSamples;
-	INSTRUMENTVIEWSTATE m_ViewInstruments;
-	COMMENTVIEWSTATE m_ViewComments;
-	CHAR m_szCurrentViewClassName[256];
-	bool m_bMaxWhenClosed;
-	bool m_bInitialActivation;
+	HWND m_hWndCtrl = nullptr, m_hWndView = nullptr;
+	GeneralViewState m_ViewGeneral;
+	PatternViewState m_ViewPatterns;
+	SampleViewState m_ViewSamples;
+	InstrumentViewState m_ViewInstruments;
+	CommentsViewState m_ViewComments;
+	std::string m_currentViewClassName;
+	int m_dpi = 0;
+	bool m_maxWhenClosed = false;
+	bool m_initialActivation = true;
 
 // Operations
 public:
-	CModControlView *GetModControlView() const { return (CModControlView *)m_wndSplitter.GetPane(0, 0); }
-	BOOL ChangeViewClass(CRuntimeClass* pNewViewClass, CCreateContext* pContext=NULL);
+	CModControlView *GetModControlView() const { return reinterpret_cast<CModControlView *>(m_wndSplitter.GetPane(0, 0)); }
+	BOOL ChangeViewClass(CRuntimeClass *pNewViewClass, CCreateContext *pContext = nullptr);
 	void ForceRefresh();
-	void SavePosition(BOOL bExit=FALSE);
-	const char *GetCurrentViewClassName() const;
-	LRESULT SendViewMessage(UINT uMsg, LPARAM lParam=0) const;
-	LRESULT ActivateView(UINT nId, LPARAM lParam) { return ::SendMessage(m_hWndCtrl, WM_MOD_ACTIVATEVIEW, nId, lParam); }
+	void SavePosition(bool exit = false);
+	LRESULT SendCtrlMessage(UINT uMsg, LPARAM lParam = 0) const;
+	LRESULT SendViewMessage(UINT uMsg, LPARAM lParam = 0) const;
+	LRESULT ActivateView(UINT nId, LPARAM lParam);
 	HWND GetHwndCtrl() const { return m_hWndCtrl; }
 	HWND GetHwndView() const { return m_hWndView; }
-	GENERALVIEWSTATE &GetGeneralViewState() { return m_ViewGeneral; }
-	PATTERNVIEWSTATE &GetPatternViewState() { return m_ViewPatterns; }
-	SAMPLEVIEWSTATE &GetSampleViewState() { return m_ViewSamples; }
-	INSTRUMENTVIEWSTATE &GetInstrumentViewState() { return m_ViewInstruments; }
-	COMMENTVIEWSTATE &GetCommentViewState() { return m_ViewComments; }
+	GeneralViewState &GetGeneralViewState() { return m_ViewGeneral; }
+	PatternViewState &GetPatternViewState() { return m_ViewPatterns; }
+	SampleViewState &GetSampleViewState() { return m_ViewSamples; }
+	InstrumentViewState &GetInstrumentViewState() { return m_ViewInstruments; }
+	CommentsViewState &GetCommentViewState() { return m_ViewComments; }
+
+	bool IsPatternView() const;
 
 	void SetSplitterHeight(int x);
 	int GetSplitterHeight();
 
-	std::string SerializeView() const;
+	void SaveAllViewStates();
+	std::string SerializeView();
 	void DeserializeView(FileReader &file);
+
+	void ToggleViews();
 
 	static CChildFrame *LastActiveFrame() { return m_lastActiveFrame; }
 
 // Overrides
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CChildFrame)
-	public:
+public:
 	BOOL OnCreateClient(LPCREATESTRUCT lpcs, CCreateContext* pContext) override;
 	BOOL PreCreateWindow(CREATESTRUCT& cs) override;
 	void ActivateFrame(int nCmdShow) override;
 	void OnUpdateFrameTitle(BOOL bAddToTitle) override;
 	//}}AFX_VIRTUAL
 
-// Implementation
-public:
-	virtual ~CChildFrame();
-
 // Generated message map functions
 protected:
 	//{{AFX_MSG(CChildFrame)
+	afx_msg LRESULT OnDPIChangedAfterParent(WPARAM, LPARAM);
 	afx_msg void OnDestroy();
 	afx_msg BOOL OnNcActivate(BOOL bActivate);
 	afx_msg void OnMDIActivate(BOOL bActivate, CWnd *pActivateWnd, CWnd *pDeactivateWnd);
 	afx_msg LRESULT OnChangeViewClass(WPARAM, LPARAM lParam);
 	afx_msg LRESULT OnInstrumentSelected(WPARAM, LPARAM lParam);
-	afx_msg BOOL OnToolTipText(UINT, NMHDR* pNMHDR, LRESULT* pResult);
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 };

@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/sln2005/test_platforms.lua
 -- Test the Visual Studio 2005-2010 platform mapping blocks.
--- Copyright (c) 2009-2014 Jason Perkins and the Premake project
+-- Copyright (c) 2009-2014 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -65,6 +65,48 @@ GlobalSection(ProjectConfigurationPlatforms) = postSolution
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Any CPU.Build.0 = Release|Any CPU
+EndGlobalSection
+		]]
+	end
+
+	function suite.DeployConsoleApp_onUWP()
+		project "MyProject"
+		kind "ConsoleApp"
+		system "uwp"
+		prepare()
+		test.capture [[
+GlobalSection(SolutionConfigurationPlatforms) = preSolution
+	Debug|Win32 = Debug|Win32
+	Release|Win32 = Release|Win32
+EndGlobalSection
+GlobalSection(ProjectConfigurationPlatforms) = postSolution
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Win32.ActiveCfg = Debug|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Win32.Build.0 = Debug|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Win32.Deploy.0 = Debug|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Win32.ActiveCfg = Release|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Win32.Build.0 = Release|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Win32.Deploy.0 = Release|Win32
+EndGlobalSection
+		]]
+	end
+
+	function suite.DeployWindowedApp_onUWP()
+		project "MyProject"
+		kind "WindowedApp"
+		system "uwp"
+		prepare()
+		test.capture [[
+GlobalSection(SolutionConfigurationPlatforms) = preSolution
+	Debug|Win32 = Debug|Win32
+	Release|Win32 = Release|Win32
+EndGlobalSection
+GlobalSection(ProjectConfigurationPlatforms) = postSolution
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Win32.ActiveCfg = Debug|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Win32.Build.0 = Debug|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Win32.Deploy.0 = Debug|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Win32.ActiveCfg = Release|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Win32.Build.0 = Release|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Win32.Deploy.0 = Release|Win32
 EndGlobalSection
 		]]
 	end
@@ -606,12 +648,12 @@ GlobalSection(SolutionConfigurationPlatforms) = preSolution
 	Release|Windows = Release|Windows
 EndGlobalSection
 GlobalSection(ProjectConfigurationPlatforms) = postSolution
-	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Linux.ActiveCfg = Debug Linux|Win32
-	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Linux.Build.0 = Debug Linux|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Linux.ActiveCfg = Debug Linux|x86
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Linux.Build.0 = Debug Linux|x86
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Windows.ActiveCfg = Debug Windows|Win32
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Windows.Build.0 = Debug Windows|Win32
-	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Linux.ActiveCfg = Release Linux|Win32
-	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Linux.Build.0 = Release Linux|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Linux.ActiveCfg = Release Linux|x86
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Linux.Build.0 = Release Linux|x86
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Windows.ActiveCfg = Release Windows|Win32
 	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Windows.Build.0 = Release Windows|Win32
 EndGlobalSection
@@ -695,6 +737,31 @@ EndGlobalSection
 	end
 
 
+	function suite.onBuildCfgExcludedByAPI()
+		platforms { "DLL", "Static" }
+		project "MyProject"
+		filter "configurations:Debug"
+		excludefrombuild "On"
+		prepare()
+		test.capture [[
+GlobalSection(SolutionConfigurationPlatforms) = preSolution
+	Debug|DLL = Debug|DLL
+	Debug|Static = Debug|Static
+	Release|DLL = Release|DLL
+	Release|Static = Release|Static
+EndGlobalSection
+GlobalSection(ProjectConfigurationPlatforms) = postSolution
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|DLL.ActiveCfg = Debug DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Static.ActiveCfg = Debug Static|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|DLL.ActiveCfg = Release DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|DLL.Build.0 = Release DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Static.ActiveCfg = Release Static|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Static.Build.0 = Release Static|Win32
+EndGlobalSection
+		]]
+	end
+
+
 	function suite.onExcludedPlatform()
 		platforms { "DLL", "Static" }
 		project "MyProject"
@@ -724,6 +791,30 @@ EndGlobalSection
 		project "MyProject"
 		filter "platforms:Static"
 		flags "ExcludeFromBuild"
+		prepare()
+		test.capture [[
+GlobalSection(SolutionConfigurationPlatforms) = preSolution
+	Debug|DLL = Debug|DLL
+	Debug|Static = Debug|Static
+	Release|DLL = Release|DLL
+	Release|Static = Release|Static
+EndGlobalSection
+GlobalSection(ProjectConfigurationPlatforms) = postSolution
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|DLL.ActiveCfg = Debug DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|DLL.Build.0 = Debug DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Debug|Static.ActiveCfg = Debug Static|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|DLL.ActiveCfg = Release DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|DLL.Build.0 = Release DLL|Win32
+	{C9135098-6047-8142-B10E-D27E7F73FCB3}.Release|Static.ActiveCfg = Release Static|Win32
+EndGlobalSection
+		]]
+	end
+
+	function suite.onPlatformExcludedByAPI()
+		platforms { "DLL", "Static" }
+		project "MyProject"
+		filter "platforms:Static"
+		excludefrombuild "On"
 		prepare()
 		test.capture [[
 GlobalSection(SolutionConfigurationPlatforms) = preSolution

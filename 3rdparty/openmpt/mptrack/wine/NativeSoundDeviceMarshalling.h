@@ -35,7 +35,7 @@ inline void to_json(nlohmann::json &j, const SampleFormat &val)
 }
 inline void from_json(const nlohmann::json &j, SampleFormat &val)
 {
-	val = SampleFormat::FromInt(j);
+	val = SampleFormat::FromInt(j.get<int>());
 }
 
 namespace SoundDevice
@@ -47,7 +47,7 @@ namespace SoundDevice
 	}
 	inline void from_json(const nlohmann::json &j, SoundDevice::ChannelMapping &val)
 	{
-		val = SoundDevice::ChannelMapping::FromString(j);
+		val = SoundDevice::ChannelMapping::FromString(j.get<mpt::ustring>());
 	}
 
 	inline void to_json(nlohmann::json &j, const SoundDevice::Info::Default &val)
@@ -262,7 +262,7 @@ inline OpenMPT_SoundDevice_Flags encode(SoundDevice::Flags src) {
 }
 inline SoundDevice::Flags decode(OpenMPT_SoundDevice_Flags src) {
 	SoundDevice::Flags dst;
-	dst.WantsClippedOutput = src.WantsClippedOutput;
+	dst.WantsClippedOutput = src.WantsClippedOutput != 0;
 	return dst;
 }
 
@@ -284,7 +284,7 @@ inline SoundDevice::BufferFormat decode(OpenMPT_SoundDevice_BufferFormat src) {
 	dst.Channels = src.Channels;
 	dst.InputChannels = src.InputChannels;
 	dst.sampleFormat = SampleFormat::FromInt(src.sampleFormat);
-	dst.WantsClippedOutput = src.WantsClippedOutput;
+	dst.WantsClippedOutput = src.WantsClippedOutput != 0;
 	dst.DitherType = src.DitherType;
 	return dst;
 }

@@ -10,14 +10,15 @@
 
 
 #include "stdafx.h"
-#include <ostream>
 #include "ITCompression.h"
+#include "ModSample.h"
+#include "SampleCopy.h"
+#include "../common/misc_util.h"
 #include "mpt/io/base.hpp"
 #include "mpt/io/io.hpp"
 #include "mpt/io/io_stdstream.hpp"
-#include "../common/misc_util.h"
-#include "ModSample.h"
-#include "SampleCopy.h"
+
+#include <ostream>
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -154,10 +155,11 @@ void ITCompression::CompressBlock(const typename Properties::sample_t *data, Smp
 	{
 		if(bwt[i] != width)
 		{
+			MPT_ASSERT(width >= 0);
 			if(width <= 6)
 			{
 				// Mode A: 1 to 6 bits
-				MPT_ASSERT(width);
+				MPT_ASSERT(width != 0);
 				WriteBits(width, (1 << (width - 1)));
 				WriteBits(Properties::fetchA, ConvertWidth(width, bwt[i]));
 			} else if(width < Properties::defWidth)
@@ -187,6 +189,8 @@ void ITCompression::CompressBlock(const typename Properties::sample_t *data, Smp
 int8 ITCompression::GetWidthChangeSize(int8 w, bool is16)
 {
 	MPT_ASSERT(w > 0 && static_cast<unsigned int>(w) <= std::size(ITWidthChangeSize));
+	// cppcheck false-positive
+	// cppcheck-suppress negativeIndex
 	int8 wcs = ITWidthChangeSize[w - 1];
 	if(w <= 6 && is16)
 		wcs++;
@@ -277,7 +281,7 @@ void ITCompression::WriteBits(int8 width, int v)
 {
 	while(width > remBits)
 	{
-		byteVal |= (v << bitPos);
+		byteVal |= static_cast<uint8>(v << bitPos);
 		width -= remBits;
 		v >>= remBits;
 		bitPos = 0;
@@ -288,7 +292,7 @@ void ITCompression::WriteBits(int8 width, int v)
 
 	if(width > 0)
 	{
-		byteVal |= (v & ((1 << width) - 1)) << bitPos;
+		byteVal |= static_cast<uint8>((v & ((1 << width) - 1)) << bitPos);
 		remBits -= width;
 		bitPos += width;
 	}

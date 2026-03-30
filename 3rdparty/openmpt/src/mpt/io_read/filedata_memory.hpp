@@ -5,6 +5,7 @@
 
 
 
+#include "mpt/base/detect.hpp"
 #include "mpt/base/memory.hpp"
 #include "mpt/base/namespace.hpp"
 #include "mpt/io_read/filedata.hpp"
@@ -12,6 +13,9 @@
 #include <algorithm>
 
 #include <cstddef>
+#if MPT_GCC_AT_LEAST(12, 0, 0)
+#include <cstring>
+#endif
 
 
 
@@ -33,9 +37,11 @@ private:
 
 public:
 	FileDataMemory()
-		: streamData(nullptr), streamLength(0) { }
+		: streamData(nullptr)
+		, streamLength(0) { }
 	FileDataMemory(mpt::const_byte_span data)
-		: streamData(data.data()), streamLength(data.size()) { }
+		: streamData(data.data())
+		, streamLength(data.size()) { }
 
 public:
 	bool IsValid() const override {
@@ -62,12 +68,20 @@ public:
 		if (pos >= streamLength) {
 			return dst.first(0);
 		}
-		pos_type avail = std::min(streamLength - pos, dst.size());
-		std::copy(streamData + pos, streamData + pos + avail, dst.data());
-		return dst.first(avail);
+		pos_type avail = std::min(streamLength - pos, static_cast<pos_type>(dst.size()));
+		const std::byte * src = streamData + pos;
+#if MPT_GCC_AT_LEAST(12, 0, 0)
+		// work-around bogus -Warray-bounds
+		// work-around bogus -Wstringop-overflow
+		// See <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=121165>.
+		std::memcpy(dst.data(), src, avail);
+#else
+		std::copy(src, src + avail, dst.data());
+#endif
+		return dst.first(static_cast<std::size_t>(avail));
 	}
 
-	bool CanRead(pos_type pos, std::size_t length) const override {
+	bool CanRead(pos_type pos, pos_type length) const override {
 		if ((pos == streamLength) && (length == 0)) {
 			return true;
 		}
@@ -77,7 +91,7 @@ public:
 		return (length <= streamLength - pos);
 	}
 
-	std::size_t GetReadableLength(pos_type pos, std::size_t length) const override {
+	pos_type GetReadableLength(pos_type pos, pos_type length) const override {
 		if (pos >= streamLength) {
 			return 0;
 		}

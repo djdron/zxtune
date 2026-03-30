@@ -4,6 +4,7 @@
 
 
 #include "openmpt/all/BuildSettings.hpp"
+#include "openmpt/all/PlatformFixes.hpp"
 
 #include "SoundDevice.hpp"
 
@@ -15,7 +16,7 @@
 #include "mpt/parse/split.hpp"
 #include "mpt/string/types.hpp"
 #include "mpt/string/utility.hpp"
-#include "mpt/string_convert/convert.hpp"
+#include "mpt/string_transcode/transcode.hpp"
 #include "openmpt/base/Types.hpp"
 
 #include <map>
@@ -87,7 +88,7 @@ SoundDevice::Identifier Info::GetIdentifier() const
 	{
 		// UTF8-encode the name and convert the utf8 to hex.
 		// This ensures that no special characters are contained in the configuration key.
-		std::string utf8String = mpt::convert<std::string>(mpt::common_encoding::utf8, name);
+		std::string utf8String = mpt::transcode<std::string>(mpt::common_encoding::utf8, name);
 		mpt::ustring hexString = mpt::encode_hex(mpt::as_span(utf8String));
 		result += hexString;
 	} else

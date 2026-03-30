@@ -187,7 +187,7 @@ static size_t lha_lz5_read(void *data, uint8_t *buf)
 	return result;
 }
 
-LHADecoderType lha_lz5_decoder = {
+const LHADecoderType lha_lz5_decoder = {
 	lha_lz5_init,
 	NULL,
 	lha_lz5_read,
@@ -195,4 +195,3 @@ LHADecoderType lha_lz5_decoder = {
 	OUTPUT_BUFFER_SIZE,
 	RING_BUFFER_SIZE
 };
-

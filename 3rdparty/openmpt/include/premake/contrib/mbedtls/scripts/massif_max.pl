@@ -1,6 +1,9 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # Parse a massif.out.xxx file and output peak total memory usage
+#
+# Copyright The Mbed TLS Contributors
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
 
 use warnings;
 use strict;

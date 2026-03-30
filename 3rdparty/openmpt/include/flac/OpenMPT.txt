@@ -1,13 +1,14 @@
-flac 1.3.3.
+flac 1.5.0 (2025-02-11).
 The FLAC package has been left pretty much untouched, except for a few changes:
+ *  https://github.com/xiph/flac/pull/822 (commits
+     *  https://github.com/xiph/flac/pull/822/commits/2ac5c3b8cb610d674e3f0e4046a78ae35adfb1ed
+     *  https://github.com/xiph/flac/pull/822/commits/66e4a6f43a925b620a716d745b489e1c4b3a9d85
+     *  https://github.com/xiph/flac/pull/822/commits/00a1ce8d05df03f4bff933536d51fa7b82e9ff0e
+    ) has been applied.
+ *  In `include/share/compat.h`, the Windows XP compatibility warning has been
+    disabled.
+ *  All modifications have been marked with "/* OpenMPT */".
  *  Obviously, unnecessary folders and files (documentation, makefiles, etc.) have
     been removed.
- *  The following commits from git master have been applied:
-     *  https://github.com/xiph/flac/commit/66dd7f05d7dc973f8ce55d24ebcc88447242d4e5
-     *  https://github.com/xiph/flac/commit/04974d271531d429384a6f124919ff64fbbefd81
-     *  https://github.com/xiph/flac/commit/c34c3459b514df02d922a882d406986e7f47afa4
-     *  https://github.com/xiph/flac/commit/09f47c00e18a77390acfc2e725564542756effaf
-     *  https://github.com/xiph/flac/commit/8147ee7ea214195bddab403840c95d4c748bfedc
-     *  https://github.com/xiph/flac/commit/5598543a9663a846a0b7e42f395207bc44381e41
  *  For building, premake is used to generate Visual Studio project files.
     See ../build/premake/ for details.

@@ -12,6 +12,11 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
+#include "AccessibleControls.h"
+#include "TrackerSettings.h"
+#include "../sounddsp/EQ.h"
+#include "openmpt/sounddevice/SoundDevice.hpp"
+
 OPENMPT_NAMESPACE_BEGIN
 
 class CSoundFile;
@@ -93,8 +98,8 @@ protected:
 
 	CComboBox m_CbnResampling, m_CbnAmigaType;
 
-	CEdit m_CEditRampUp;
-	CEdit m_CEditRampDown;
+	AccessibleEdit m_CEditRampUp;
+	AccessibleEdit m_CEditRampDown;
 	CEdit m_CInfoRampUp;
 	CEdit m_CInfoRampDown;
 
@@ -104,13 +109,10 @@ protected:
 
 	CSliderCtrl m_SliderPreAmp;
 
-	bool m_initialized : 1;
+	bool m_initialized = false;
 
 public:
-	COptionsMixer()
-		: CPropertyPage(IDD_OPTIONS_MIXER)
-		, m_initialized(false)
-	{}
+	COptionsMixer();
 
 protected:
 	void UpdateRamping();
@@ -142,7 +144,7 @@ public:
 	UINT m_nSliderNo;
 	short int m_x, m_y;
 public:
-	CEQSlider() {}
+	CEQSlider() = default;
 	void Init(UINT nID, UINT n, CWnd *parent);
 	BOOL PreTranslateMessage(MSG *pMsg);
 };
@@ -166,11 +168,7 @@ protected:
 #endif // !NO_EQ
 
 public:
-	COptionsPlayer() : CPropertyPage(IDD_OPTIONS_PLAYER)
-#ifndef NO_EQ
-		, m_EQPreset(TrackerSettings::Instance().m_EqSettings)
-#endif
-	{ }
+	COptionsPlayer();
 
 protected:
 	BOOL OnInitDialog() override;
@@ -182,10 +180,10 @@ protected:
 
 #ifndef NO_EQ
 	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
-	afx_msg void OnEqUser1()	{ LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[0]); };
-	afx_msg void OnEqUser2()	{ LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[1]); };
-	afx_msg void OnEqUser3()	{ LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[2]); };
-	afx_msg void OnEqUser4()	{ LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[3]); };
+	afx_msg void OnEqUser1() { LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[0]); };
+	afx_msg void OnEqUser2() { LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[1]); };
+	afx_msg void OnEqUser3() { LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[2]); };
+	afx_msg void OnEqUser4() { LoadEQPreset(TrackerSettings::Instance().m_EqUserPresets[3]); };
 	afx_msg void OnSavePreset();
 	afx_msg void OnSliderMenu(UINT);
 	afx_msg void OnSliderFreq(UINT);
@@ -202,19 +200,11 @@ protected:
 class CMidiSetupDlg: public CPropertyPage
 {
 public:
-	DWORD m_dwMidiSetup;
+	FlagSet<MidiSetup> m_midiSetup;
 	UINT m_nMidiDevice;
 
-protected:
-	CSpinButtonCtrl m_SpinSpd, m_SpinPat, m_SpinAmp;
-	CComboBox m_InputDevice, m_ATBehaviour, m_Quantize;
-
 public:
-	CMidiSetupDlg(DWORD d, UINT n)
-		: CPropertyPage(IDD_OPTIONS_MIDI)
-		, m_dwMidiSetup(d)
-		, m_nMidiDevice(n)
-		{ }
+	CMidiSetupDlg(FlagSet<MidiSetup> flags, UINT device);
 
 protected:
 	BOOL OnInitDialog() override;
@@ -225,6 +215,11 @@ protected:
 	afx_msg void OnRenameDevice();
 	afx_msg void OnSettingsChanged() { SetModified(TRUE); }
 	DECLARE_MESSAGE_MAP()
+
+protected:
+	CSpinButtonCtrl m_SpinSpd, m_SpinPat, m_SpinAmp;
+	CComboBox m_InputDevice, m_ATBehaviour, m_Quantize, m_ContinueMode, m_RecordPitchBend;
+	AccessibleEdit m_editAmp;
 };
 
 

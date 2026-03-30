@@ -2,15 +2,10 @@
  project "UnRAR"
   uuid "95CC809B-03FC-4EDB-BB20-FD07A698C05F"
   language "C++"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "unrar"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-unrar"
   includedirs { "../../include/unrar" }
-	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
 	filter {}
   defines {
    "NOMINMAX",
@@ -43,6 +38,7 @@
    "../../include/unrar/hash.cpp",
    "../../include/unrar/headers.cpp",
    "../../include/unrar/isnt.cpp",
+   "../../include/unrar/largepage.cpp",
    "../../include/unrar/list.cpp",
    "../../include/unrar/match.cpp",
    "../../include/unrar/options.cpp",
@@ -96,6 +92,7 @@
    "../../include/unrar/headers.hpp",
    "../../include/unrar/headers5.hpp",
    "../../include/unrar/isnt.hpp",
+   "../../include/unrar/largepage.hpp",
    "../../include/unrar/list.hpp",
    "../../include/unrar/loclang.hpp",
    "../../include/unrar/log.hpp",
@@ -119,7 +116,6 @@
    "../../include/unrar/rijndael.hpp",
    "../../include/unrar/rs.hpp",
    "../../include/unrar/rs16.hpp",
-   "../../include/unrar/savepos.hpp",
    "../../include/unrar/scantree.hpp",
    "../../include/unrar/secpassword.hpp",
    "../../include/unrar/sha1.hpp",
@@ -131,7 +127,6 @@
    "../../include/unrar/system.hpp",
    "../../include/unrar/threadpool.hpp",
    "../../include/unrar/timefn.hpp",
-   "../../include/unrar/ulinks.hpp",
    "../../include/unrar/ui.hpp",
    "../../include/unrar/unicode.hpp",
    "../../include/unrar/unpack.hpp",
@@ -139,16 +134,40 @@
    "../../include/unrar/volume.hpp",
   }
 	filter {}
-	filter { "action:vs*" }
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
 		buildoptions { "/wd4996" }
-	filter {}
-	filter { "action:vs*" }
 		buildoptions {
 			"/wd6031",
 			"/wd6262",
 			"/wd28159",
 		} -- analyze
-  filter {}
+	end
+	filter {}
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+		buildoptions {
+			"-Wno-dangling-else",
+			"-Wno-logical-not-parentheses",
+			"-Wno-logical-op-parentheses",
+			"-Wno-missing-braces",
+			"-Wno-switch",
+			"-Wno-unused-but-set-variable",
+			"-Wno-unused-function",
+			"-Wno-unused-variable",
+		}
+	end
+	filter {}
   filter { "kind:SharedLib" }
    files { "../../include/unrar/dll_nocrypt.def" }
   filter {}
+
+function mpt_use_unrar ()
+	filter {}
+	dependencyincludedirs {
+		"../../include",
+	}
+	filter {}
+	links {
+		"UnRAR",
+	}
+	filter {}
+end

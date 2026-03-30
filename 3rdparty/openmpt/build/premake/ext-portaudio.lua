@@ -2,21 +2,24 @@
  project "portaudio"
   uuid "189B867F-FF4B-45A1-B741-A97492EE69AF"
   language "C"
-  location ( "../../build/" .. mpt_projectpathname .. "/ext" )
-  mpt_projectname = "portaudio"
-  dofile "../../build/premake/premake-defaults-LIBorDLL.lua"
-  dofile "../../build/premake/premake-defaults.lua"
+  location ( "%{wks.location}" .. "/ext" )
+  mpt_kind "default"
   targetname "openmpt-portaudio"
   includedirs { "../../include/portaudio/include", "../../include/portaudio/src/common", "../../include/portaudio/src/os/win" }
 	filter {}
-	filter { "action:vs*" }
-		characterset "Unicode"
-	filter {}
-		if _OPTIONS["winxp"] then
+		if MPT_WIN_BEFORE(MPT_WIN["7"]) then
 			defines {
 				"PA_USE_ASIO=0",
 				"PA_USE_DS=1",
 				"PA_USE_WMME=1",
+				"PA_USE_WASAPI=1",
+				"PA_USE_WDMKS=0",
+			}
+		elseif MPT_OS_WINDOWS_WINRT then
+			defines {
+				"PA_USE_ASIO=0",
+				"PA_USE_DS=0",
+				"PA_USE_WMME=0",
 				"PA_USE_WASAPI=0",
 				"PA_USE_WDMKS=0",
 			}
@@ -59,28 +62,31 @@
    "../../include/portaudio/src/common/pa_types.h",
    "../../include/portaudio/src/common/pa_util.h",
    "../../include/portaudio/src/hostapi/skeleton/pa_hostapi_skeleton.c",
-   "../../include/portaudio/src/hostapi/wmme/pa_win_wmme.c",
    "../../include/portaudio/src/os/win/pa_win_coinitialize.c",
    "../../include/portaudio/src/os/win/pa_win_coinitialize.h",
    "../../include/portaudio/src/os/win/pa_win_hostapis.c",
    "../../include/portaudio/src/os/win/pa_win_util.c",
    "../../include/portaudio/src/os/win/pa_win_waveformat.c",
-   "../../include/portaudio/src/os/win/pa_win_wdmks_utils.c",
-   "../../include/portaudio/src/os/win/pa_win_wdmks_utils.h",
    "../../include/portaudio/src/os/win/pa_x86_plain_converters.c",
    "../../include/portaudio/src/os/win/pa_x86_plain_converters.h",
   }
 	filter {}
-		if _OPTIONS["winxp"] then
+		if MPT_WIN_BEFORE(MPT_WIN["7"]) then
 			files {
-			   "../../include/portaudio/src/hostapi/dsound/pa_win_ds.c",
-			   "../../include/portaudio/src/hostapi/dsound/pa_win_ds_dynlink.c",
-			   "../../include/portaudio/src/hostapi/dsound/pa_win_ds_dynlink.h",
+				"../../include/portaudio/src/hostapi/wmme/pa_win_wmme.c",
+				"../../include/portaudio/src/hostapi/dsound/pa_win_ds.c",
+				"../../include/portaudio/src/hostapi/dsound/pa_win_ds_dynlink.c",
+				"../../include/portaudio/src/hostapi/dsound/pa_win_ds_dynlink.h",
+				"../../include/portaudio/src/hostapi/wasapi/pa_win_wasapi.c",
 			}
+		elseif MPT_OS_WINDOWS_WINRT then
 		else
 			files {
+				"../../include/portaudio/src/hostapi/wmme/pa_win_wmme.c",
 				"../../include/portaudio/src/hostapi/wasapi/pa_win_wasapi.c",
 				"../../include/portaudio/src/hostapi/wdmks/pa_win_wdmks.c",
+				"../../include/portaudio/src/os/win/pa_win_wdmks_utils.c",
+				"../../include/portaudio/src/os/win/pa_win_wdmks_utils.h",
 			}
 		end
 	filter {}
@@ -96,25 +102,57 @@
    "../../include/portaudio/include/pa_win_wmme.h",
    "../../include/portaudio/include/portaudio.h",
   }
-  filter { "action:vs*" }
-    buildoptions { "/wd4018", "/wd4091", "/wd4267", "/wd4312" }
-  filter {}
-  filter { "action:vs*" }
-    buildoptions { "/wd6001", "/wd6011", "/wd6053", "/wd6216", "/wd6217", "/wd6255", "/wd6258", "/wd6385", "/wd6386", "/wd6387", "/wd28159" } -- /analyze
-  filter {}
-  filter { "action:vs*" }
-   files { "../../build/premake/lnk/ext-portaudio.c" }
-  filter {}
+	filter {}
+	if MPT_COMPILER_MSVC or MPT_COMPILER_CLANGCL then
+		buildoptions { "/wd4018", "/wd4091", "/wd4267", "/wd4312" }
+		buildoptions { "/wd6001", "/wd6011", "/wd6053", "/wd6216", "/wd6217", "/wd6255", "/wd6258", "/wd6385", "/wd6386", "/wd6387", "/wd28159" } -- /analyze
+	end
+	filter {}
+	if MPT_COMPILER_CLANGCL or MPT_COMPILER_CLANG then
+		buildoptions {
+			"-Wno-implicit-const-int-float-conversion",
+			"-Wno-missing-braces",
+			"-Wno-sometimes-uninitialized",
+			"-Wno-switch",
+			"-Wno-unused-but-set-variable",
+			"-Wno-unused-function",
+			"-Wno-unused-variable",
+		}
+	end
+	filter {}
+	if MPT_BUILD_MSBUILD then
+		files { "../../build/premake/lnk/ext-portaudio.c" }
+	end
+	filter {}
   filter { "configurations:Debug" }
    defines { "PA_ENABLE_DEBUG_OUTPUT" }
   filter { "configurations:DebugShared" }
    defines { "PA_ENABLE_DEBUG_OUTPUT" }
   filter { "configurations:DebugMDd" }
    defines { "PA_ENABLE_DEBUG_OUTPUT" }
-  filter { "kind:SharedLib" }
-	if _OPTIONS["winxp"] then
-		files { "../../build/premake/def/ext-portaudio-retro.def" }
-	else
-		files { "../../include/portaudio/build/msvc/portaudio.def" }
+	filter {}
+	if MPT_OS_WINDOWS then
+		filter {}
+		filter { "kind:SharedLib" }
+			if MPT_WIN_BEFORE(MPT_WIN["7"]) then
+				files { "../../build/premake/def/ext-portaudio-retro.def" }
+			elseif MPT_OS_WINDOWS_WINRT then
+				files { "../../build/premake/def/ext-portaudio-uwp.def" }
+			else
+				files { "../../build/premake/def/ext-portaudio.def" }
+			end
+		filter {}
 	end
-  filter {}
+	filter {}
+
+function mpt_use_portaudio ()
+	filter {}
+	dependencyincludedirs {
+		"../../include/portaudio/include",
+	}
+	filter {}
+	links {
+		"portaudio",
+	}
+	filter {}
+end

@@ -1,7 +1,7 @@
 --
 -- tests/actions/vstudio/sln2005/test_header.lua
 -- Validate generation of Visual Studio 2005+ solution header.
--- Copyright (c) 2009-2014 Jason Perkins and the Premake project
+-- Copyright (c) 2009-2014 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -74,5 +74,15 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 		test.capture [[
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
+		]]
+	end
+
+
+	function suite.on2022()
+		p.action.set("vs2022")
+		prepare()
+		test.capture [[
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
 		]]
 	end

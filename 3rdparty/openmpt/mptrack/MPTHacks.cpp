@@ -22,7 +22,7 @@ OPENMPT_NAMESPACE_BEGIN
 
 
 // Find and fix envelopes where two nodes are on the same tick.
-bool FindIncompatibleEnvelopes(InstrumentEnvelope &env, bool autofix)
+static bool FindIncompatibleEnvelopes(InstrumentEnvelope &env, bool autofix)
 {
 	bool found = false;
 	for(uint32 i = 1; i < env.size(); i++)
@@ -60,13 +60,17 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 	case MOD_TYPE_IT:
 		originalSpecs = &ModSpecs::it;
 		break;
+	case MOD_TYPE_MPT:
+		break;
+	default:
+		MPT_ASSERT_NOTREACHED();
+		break;
 	}
 
 	bool foundHacks = false, foundHere = false;
 	ClearLog();
 
 	// Check for plugins
-#ifndef NO_PLUGINS
 	foundHere = false;
 	for(const auto &plug : m_SndFile.m_MixPlugins)
 	{
@@ -79,17 +83,16 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 	}
 	if(foundHere)
 		AddToLog("Found plugins");
-#endif // NO_PLUGINS
 
 	// Check for invalid order items
-	if(!originalSpecs->hasIgnoreIndex && mpt::contains(m_SndFile.Order(), m_SndFile.Order.GetIgnoreIndex()))
+	if(!originalSpecs->hasIgnoreIndex && mpt::contains(m_SndFile.Order(), PATTERNINDEX_SKIP))
 	{
 		foundHacks = true;
 		AddToLog("This format does not support separator (+++) patterns");
 
 		if(autofix)
 		{
-			m_SndFile.Order().RemovePattern(m_SndFile.Order.GetIgnoreIndex());
+			m_SndFile.Order().RemovePattern(PATTERNINDEX_SKIP);
 		}
 	}
 
@@ -100,7 +103,7 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 
 		if(autofix)
 		{
-			m_SndFile.Order().RemovePattern(m_SndFile.Order.GetInvalidPatIndex());
+			m_SndFile.Order().RemovePattern(PATTERNINDEX_INVALID);
 		}
 	}
 
@@ -265,6 +268,7 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 
 	// Check for sample extensions
 	foundHere = false;
+	bool opl3inS3M = false;
 	for(SAMPLEINDEX i = 1; i <= m_SndFile.GetNumSamples(); i++)
 	{
 		ModSample &smp = m_SndFile.GetSample(i);
@@ -272,16 +276,27 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 		{
 			foundHere = foundHacks = true;
 			if(autofix)
-			{
 				ctrlSmp::ConvertToMono(smp, m_SndFile, ctrlSmp::mixChannels);
-			} else
+		} else if(modType == MOD_TYPE_S3M && smp.uFlags[CHN_ADLIB])
+		{
+			if(smp.adlib[8] >= 4)
 			{
-				break;
+				opl3inS3M = foundHacks = true;
+				if(autofix)
+					smp.adlib[8] = 0;
+			}
+			if(smp.adlib[9] >= 4)
+			{
+				opl3inS3M = foundHacks = true;
+				if(autofix)
+					smp.adlib[9] = 0;
 			}
 		}
 	}
 	if(foundHere)
 		AddToLog("Stereo samples are not supported in the original XM format");
+	if(opl3inS3M)
+		AddToLog("Extended OPL3 waveforms should not be used in the S3M format");
 
 	// Check for too many instruments
 	if(m_SndFile.GetNumInstruments() > originalSpecs->instrumentsMax)
@@ -294,6 +309,7 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 	// Check for instrument extensions
 	foundHere = false;
 	bool foundEnvelopes = false;
+	INSTRUMENTINDEX instrWithTooManySmps = 0;
 	for(INSTRUMENTINDEX i = 1; i <= m_SndFile.GetNumInstruments(); i++)
 	{
 		ModInstrument *instr = m_SndFile.Instruments[i];
@@ -322,6 +338,16 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 				instr->VolEnv.nReleaseNode = instr->PanEnv.nReleaseNode = instr->PitchEnv.nReleaseNode = ENV_RELEASE_NODE_UNSET;
 			}
 		}
+		if((modType & (MOD_TYPE_IT | MOD_TYPE_MPT)) && (instr->nFadeOut % 32u) != 0)
+		{
+			foundHere = foundHacks = true;
+			if(autofix)
+				instr->nFadeOut = ((instr->nFadeOut + 16) / 32) * 32;
+		}
+
+		if(modType == MOD_TYPE_XM && instr->GetSamples().size() > 16)
+			instrWithTooManySmps++;
+
 		// Incompatible envelope shape
 		foundEnvelopes |= FindIncompatibleEnvelopes(instr->VolEnv, autofix);
 		foundEnvelopes |= FindIncompatibleEnvelopes(instr->PanEnv, autofix);
@@ -331,36 +357,41 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 	if(foundHere)
 		AddToLog("Found MPT instrument extensions");
 	if(foundEnvelopes)
-		AddToLog("Two envelope points may not share the same tick.");
+		AddToLog("Two envelope points may not share the same tick");
+	if(instrWithTooManySmps)
+		AddToLog(MPT_AFORMAT("{} instruments use too many samples (16 allowed)")(instrWithTooManySmps));
 
-	// Check for too many orders
-	if(m_SndFile.Order().GetLengthTailTrimmed() > originalSpecs->ordersMax)
+	for(auto &order : m_SndFile.Order)
 	{
-		AddToLog(MPT_AFORMAT("Found too many orders ({} allowed)")(originalSpecs->ordersMax));
-		foundHacks = true;
-		if(autofix)
+		// Check for too many orders
+		if(order.GetLengthTailTrimmed() > originalSpecs->ordersMax)
 		{
-			// Can we be more intelligent here and maybe remove stop patterns and such?
-			m_SndFile.Order().resize(originalSpecs->ordersMax);
+			AddToLog(MPT_AFORMAT("Found too many orders ({} allowed)")(originalSpecs->ordersMax));
+			foundHacks = true;
+			if(autofix)
+			{
+				// Can we be more intelligent here and maybe remove stop patterns and such?
+				order.resize(originalSpecs->ordersMax);
+			}
 		}
-	}
 
-	// Check for invalid default tempo
-	if(m_SndFile.m_nDefaultTempo > originalSpecs->GetTempoMax() || m_SndFile.m_nDefaultTempo < originalSpecs->GetTempoMin())
-	{
-		AddToLog(MPT_AFORMAT("Found incompatible default tempo (must be between {} and {})")(originalSpecs->GetTempoMin().GetInt(), originalSpecs->GetTempoMax().GetInt()));
-		foundHacks = true;
-		if(autofix)
-			m_SndFile.m_nDefaultTempo = Clamp(m_SndFile.m_nDefaultTempo, originalSpecs->GetTempoMin(), originalSpecs->GetTempoMax());
-	}
+		// Check for invalid default tempo
+		if(order.GetDefaultTempo() > originalSpecs->GetTempoMax() || order.GetDefaultTempo() < originalSpecs->GetTempoMin())
+		{
+			AddToLog(MPT_AFORMAT("Found incompatible default tempo (must be between {} and {})")(originalSpecs->GetTempoMin().GetInt(), originalSpecs->GetTempoMax().GetInt()));
+			foundHacks = true;
+			if(autofix)
+				order.SetDefaultTempo(Clamp(order.GetDefaultTempo(), originalSpecs->GetTempoMin(), originalSpecs->GetTempoMax()));
+		}
 
-	// Check for invalid default speed
-	if(m_SndFile.m_nDefaultSpeed > originalSpecs->speedMax || m_SndFile.m_nDefaultSpeed < originalSpecs->speedMin)
-	{
-		AddToLog(MPT_AFORMAT("Found incompatible default speed (must be between {} and {})")(originalSpecs->speedMin, originalSpecs->speedMax));
-		foundHacks = true;
-		if(autofix)
-			m_SndFile.m_nDefaultSpeed = Clamp(m_SndFile.m_nDefaultSpeed, originalSpecs->speedMin, originalSpecs->speedMax);
+		// Check for invalid default speed
+		if(order.GetDefaultSpeed() > originalSpecs->speedMax || order.GetDefaultSpeed() < originalSpecs->speedMin)
+		{
+			AddToLog(MPT_AFORMAT("Found incompatible default speed (must be between {} and {})")(originalSpecs->speedMin, originalSpecs->speedMax));
+			foundHacks = true;
+			if(autofix)
+				order.SetDefaultSpeed(Clamp(order.GetDefaultSpeed(), originalSpecs->speedMin, originalSpecs->speedMax));
+		}
 	}
 
 	// Check for invalid rows per beat / measure values
@@ -415,9 +446,9 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 	}
 
 	// Player flags
-	if((modType & (MOD_TYPE_XM|MOD_TYPE_IT)) && !m_SndFile.m_playBehaviour[MSF_COMPATIBLE_PLAY])
+	if((modType & (MOD_TYPE_XM|MOD_TYPE_IT)) && m_SndFile.m_playBehaviour != m_SndFile.GetDefaultPlaybackBehaviour(modType))
 	{
-		AddToLog("Compatible play is deactivated");
+		AddToLog("Some playback compatibility settings are not at their defaults");
 		foundHacks = true;
 		if(autofix)
 			m_SndFile.SetDefaultPlaybackBehaviour(modType);
@@ -432,7 +463,7 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 			foundHacks = true;
 			if(autofix)
 			{
-				m_SndFile.Order.RestartPosToPattern(seq);
+				m_SndFile.Order.WriteGlobalsToPattern(seq, true, false);
 			}
 		}
 	}
@@ -460,7 +491,7 @@ bool CModDoc::HasMPTHacks(const bool autofix)
 	{
 		for(const auto &macro : m_SndFile.m_MidiCfg)
 		{
-			for(const auto c : macro)
+			for(const auto c : std::string_view{macro})
 			{
 				if(c == 's')
 				{

@@ -11,7 +11,6 @@
 #include "stdafx.h"
 #include "Reporting.h"
 #include "../mptrack/Mainfrm.h"
-#include "../mptrack/InputHandler.h"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -21,6 +20,7 @@ static inline UINT LogLevelToFlags(LogLevel level)
 {
 	switch(level)
 	{
+	case LogDebug: return MB_OK; break;
 	case LogNotification: return MB_OK; break;
 	case LogInformation: return MB_OK | MB_ICONINFORMATION; break;
 	case LogWarning: return MB_OK | MB_ICONWARNING; break;
@@ -66,21 +66,22 @@ static CString FillEmptyCaption(const CString &caption)
 }
 
 
-static UINT ShowNotificationImpl(const CString &text, const CString &caption, UINT flags, const CWnd *parent)
+static UINT ShowNotificationImpl(CString text, const CString &caption, UINT flags, const CWnd *parent)
 {
 	if(parent == nullptr)
 	{
 		parent = CMainFrame::GetActiveWindow();
 	}
-	BypassInputHandler bih;
+	// Workaround MessageBox text length limitation: Better show a truncated string than no message at all.
+	if(text.GetLength() > uint16_max)
+	{
+		text.Truncate(uint16_max);
+		text.SetAt(uint16_max - 1, _T('.'));
+		text.SetAt(uint16_max - 2, _T('.'));
+		text.SetAt(uint16_max - 3, _T('.'));
+	}
 	UINT result = ::MessageBox(parent->GetSafeHwnd(), text, caption.IsEmpty() ? CString(MAINFRAME_TITLE) : caption, flags);
 	return result;
-}
-
-
-UINT Reporting::CustomNotification(const AnyStringLocale &text, const AnyStringLocale &caption, UINT flags, const CWnd *parent)
-{
-	return ShowNotificationImpl(mpt::ToCString(text), FillEmptyCaption(mpt::ToCString(caption)), flags, parent);
 }
 
 

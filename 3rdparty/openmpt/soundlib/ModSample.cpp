@@ -9,9 +9,10 @@
 
 
 #include "stdafx.h"
-#include "Sndfile.h"
 #include "ModSample.h"
+#include "AudioCriticalSection.h"
 #include "modsmp_ctrl.h"
+#include "Sndfile.h"
 #include "mpt/base/numbers.hpp"
 
 #include <cmath>
@@ -23,6 +24,8 @@ OPENMPT_NAMESPACE_BEGIN
 // Translate sample properties between two given formats.
 void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 {
+	uFlags.reset(CHN_REVERSE);  // Not supported by any native formats yet
+
 	// Convert between frequency and transpose values if necessary.
 	if((!(toType & (MOD_TYPE_MOD | MOD_TYPE_XM))) && (fromType & (MOD_TYPE_MOD | MOD_TYPE_XM)))
 	{
@@ -31,13 +34,20 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 		nFineTune = 0;
 		// TransposeToFrequency assumes NTSC middle-C frequency like FT2, but we play MODs with PAL middle-C!
 		if(fromType == MOD_TYPE_MOD)
-			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8272, 8363);
+			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8287, 8363);
 	} else if((toType & (MOD_TYPE_MOD | MOD_TYPE_XM)) && (!(fromType & (MOD_TYPE_MOD | MOD_TYPE_XM))))
 	{
 		// FrequencyToTranspose assumes NTSC middle-C frequency like FT2, but we play MODs with PAL middle-C!
 		if(toType == MOD_TYPE_MOD)
-			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8363, 8272);
+			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8363, 8287);
 		FrequencyToTranspose();
+	}
+	if(toType == MOD_TYPE_MOD)
+	{
+		if(RelativeTone == -1 && nFineTune == 0)
+			nFineTune = -128;
+		RelativeTone = 0;
+		nFineTune &= ~0x0F;
 	}
 
 	// No ping-pong loop, panning and auto-vibrato for MOD / S3M samples
@@ -49,8 +59,6 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 		nVibRate = 0;
 		nVibSweep = 0;
 		nVibType = VIB_SINE;
-
-		RelativeTone = 0;
 	}
 
 	// No global volume / sustain loops for MOD/S3M/XM
@@ -82,7 +90,6 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 		LimitMax(nVibDepth, uint8(15));
 		LimitMax(nVibRate, uint8(63));
 	}
-
 
 	// Autovibrato sweep setting is inverse in XM (0 = "no sweep") and IT (0 = "no vibrato")
 	if(((fromType & MOD_TYPE_XM) && (toType & (MOD_TYPE_IT | MOD_TYPE_MPT))) || ((toType & MOD_TYPE_XM) && (fromType & (MOD_TYPE_IT | MOD_TYPE_MPT))))
@@ -134,7 +141,7 @@ void ModSample::Initialize(MODTYPE type)
 	nPan = 128;
 	nVolume = 256;
 	nGlobalVol = 64;
-	uFlags.reset(CHN_PANNING | CHN_SUSTAINLOOP | CHN_LOOP | CHN_PINGPONGLOOP | CHN_PINGPONGSUSTAIN | CHN_ADLIB | SMP_MODIFIED | SMP_KEEPONDISK);
+	uFlags.reset(CHN_PANNING | CHN_SUSTAINLOOP | CHN_LOOP | CHN_PINGPONGLOOP | CHN_PINGPONGSUSTAIN | CHN_REVERSE | CHN_ADLIB | SMP_MODIFIED | SMP_KEEPONDISK);
 	if(type == MOD_TYPE_XM)
 	{
 		uFlags.set(CHN_PANNING);
@@ -148,7 +155,16 @@ void ModSample::Initialize(MODTYPE type)
 	rootNote = 0;
 	filename = "";
 
-	SetDefaultCuePoints();
+	if(type & (MOD_TYPE_DBM | MOD_TYPE_IMF | MOD_TYPE_MED))
+	{
+		for(SmpLength i = 1; i < 10; i++)
+		{
+			cues[i - 1] = Util::muldiv_unsigned(i, 255 * 256, 9);
+		}
+	} else
+	{
+		RemoveAllCuePoints();
+	}
 }
 
 
@@ -162,29 +178,53 @@ uint32 ModSample::GetSampleRate(const MODTYPE type) const
 		rate = nC5Speed;
 	// TransposeToFrequency assumes NTSC middle-C frequency like FT2, but we play MODs with PAL middle-C!
 	if(type == MOD_TYPE_MOD)
-		rate = Util::muldivr_unsigned(rate, 8272, 8363);
+		rate = Util::muldivr_unsigned(rate, 8287, 8363);
 	return (rate > 0) ? rate : 8363;
 }
 
 
 // Copies sample data from another sample slot and ensures that the 16-bit/stereo flags are set accordingly.
-bool ModSample::CopyWaveform(const ModSample &smpFrom)
+bool ModSample::CopyWaveform(const ModSample &smpFrom, SmpLength start, SmpLength end)
 {
-	if(!smpFrom.HasSampleData())
+	LimitMax(start, smpFrom.nLength);
+	LimitMax(end, smpFrom.nLength);
+	if(!smpFrom.HasSampleData() || start >= end)
 		return false;
 	// If we duplicate a sample slot, avoid deleting the sample we just copy from
 	if(smpFrom.sampleb() == sampleb())
 		pData.pSample = nullptr;
-	LimitMax(nLength, smpFrom.nLength);
+	LimitMax(nLength, end - start);
+
 	uFlags.set(CHN_16BIT, smpFrom.uFlags[CHN_16BIT]);
 	uFlags.set(CHN_STEREO, smpFrom.uFlags[CHN_STEREO]);
 	if(AllocateSample())
 	{
-		memcpy(sampleb(), smpFrom.sampleb(), GetSampleSizeInBytes());
+		const auto bps = smpFrom.GetBytesPerSample();
+		std::copy(smpFrom.sampleb() + start * bps, smpFrom.sampleb() + (start + nLength) * bps, sampleb());
 		return true;
 	}
 	return false;
+}
 
+
+// Replace waveform with given data, keeping the currently chosen format of the sample slot.
+void ModSample::ReplaceWaveform(void *newWaveform, const SmpLength newLength, CSoundFile &sndFile)
+{
+	auto oldWaveform = samplev();
+	FlagSet<ChannelFlags> setFlags, resetFlags;
+
+	setFlags.set(CHN_16BIT, uFlags[CHN_16BIT]);
+	resetFlags.set(CHN_16BIT, !uFlags[CHN_16BIT]);
+
+	setFlags.set(CHN_STEREO, uFlags[CHN_STEREO]);
+	resetFlags.set(CHN_STEREO, !uFlags[CHN_STEREO]);
+
+	CriticalSection cs;
+
+	ctrlChn::ReplaceSample(sndFile, *this, newWaveform, newLength, setFlags, resetFlags);
+	pData.pSample = newWaveform;
+	nLength = newLength;
+	FreeSample(oldWaveform);
 }
 
 
@@ -216,7 +256,7 @@ void *ModSample::AllocateSample(SmpLength numFrames, size_t bytesPerSample)
 		if(p != nullptr)
 		{
 			memset(p, 0, allocSize);
-			return p + (InterpolationMaxLookahead * MaxSamplingPointSize);
+			return p + (InterpolationLookaheadBufferSize * MaxSamplingPointSize);
 		}
 	}
 	return nullptr;
@@ -234,7 +274,7 @@ size_t ModSample::GetRealSampleBufferSize(SmpLength numSamples, size_t bytesPerS
 	// * 4x InterpolationMaxLookahead for the sustain loop (same as the two points above)
 
 	const SmpLength maxSize = Util::MaxValueOfType(numSamples);
-	const SmpLength lookaheadBufferSize = (MaxSamplingPointSize + 1 + 4 + 4) * InterpolationMaxLookahead;
+	const SmpLength lookaheadBufferSize = (MaxSamplingPointSize + 1 + 4 + 4) * InterpolationLookaheadBufferSize;
 
 	if(numSamples == 0 || numSamples > MAX_SAMPLE_LENGTH || lookaheadBufferSize > maxSize - numSamples)
 	{
@@ -262,7 +302,7 @@ void ModSample::FreeSample(void *samplePtr)
 {
 	if(samplePtr)
 	{
-		delete[](((char *)samplePtr) - (InterpolationMaxLookahead * MaxSamplingPointSize));
+		delete[](((char *)samplePtr) - (InterpolationLookaheadBufferSize * MaxSamplingPointSize));
 	}
 }
 
@@ -333,8 +373,8 @@ public:
 	void CopyLoop(bool direction) const
 	{
 		// Direction: true = start reading and writing forward, false = start reading and writing backward (write direction never changes)
-		const int numSamples = 2 * InterpolationMaxLookahead + (direction ? 1 : 0);  // Loop point is included in forward loop expansion
-		T *dest = target + numChannels * (2 * InterpolationMaxLookahead - 1);        // Write buffer offset
+		const int numSamples = 2 * InterpolationLookaheadBufferSize + (direction ? 1 : 0);  // Loop point is included in forward loop expansion
+		T *dest = target + numChannels * (2 * InterpolationLookaheadBufferSize - 1);        // Write buffer offset
 		SmpLength readPosition = loopEnd - 1;
 		const int writeIncrement = direction ? 1 : -1;
 		int readIncrement = writeIncrement;
@@ -385,7 +425,7 @@ template <typename T>
 void PrecomputeLoopsImpl(ModSample &smp, const CSoundFile &sndFile)
 {
 	const int numChannels = smp.GetNumChannels();
-	const int copySamples = numChannels * InterpolationMaxLookahead;
+	const int copySamples = numChannels * InterpolationLookaheadBufferSize;
 
 	T *sampleData = static_cast<T *>(smp.samplev());
 	T *afterSampleStart = sampleData + smp.nLength * numChannels;
@@ -394,7 +434,7 @@ void PrecomputeLoopsImpl(ModSample &smp, const CSoundFile &sndFile)
 
 	// Hold sample on the same level as the last sampling point at the end to prevent extra pops with interpolation.
 	// Do the same at the sample start, too.
-	for(int i = 0; i < (int)InterpolationMaxLookahead; i++)
+	for(int i = 0; i < (int)InterpolationLookaheadBufferSize; i++)
 	{
 		for(int c = 0; c < numChannels; c++)
 		{
@@ -436,13 +476,67 @@ void ModSample::PrecomputeLoops(CSoundFile &sndFile, bool updateChannels)
 	// Update channels with possibly changed loop values
 	if(updateChannels)
 	{
-		ctrlSmp::UpdateLoopPoints(*this, sndFile);
+		UpdateLoopPointsInActiveChannels(sndFile);
 	}
 
 	if(GetElementarySampleSize() == 2)
 		PrecomputeLoopsImpl<int16>(*this, sndFile);
 	else if(GetElementarySampleSize() == 1)
 		PrecomputeLoopsImpl<int8>(*this, sndFile);
+}
+
+
+// Propagate loop point changes to player
+bool ModSample::UpdateLoopPointsInActiveChannels(CSoundFile &sndFile)
+{
+	if(!HasSampleData())
+		return false;
+
+	CriticalSection cs;
+
+	// Update channels with new loop values
+	for(auto &chn : sndFile.m_PlayState.Chn)
+	{
+		if(chn.pModSample != this || chn.nLength == 0)
+			continue;
+
+		bool looped = false, bidi = false;
+		if(nSustainStart < nSustainEnd && nSustainEnd <= nLength && uFlags[CHN_SUSTAINLOOP] && !chn.dwFlags[CHN_KEYOFF])
+		{
+			// Sustain loop is active
+			chn.nLoopStart = nSustainStart;
+			chn.nLoopEnd = nSustainEnd;
+			chn.nLength = nSustainEnd;
+			looped = true;
+			bidi = uFlags[CHN_PINGPONGSUSTAIN];
+		} else if(nLoopStart < nLoopEnd && nLoopEnd <= nLength && uFlags[CHN_LOOP])
+		{
+			// Normal loop is active
+			chn.nLoopStart = nLoopStart;
+			chn.nLoopEnd = nLoopEnd;
+			chn.nLength = nLoopEnd;
+			looped = true;
+			bidi = uFlags[CHN_PINGPONGLOOP];
+		}
+		chn.dwFlags.set(CHN_LOOP, looped);
+		chn.dwFlags.set(CHN_PINGPONGLOOP, looped && bidi);
+
+		if(chn.position.GetUInt() > chn.nLength)
+		{
+			chn.position.Set(chn.nLoopStart);
+			chn.dwFlags.reset(CHN_PINGPONGFLAG);
+		}
+		if(!bidi)
+		{
+			chn.dwFlags.reset(CHN_PINGPONGFLAG);
+		}
+		if(!looped)
+		{
+			chn.nLength = nLength;
+		}
+	}
+
+	return true;
 }
 
 
@@ -479,7 +573,7 @@ void ModSample::TransposeToFrequency()
 }
 
 
-// Return a pair of {tranpose, finetune}
+// Return a pair of {transpose, finetune}
 std::pair<int8, int8> ModSample::FrequencyToTranspose(uint32 freq)
 {
 	if(!freq)
@@ -504,16 +598,30 @@ void ModSample::Transpose(double amount)
 }
 
 
+// Check if the sample has any valid cue points
+bool ModSample::HasAnyCuePoints() const
+{
+	if(uFlags[CHN_ADLIB])
+		return false;
+	for(auto pt : cues)
+	{
+		if(pt < nLength)
+			return true;
+	}
+	return false;
+}
+
+
 // Check if the sample's cue points are the default cue point set.
 bool ModSample::HasCustomCuePoints() const
 {
-	if(!uFlags[CHN_ADLIB])
+	if(uFlags[CHN_ADLIB])
+		return false;
+	for(SmpLength i = 0; i < std::size(cues); i++)
 	{
-		for(SmpLength i = 0; i < std::size(cues); i++)
-		{
-			if(cues[i] != (i + 1) << 11)
-				return true;
-		}
+		const SmpLength defaultValue = (i + 1) << 11;
+		if(cues[i] != defaultValue && (cues[i] < nLength || defaultValue < nLength))
+			return true;
 	}
 	return false;
 }
@@ -527,6 +635,24 @@ void ModSample::SetDefaultCuePoints()
 		cues[i] = (i + 1) << 11;
 	}
 }
+
+
+void ModSample::Set16BitCuePoints()
+{
+	// Cue points that are useful for extending regular offset command
+	for(int i = 0; i < 9; i++)
+	{
+		cues[i] = (i + 1) << 16;
+	}
+}
+
+
+void ModSample::RemoveAllCuePoints()
+{
+	if(!uFlags[CHN_ADLIB])
+		cues.fill(MAX_SAMPLE_LENGTH);
+}
+
 
 void ModSample::SetAdlib(bool enable, OPLPatch patch)
 {
@@ -544,5 +670,6 @@ void ModSample::SetAdlib(bool enable, OPLPatch patch)
 		adlib = patch;
 	}
 }
+
 
 OPENMPT_NAMESPACE_END

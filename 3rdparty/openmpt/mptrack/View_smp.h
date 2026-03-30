@@ -13,6 +13,8 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 #include "Globals.h"
+#include "Moddoc.h"
+#include "TrackerSettings.h"
 #include "../soundlib/modsmp_ctrl.h"
 
 
@@ -26,10 +28,11 @@ class CViewSample: public CModScrollView
 public:
 	enum Flags
 	{
-		SMPSTATUS_MOUSEDRAG		= 0x01,
-		SMPSTATUS_KEYDOWN		= 0x02,
-		SMPSTATUS_NCLBTNDOWN	= 0x04,
-		SMPSTATUS_DRAWING		= 0x08,
+		SMPSTATUS_MOUSEDRAG  = 0x01,
+		SMPSTATUS_KEYDOWN    = 0x02,
+		SMPSTATUS_NCLBTNDOWN = 0x04,
+		SMPSTATUS_DRAWING    = 0x08,
+		SMPSTATUS_MOUSEMOVED = 0x10,
 	};
 
 protected:
@@ -54,8 +57,14 @@ protected:
 		CuePointLast = CuePointFirst + mpt::array_size<decltype(ModSample::cues)>::size - 1,
 	};
 
+	enum class ScrollTarget
+	{
+		Left,
+		Right,
+		Center,
+	};
+
 	std::unique_ptr<OPLInstrDlg> m_oplEditor;
-	CImageList m_bmpEnvBar;
 	CRect m_rcClient;
 	CDC m_offScreenDC, m_waveformDC;
 	CBitmap m_offScreenBitmap, m_waveformBitmap;
@@ -75,7 +84,7 @@ protected:
 	HitTestItem m_dragItem = HitTestItem::Nothing;
 	CPoint m_startDragPoint;
 	SmpLength m_startDragValue = MAX_SAMPLE_LENGTH;
-	bool m_dragPreparedUndo = false, m_forceRedrawWaveform = true;
+	bool m_dragPreparedUndo = false, m_fineDrag = false, m_forceRedrawWaveform = true, m_scrolledSinceLastMouseMove = false;
 
 	// Sample drawing
 	CPoint m_lastDrawPoint;		// For drawing horizontal lines
@@ -93,11 +102,8 @@ public:
 	CViewSample();
 	DECLARE_SERIAL(CViewSample)
 
-	static std::pair<int, int> FindMinMax(const int8 *p, SmpLength numSamples, int numChannels);
-	static std::pair<int, int> FindMinMax(const int16 *p, SmpLength numSamples, int numChannels);
-
 protected:
-	MPT_NOINLINE void SetModified(SampleHint hint, bool updateAll, bool waveformModified);
+	MPT_ATTR_NOINLINE MPT_DECL_NOINLINE void SetModified(SampleHint hint, bool updateAll, bool waveformModified);
 	void UpdateScrollSize() { UpdateScrollSize(m_nZoom, true); }
 	void UpdateScrollSize(int newZoom, bool forceRefresh, SmpLength centeredSample = SmpLength(-1));
 	void UpdateOPLEditor();
@@ -116,8 +122,10 @@ protected:
 	void SetCurSel(SmpLength nBegin, SmpLength nEnd);
 	void ScrollToPosition(int x);
 	void DrawPositionMarks();
-	void DrawSampleData1(HDC hdc, int ymed, int cx, int cy, SmpLength len, SampleFlags uFlags, const void *pSampleData);
-	void DrawSampleData2(HDC hdc, int ymed, int cx, int cy, SmpLength len, SampleFlags uFlags, const void *pSampleData);
+	template <typename Tsample>
+	void DrawSampleData1(HDC hdc, int ymed, int cx, int cy, SmpLength len, SampleFlags uFlags, const Tsample *psample);
+	template <typename Tsample>
+	void DrawSampleData2(HDC hdc, int ymed, int cx, int cy, SmpLength len, SampleFlags uFlags, const Tsample *psample);
 	void DrawNcButton(CDC *pDC, UINT nBtn);
 	bool GetNcButtonRect(UINT button, CRect &rect) const;
 	UINT GetNcButtonAtPoint(CPoint point, CRect *outRect = nullptr) const;
@@ -125,21 +133,21 @@ protected:
 	void DoPaste(PasteMode pasteMode);
 
 	// Sets sample data on sample draw.
-	template<class T, class uT>
+	template<class T>
 	void SetSampleData(ModSample &smp, const CPoint &point, const SmpLength old);
 
 	// Sets initial draw point on sample draw.
-	template<class T, class uT>
+	template<class T>
 	void SetInitialDrawPoint(ModSample &smp, const CPoint &point);
 
 	// Returns sample value corresponding given point in the sample view.
-	template<class T, class uT>
+	template<class T>
 	T GetSampleValueFromPoint(const ModSample &smp, const CPoint &point) const;
 
 	int GetZoomLevel(SmpLength length) const;
 	void DoZoom(int direction, const CPoint &zoomPoint = CPoint(-1, -1));
 	bool CanZoomSelection() const;
-	void ScrollToSample(SmpLength centeredSample, bool refresh = true);
+	void ScrollToSample(SmpLength sample, bool refresh = true, ScrollTarget target = ScrollTarget::Center);
 
 	SmpLength ScrollPosToSamplePos() const {return ScrollPosToSamplePos(m_nZoom);}
 	SmpLength ScrollPosToSamplePos(int nZoom) const;
@@ -151,13 +159,18 @@ protected:
 
 	SmpLength SnapToGrid(const SmpLength pos) const;
 
+	// Returns index of preview channel if exactly one one is being previewed, CHANNELINDEX_INVALID otherwise.
+	CHANNELINDEX GetPreviewChannel() const;
+	
+	void PlayOrSetCuePoint(size_t cue);
+
 public:
 	//{{AFX_VIRTUAL(CViewSample)
 	void OnDraw(CDC *) override;
 	void OnInitialUpdate() override;
 	void UpdateView(UpdateHint hint, CObject *pObj = nullptr) override;
 	LRESULT OnModViewMsg(WPARAM, LPARAM) override;
-	BOOL OnDragonDrop(BOOL, const DRAGONDROP *) override;
+	bool OnDragonDrop(bool doDrop, const DRAGONDROP &dropInfo) override { return GetControlDlg()->OnDragonDrop(doDrop, dropInfo); }
 	LRESULT OnPlayerNotify(Notification *) override;
 	BOOL PreTranslateMessage(MSG *pMsg) override;
 	BOOL OnScrollBy(CSize sizeScroll, BOOL bDoScroll = TRUE) override;
@@ -167,6 +180,7 @@ public:
 protected:
 	//{{AFX_MSG(CViewSample)
 	afx_msg BOOL OnEraseBkgnd(CDC *) { return TRUE; }
+	// cppcheck-suppress duplInheritedMember
 	afx_msg void OnSetFocus(CWnd *pOldWnd);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	afx_msg void OnNcCalcSize(BOOL bCalcValidRects, NCCALCSIZE_PARAMS* lpncsp);
@@ -180,7 +194,7 @@ protected:
 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
-	afx_msg void OnRButtonDown(UINT, CPoint);
+	afx_msg void OnRButtonUp(UINT, CPoint);
 	afx_msg void OnMouseMove(UINT, CPoint);
 	afx_msg BOOL OnSetCursor(CWnd *pWnd, UINT nHitTest, UINT message);
 	afx_msg void OnEditSelectAll();
@@ -208,9 +222,11 @@ protected:
 	afx_msg void OnSetLoopStart();
 	afx_msg void OnSetLoopEnd();
 	afx_msg void OnConvertPingPongLoop();
+	afx_msg void OnConvertNormalLoopToSustain();
 	afx_msg void OnSetSustainStart();
 	afx_msg void OnSetSustainEnd();
 	afx_msg void OnConvertPingPongSustain();
+	afx_msg void OnConvertSustainLoopToNormal();
 	afx_msg void OnSetCuePoint(UINT nID);
 	afx_msg void OnZoomUp();
 	afx_msg void OnZoomDown();
@@ -220,12 +236,17 @@ protected:
 	afx_msg void OnQuickFade();
 	afx_msg LRESULT OnMidiMsg(WPARAM, LPARAM);
 	afx_msg LRESULT OnCustomKeyMsg(WPARAM, LPARAM); //rewbs.customKeys
+	// cppcheck-suppress duplInheritedMember
 	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
 	afx_msg void OnXButtonUp(UINT nFlags, UINT nButton, CPoint point);
 	afx_msg void OnUpdateUndo(CCmdUI *pCmdUI);
 	afx_msg void OnUpdateRedo(CCmdUI *pCmdUI);
-	afx_msg void OnSampleSlice();
+	afx_msg void OnSampleSliceCuePoints();
+	afx_msg void OnSampleSliceGrid();
+	void OnSampleSlice(mpt::span<SmpLength> slicePoints);
+	afx_msg void OnSampleInsertCuePoint();
 	afx_msg void OnSampleDeleteCuePoint();
+	afx_msg void OnSendSelectionToNewSlot();
 	afx_msg void OnTimelineFormatSeconds() { SetTimelineFormat(TimelineFormat::Seconds); }
 	afx_msg void OnTimelineFormatSamples() { SetTimelineFormat(TimelineFormat::Samples); }
 	afx_msg void OnTimelineFormatSamplesPow2() { SetTimelineFormat(TimelineFormat::SamplesPow2); }

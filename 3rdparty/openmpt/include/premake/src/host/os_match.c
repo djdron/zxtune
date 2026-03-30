@@ -1,7 +1,7 @@
 /**
  * \file   os_match.c
  * \brief  Match files and directories.
- * \author Copyright (c) 2002-2014 Jason Perkins and the Premake project
+ * \author Copyright (c) 2002-2014 Jess Perkins and the Premake project
  */
 
 #include <stdlib.h>
@@ -161,9 +161,10 @@ int os_matchisfile(lua_State* L)
 {
 	MatchInfo* m = (MatchInfo*)lua_touserdata(L, 1);
 #if defined(_DIRENT_HAVE_D_TYPE)
-	if (m->entry->d_type != DT_UNKNOWN)
+	// Dirent marks symlinks as DT_LNK, not (DT_LNK|DT_DIR). The fallback handles symlinks using stat.
+	if (m->entry->d_type == DT_DIR)
 	{
-		lua_pushboolean(L, (m->entry->d_type == DT_DIR) == 0);
+		lua_pushboolean(L, 0);
 	}
 	else
 #endif

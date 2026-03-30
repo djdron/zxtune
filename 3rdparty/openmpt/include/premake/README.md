@@ -1,20 +1,17 @@
 <p align="center">
-  <a href="https://premake.github.io/" target="blank"><img src="https://premake.github.io/premake-logo.png" height="200" width="200" alt="Premake" /></a>
+  <a href="https://premake.github.io/" target="blank"><img src="https://premake.github.io/img/premake-logo.png" height="200" width="200" alt="Premake" /></a>
 </p>
 
 <p align="center">
     <img src="https://img.shields.io/github/release/premake/premake-core/all.svg" alt="Latest release" />
     <img src="https://img.shields.io/github/release-date-pre/premake/premake-core.svg" alt="Release date" />
-    <img src="https://img.shields.io/github/commits-since/premake/premake-core/v5.0.0-alpha15.svg" alt="Commits" />
+    <img src="https://img.shields.io/github/commits-since/premake/premake-core/v5.0.0-beta6.svg" alt="Commits" />
     <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">
         <img src="https://img.shields.io/github/license/premake/premake-core" alt="BSD 3-Clause" />
     </a>
     <br/>
-    <a href="https://travis-ci.org/premake/premake-core" target="_blank">
-        <img src="https://img.shields.io/travis/premake/premake-core/master.svg?label=linux" alt="Linux" />
-    </a>
-    <a href="https://ci.appveyor.com/project/PremakeOrganization/premake-core" target="_blank">
-        <img src="https://img.shields.io/appveyor/ci/PremakeOrganization/premake-core?label=windows" alt="Windows" />
+    <a href="https://github.com/premake/premake-core" target="_blank">
+        <img src="https://github.com/premake/premake-core/actions/workflows/ci-workflow.yml/badge.svg?branch=master" alt="master" />
     </a>
     <a href="https://github.com/premake/premake-core/graphs/contributors" target="_blank">
         <img src="https://img.shields.io/github/contributors/premake/premake-core?label=code+contributors" alt="Contributors" />
@@ -52,7 +49,7 @@ project "MyProject"
 
 ## Getting Started
 
-* [Documentation](https://github.com/premake/premake-core/wiki)
+* [Documentation](https://premake.github.io/docs/)
 * [Contributing](https://github.com/premake/premake-core/blob/master/CONTRIBUTING.md)
 * [Issue Tracker](https://github.com/premake/premake-core/issues)
 

@@ -9,18 +9,19 @@
 
 
 #include "stdafx.h"
-#include "resource.h"
 #include "ProgressDialog.h"
 #include "Mptrack.h"
+#include "resource.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-BEGIN_MESSAGE_MAP(CProgressDialog, CDialog)
+BEGIN_MESSAGE_MAP(CProgressDialog, DialogBase)
 	ON_COMMAND(IDC_BUTTON1,	&CProgressDialog::Run)
 END_MESSAGE_MAP()
 
-CProgressDialog::CProgressDialog(CWnd *parent)
-	: CDialog(IDD_PROGRESS, parent)
+CProgressDialog::CProgressDialog(CWnd *parent, UINT resourceID)
+	: DialogBase{resourceID <= 0 ? IDD_PROGRESS : resourceID, parent}
+	, m_customDialog{resourceID > 0}
 { }
 
 CProgressDialog::~CProgressDialog()
@@ -41,8 +42,9 @@ CProgressDialog::~CProgressDialog()
 
 BOOL CProgressDialog::OnInitDialog()
 {
-	CDialog::OnInitDialog();
-	PostMessage(WM_COMMAND, IDC_BUTTON1);
+	DialogBase::OnInitDialog();
+	if(!m_customDialog)
+		PostMessage(WM_COMMAND, IDC_BUTTON1);
 	return TRUE;
 }
 

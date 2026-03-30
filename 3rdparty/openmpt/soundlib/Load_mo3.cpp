@@ -19,6 +19,7 @@
 #include "mpt/io/base.hpp"
 #include "mpt/io/io.hpp"
 #include "mpt/io/io_stdstream.hpp"
+#include "mpt/io_read/filedata_base_unseekable_buffer.hpp"
 
 #include "Tables.h"
 #include "../common/version.h"
@@ -67,26 +68,26 @@ struct MO3FileHeader
 {
 	enum MO3HeaderFlags
 	{
-		linearSlides	= 0x0001,
-		isS3M			= 0x0002,
-		s3mFastSlides	= 0x0004,
-		isMTM			= 0x0008,	// Actually this is simply "not XM". But if none of the S3M, MOD and IT flags are set, it's an MTM.
-		s3mAmigaLimits	= 0x0010,
+		linearSlides   = 0x0001,
+		isS3M          = 0x0002,
+		s3mFastSlides  = 0x0004,
+		isMTM          = 0x0008,  // Actually this is simply "not XM". But if none of the S3M, MOD and IT flags are set, it's an MTM.
+		s3mAmigaLimits = 0x0010,
 		// 0x20 and 0x40 have been used in old versions for things that can be inferred from the file format anyway.
 		// The official UNMO3 ignores them.
-		isMOD			= 0x0080,
-		isIT			= 0x0100,
-		instrumentMode	= 0x0200,
-		itCompatGxx		= 0x0400,
-		itOldFX			= 0x0800,
-		modplugMode		= 0x10000,
-		unknown			= 0x20000,	// Always set (internal BASS flag to designate modules)
-		modVBlank		= 0x80000,
-		hasPlugins		= 0x100000,
-		extFilterRange	= 0x200000,
+		isMOD          = 0x0080,
+		isIT           = 0x0100,
+		instrumentMode = 0x0200,
+		itCompatGxx    = 0x0400,
+		itOldFX        = 0x0800,
+		modplugMode    = 0x10000,
+		unknown        = 0x20000,  // Always set (internal BASS flag to designate modules)
+		modVBlank      = 0x80000,
+		hasPlugins     = 0x100000,
+		extFilterRange = 0x200000,
 	};
 
-	uint8le  numChannels;	// 1...64 (limited by channel panning and volume)
+	uint8le  numChannels;  // 1...64 (limited by channel panning and volume)
 	uint16le numOrders;
 	uint16le restartPos;
 	uint16le numPatterns;
@@ -95,12 +96,12 @@ struct MO3FileHeader
 	uint16le numSamples;
 	uint8le  defaultSpeed;
 	uint8le  defaultTempo;
-	uint32le flags;			// See MO3HeaderFlags
-	uint8le  globalVol;		// 0...128 in IT, 0...64 in S3M
-	uint8le  panSeparation;	// 0...128 in IT
-	int8le   sampleVolume;	// Only used in IT
-	uint8le  chnVolume[64];	// 0...64
-	uint8le  chnPan[64];	// 0...256, 127 = surround
+	uint32le flags;          // See MO3HeaderFlags
+	uint8le  globalVol;      // 0...128 in IT, 0...64 in S3M
+	uint8le  panSeparation;  // 0...128 in IT
+	int8le   sampleVolume;   // Only used in IT
+	uint8le  chnVolume[64];  // 0...64
+	uint8le  chnPan[64];     // 0...256, 127 = surround
 	uint8le  sfxMacros[16];
 	uint8le  fixedMacros[128][2];
 };
@@ -112,14 +113,14 @@ struct MO3Envelope
 {
 	enum MO3EnvelopeFlags
 	{
-		envEnabled	= 0x01,
-		envSustain	= 0x02,
-		envLoop		= 0x04,
-		envFilter	= 0x10,
-		envCarry	= 0x20,
+		envEnabled = 0x01,
+		envSustain = 0x02,
+		envLoop    = 0x04,
+		envFilter  = 0x10,
+		envCarry   = 0x20,
 	};
 
-	uint8le flags;			// See MO3EnvelopeFlags
+	uint8le flags;  // See MO3EnvelopeFlags
 	uint8le numNodes;
 	uint8le sustainStart;
 	uint8le sustainEnd;
@@ -128,7 +129,7 @@ struct MO3Envelope
 	int16le points[25][2];
 
 	// Convert MO3 envelope data into OpenMPT's internal envelope format
-	void ConvertToMPT(InstrumentEnvelope &mptEnv, uint8 envShift) const
+	void ConvertToMPT(InstrumentEnvelope &mptEnv, uint8 envShift, MODTYPE type) const
 	{
 		if(flags & envEnabled) mptEnv.dwFlags.set(ENV_ENABLED);
 		if(flags & envSustain) mptEnv.dwFlags.set(ENV_SUSTAIN);
@@ -137,7 +138,7 @@ struct MO3Envelope
 		if(flags & envCarry) mptEnv.dwFlags.set(ENV_CARRY);
 		mptEnv.resize(std::min(numNodes.get(), uint8(25)));
 		mptEnv.nSustainStart = sustainStart;
-		mptEnv.nSustainEnd = sustainEnd;
+		mptEnv.nSustainEnd = (type == MOD_TYPE_XM) ? sustainStart : sustainEnd;
 		mptEnv.nLoopStart = loopStart;
 		mptEnv.nLoopEnd = loopEnd;
 		for(uint32 ev = 0; ev < mptEnv.size(); ev++)
@@ -157,11 +158,11 @@ struct MO3Instrument
 {
 	enum MO3InstrumentFlags
 	{
-		playOnMIDI  = 0x01,
-		mute		= 0x02,
+		playOnMIDI = 0x01,
+		mute       = 0x02,
 	};
 
-	uint32le flags;		// See MO3InstrumentFlags
+	uint32le flags;  // See MO3InstrumentFlags
 	uint16le sampleMap[120][2];
 	MO3Envelope volEnv;
 	MO3Envelope panEnv;
@@ -172,23 +173,23 @@ struct MO3Instrument
 		uint8le  sweep;
 		uint8le  depth;
 		uint8le  rate;
-	} vibrato;			// Applies to all samples of this instrument (XM)
+	} vibrato;  // Applies to all samples of this instrument (XM)
 	uint16le fadeOut;
 	uint8le  midiChannel;
 	uint8le  midiBank;
 	uint8le  midiPatch;
 	uint8le  midiBend;
-	uint8le  globalVol;	// 0...128
-	uint16le panning;	// 0...256 if enabled, 0xFFFF otherwise
+	uint8le  globalVol;  // 0...128
+	uint16le panning;    // 0...256 if enabled, 0xFFFF otherwise
 	uint8le  nna;
 	uint8le  pps;
 	uint8le  ppc;
 	uint8le  dct;
 	uint8le  dca;
-	uint16le volSwing;	// 0...100
-	uint16le panSwing;	// 0...256
-	uint8le  cutoff;	// 0...127, + 128 if enabled
-	uint8le  resonance;	// 0...127, + 128 if enabled
+	uint16le volSwing;   // 0...100
+	uint16le panSwing;   // 0...256
+	uint8le  cutoff;     // 0...127, + 128 if enabled
+	uint8le  resonance;  // 0...127, + 128 if enabled
 
 	// Convert MO3 instrument data into OpenMPT's internal instrument format
 	void ConvertToMPT(ModInstrument &mptIns, MODTYPE type) const
@@ -207,9 +208,9 @@ struct MO3Instrument
 				mptIns.Keyboard[i] = sampleMap[i][1] + 1;
 			}
 		}
-		volEnv.ConvertToMPT(mptIns.VolEnv, 0);
-		panEnv.ConvertToMPT(mptIns.PanEnv, 0);
-		pitchEnv.ConvertToMPT(mptIns.PitchEnv, 5);
+		volEnv.ConvertToMPT(mptIns.VolEnv, 0, type);
+		panEnv.ConvertToMPT(mptIns.PanEnv, 0, type);
+		pitchEnv.ConvertToMPT(mptIns.PitchEnv, 5, type);
 		mptIns.nFadeOut = fadeOut;
 
 		if(midiChannel >= 128)
@@ -281,34 +282,35 @@ struct MO3Sample
 		smpCompressionMask  = 0x1000 | 0x2000 | 0x4000 | 0x8000
 	};
 
-	int32le  freqFinetune;	// Frequency in S3M and IT, finetune (0...255) in MOD, MTM, XM
+	uint32le freqFinetune;  // Frequency in S3M and IT, finetune (0...255) in MOD, MTM, XM
 	int8le   transpose;
-	uint8le  defaultVolume;	// 0...64
-	uint16le panning;		// 0...256 if enabled, 0xFFFF otherwise
+	uint8le  defaultVolume;  // 0...64
+	uint16le panning;        // 0...256 if enabled, 0xFFFF otherwise
 	uint32le length;
 	uint32le loopStart;
 	uint32le loopEnd;
-	uint16le flags;			// See MO3SampleFlags
+	uint16le flags;  // See MO3SampleFlags
 	uint8le  vibType;
 	uint8le  vibSweep;
 	uint8le  vibDepth;
 	uint8le  vibRate;
-	uint8le  globalVol;		// 0...64 in IT, in XM it represents the instrument number
+	uint8le  globalVol;  // 0...64 in IT, in XM it represents the instrument number
 	uint32le sustainStart;
 	uint32le sustainEnd;
 	int32le  compressedSize;
-	uint16le encoderDelay;	// MP3: Ignore first n bytes of decoded output. Ogg: Shared Ogg header size
+	uint16le encoderDelay;  // MP3: Ignore first n bytes of decoded output. Ogg: Shared Ogg header size
 
 	// Convert MO3 sample data into OpenMPT's internal instrument format
 	void ConvertToMPT(ModSample &mptSmp, MODTYPE type, bool frequencyIsHertz) const
 	{
 		mptSmp.Initialize();
+		mptSmp.SetDefaultCuePoints();
 		if(type & (MOD_TYPE_IT | MOD_TYPE_S3M))
 		{
 			if(frequencyIsHertz)
-				mptSmp.nC5Speed = static_cast<uint32>(freqFinetune);
+				mptSmp.nC5Speed = freqFinetune;
 			else
-				mptSmp.nC5Speed = mpt::saturate_round<uint32>(8363.0 * std::pow(2.0, (freqFinetune + 1408) / 1536.0));
+				mptSmp.nC5Speed = mpt::saturate_round<uint32>(8363.0 * std::pow(2.0, static_cast<int32>(freqFinetune + 1408) / 1536.0));
 		} else
 		{
 			mptSmp.nFineTune = static_cast<int8>(freqFinetune);
@@ -352,13 +354,13 @@ MPT_BINARY_STRUCT(MO3Sample, 41)
 // We need all this information for Ogg-compressed samples with shared headers:
 // A shared header can be taken from a sample that has not been read yet, so
 // we first need to read all headers, and then load the Ogg samples afterwards.
-struct MO3SampleChunk
+struct MO3SampleInfo
 {
 	FileReader chunk;
-	uint16 headerSize;
-	int16 sharedHeader;
-	MO3SampleChunk(const FileReader &chunk_ = FileReader(), uint16 headerSize_ = 0, int16 sharedHeader_ = 0)
-	    : chunk(chunk_), headerSize(headerSize_), sharedHeader(sharedHeader_) {}
+	const MO3Sample smpHeader;
+	const int16 sharedHeader;
+	MO3SampleInfo(MO3Sample smpHeader, int16 sharedHeader)
+		: smpHeader{smpHeader}, sharedHeader{sharedHeader} {}
 };
 
 
@@ -380,7 +382,8 @@ struct MO3SampleChunk
 		if(!file.Read(nextByte)) \
 			break; \
 		data = nextByte; \
-		data = (data << 1) + 1; \
+		data <<= 1; \
+		data += 1; \
 		carry = (data > 0xFF); \
 		data &= 0xFF; \
 	}
@@ -396,105 +399,168 @@ struct MO3SampleChunk
 		do \
 		{ \
 			READ_CTRL_BIT; \
-			strLen = (strLen << 1) + carry; \
+			strLen = mpt::lshift_signed(strLen, 1) + carry; \
 			READ_CTRL_BIT; \
 		} while(carry); \
 	}
 
 
-static bool UnpackMO3Data(FileReader &file, std::vector<uint8> &uncompressed, const uint32 size)
+class MO3FileReaderBuffer final : public mpt::IO::FileDataUnseekableBuffer
 {
-	if(!size)
-		return false;
-
-	uint16 data = 0;
-	int8 carry = 0;    // x86 carry (used to propagate the most significant bit from one byte to another)
-	int32 strLen = 0;  // length of previous string
-	int32 strOffset;   // string offset
-	uint32 previousPtr = 0;
-
-	// Read first uncompressed byte
-	uncompressed.push_back(file.ReadUint8());
-	uint32 remain = size - 1;
-
-	while(remain > 0)
+public:
+	MO3FileReaderBuffer(const FileReader &file, uint32 targetSize, uint32 suggestedReserveSize)
+		: file{file}
+		, m_suggestedReserveSize{suggestedReserveSize}
+		, m_targetSize{targetSize}
+		, m_totalRemain{targetSize}
 	{
-		READ_CTRL_BIT;
-		if(!carry)
+	}
+
+	bool UnpackedSuccessfully() const
+	{
+		return !m_totalRemain && !m_broken;
+	}
+
+	auto SourcePosition() const
+	{
+		return file.GetPosition();
+	}
+
+protected:
+	bool InternalEof() const override
+	{
+		return !m_totalRemain || m_broken;
+	}
+
+	void InternalReadContinue(std::vector<std::byte> &streamCache, std::size_t suggestedCount) const override
+	{
+		if(!suggestedCount|| !m_targetSize || m_broken)
+			return;
+
+		uint32 remain = std::min(m_totalRemain, mpt::saturate_cast<uint32>(suggestedCount));
+
+		if(streamCache.empty())
 		{
-			// a 0 ctrl bit means 'copy', not compressed byte
-			if(uint8 b; file.Read(b))
-				uncompressed.push_back(b);
-			else
-				break;
+			// Fist byte is always read verbatim
+			streamCache.reserve(std::min(m_targetSize, m_suggestedReserveSize));
+			streamCache.push_back(mpt::byte_cast<std::byte>(file.ReadUint8()));
+			m_totalRemain--;
 			remain--;
-		} else
+		}
+
+		int32 strLen = m_strLen;
+		if(strLen)
 		{
-			// a 1 ctrl bit means compressed bytes are following
-			uint8 lengthAdjust = 0;  // length adjustment
-			DECODE_CTRL_BITS;        // read length, and if strLen > 3 (coded using more than 1 bits pair) also part of the offset value
-			strLen -= 3;
-			if(strLen < 0)
-			{
-				// means LZ ptr with same previous relative LZ ptr (saved one)
-				strOffset = previousPtr;  // restore previous Ptr
-				strLen++;
-			} else
-			{
-				// LZ ptr in ctrl stream
-				if(uint8 b; file.Read(b))
-					strOffset = (strLen << 8) | b;  // read less significant offset byte from stream
-				else
-					break;
-				strLen = 0;
-				strOffset = ~strOffset;
-				if(strOffset < -1280)
-					lengthAdjust++;
-				lengthAdjust++;  // length is always at least 1
-				if(strOffset < -32000)
-					lengthAdjust++;
-				previousPtr = strOffset;  // save current Ptr
-			}
-
-			// read the next 2 bits as part of strLen
-			READ_CTRL_BIT;
-			strLen = (strLen << 1) + carry;
-			READ_CTRL_BIT;
-			strLen = (strLen << 1) + carry;
-			if(strLen == 0)
-			{
-				// length does not fit in 2 bits
-				DECODE_CTRL_BITS;  // decode length: 1 is the most significant bit,
-				strLen += 2;       // then first bit of each bits pairs (noted n1), until n0.
-			}
-			strLen += lengthAdjust;  // length adjustment
-
-			if(remain < static_cast<uint32>(strLen) || strLen <= 0)
-				break;
-			if(strOffset >= 0 || -static_cast<ptrdiff_t>(uncompressed.size()) > strOffset)
-				break;
-
-			// Copy previous string
-			// Need to do this in two steps as source and destination may overlap (e.g. strOffset = -1, strLen = 2 repeats last character twice)
-			uncompressed.insert(uncompressed.end(), strLen, 0);
-			remain -= strLen;
-			auto src = uncompressed.cend() - strLen + strOffset;
-			auto dst = uncompressed.end() - strLen;
+			// Previous string copy is still in progress
+			uint32 copyLen = std::min(static_cast<uint32>(strLen), remain);
+			m_totalRemain -= copyLen;
+			remain -= copyLen;
+			strLen -= copyLen;
+			streamCache.insert(streamCache.end(), copyLen, std::byte{});
+			auto src = streamCache.cend() - copyLen + m_strOffset;
+			auto dst = streamCache.end() - copyLen;
 			do
 			{
-				strLen--;
+				copyLen--;
 				*dst++ = *src++;
-			} while(strLen > 0);
+			} while(copyLen > 0);
 		}
+		
+		uint16 data = m_data;
+		int8 carry = 0;  // x86 carry (used to propagate the most significant bit from one byte to another)
+		while(remain)
+		{
+			READ_CTRL_BIT;
+			if(!carry)
+			{
+				// a 0 ctrl bit means 'copy', not compressed byte
+				if(std::byte b; file.Read(b))
+					streamCache.push_back(b);
+				else
+					break;
+				m_totalRemain--;
+				remain--;
+			} else
+			{
+				// a 1 ctrl bit means compressed bytes are following
+				uint8 lengthAdjust = 0;  // length adjustment
+				DECODE_CTRL_BITS;        // read length, and if strLen > 3 (coded using more than 1 bits pair) also part of the offset value
+				strLen -= 3;
+				if(strLen < 0)
+				{
+					// reuse same previous relative LZ ptr (m_strOffset is not re-computed)
+					strLen++;
+				} else
+				{
+					// LZ ptr in ctrl stream
+					if(uint8 b; file.Read(b))
+						m_strOffset = mpt::lshift_signed(strLen, 8) | b;  // read less significant offset byte from stream
+					else
+						break;
+					strLen = 0;
+					m_strOffset = ~m_strOffset;
+					if(m_strOffset < -1280)
+						lengthAdjust++;
+					lengthAdjust++;  // length is always at least 1
+					if(m_strOffset < -32000)
+						lengthAdjust++;
+				}
+				if(m_strOffset >= 0 || -static_cast<ptrdiff_t>(streamCache.size()) > m_strOffset)
+					break;
+
+				// read the next 2 bits as part of strLen
+				READ_CTRL_BIT;
+				strLen = mpt::lshift_signed(strLen, 1) + carry;
+				READ_CTRL_BIT;
+				strLen = mpt::lshift_signed(strLen, 1) + carry;
+				if(strLen == 0)
+				{
+					// length does not fit in 2 bits
+					DECODE_CTRL_BITS;  // decode length: 1 is the most significant bit,
+					strLen += 2;       // then first bit of each bits pairs (noted n1), until n0.
+				}
+				strLen += lengthAdjust;  // length adjustment
+
+				if(strLen <= 0 || m_totalRemain < static_cast<uint32>(strLen))
+					break;
+
+				// Copy previous string
+				// Need to do this in two steps (allocate, then copy) as source and destination may overlap (e.g. strOffset = -1, strLen = 2 repeats last character twice)
+				uint32 copyLen = std::min(static_cast<uint32>(strLen), remain);
+				m_totalRemain -= copyLen;
+				remain -= copyLen;
+				strLen -= copyLen;
+				streamCache.insert(streamCache.end(), copyLen, std::byte{});
+				auto src = streamCache.cend() - copyLen + m_strOffset;
+				auto dst = streamCache.end() - copyLen;
+				do
+				{
+					copyLen--;
+					*dst++ = *src++;
+				} while(copyLen > 0);
+			}
+		}
+		m_data = data;
+		m_strLen = strLen;
+		// Premature EOF or corrupted stream?
+		if(remain)
+			m_broken = true;
 	}
-#ifdef MPT_BUILD_FUZZER
-	// When using a fuzzer, we should not care if the decompressed buffer has the correct size.
-	// This makes finding new interesting test cases much easier.
-	return true;
-#else
-	return remain == 0;
-#endif // MPT_BUILD_FUZZER
-}
+
+	bool HasPinnedView() const override
+	{
+		return false;
+	}
+
+	mutable FileReader file;
+	const uint32 m_suggestedReserveSize;
+	const uint32 m_targetSize;
+	mutable bool m_broken = false;
+	mutable uint16 m_data = 0;
+	mutable int32 m_strLen = 0;     // Length of repeated string
+	mutable int32 m_strOffset = 0;  // Offset of repeated string
+	mutable uint32 m_totalRemain = 0;
+};
 
 
 struct MO3Delta8BitParams
@@ -509,7 +575,7 @@ struct MO3Delta8BitParams
 		do
 		{
 			READ_CTRL_BIT;
-			val = (val << 1) + carry;
+			val = static_cast<unsigned_t>((val << 1) + carry);
 			READ_CTRL_BIT;
 		} while(carry);
 	}
@@ -529,9 +595,9 @@ struct MO3Delta16BitParams
 			do
 			{
 				READ_CTRL_BIT;
-				val = (val << 1) + carry;
+				val = static_cast<unsigned_t>((val << 1) + carry);
 				READ_CTRL_BIT;
-				val = (val << 1) + carry;
+				val = static_cast<unsigned_t>((val << 1) + carry);
 				READ_CTRL_BIT;
 			} while(carry);
 		} else
@@ -539,7 +605,7 @@ struct MO3Delta16BitParams
 			do
 			{
 				READ_CTRL_BIT;
-				val = (val << 1) + carry;
+				val = static_cast<unsigned_t>((val << 1) + carry);
 				READ_CTRL_BIT;
 			} while(carry);
 		}
@@ -568,7 +634,7 @@ static void UnpackMO3DeltaSample(FileReader &file, typename Properties::sample_t
 			while(cl > 0)
 			{
 				READ_CTRL_BIT;
-				val = (val << 1) + carry;
+				val = static_cast<typename Properties::unsigned_t>((val << 1) + carry);
 				cl--;
 			}
 			cl = 1;
@@ -584,7 +650,7 @@ static void UnpackMO3DeltaSample(FileReader &file, typename Properties::sample_t
 			val >>= 1;
 			if(carry == 0)
 				val = ~val;   // negative delta
-			val += previous;  // previous value + delta
+			val = static_cast<typename Properties::unsigned_t>(val + previous);  // previous value + delta
 			*p = val;
 			p += numChannels;
 			previous = val;
@@ -615,7 +681,7 @@ static void UnpackMO3DeltaPredictionSample(FileReader &file, typename Properties
 			while(cl > 0)
 			{
 				READ_CTRL_BIT;
-				val = (val << 1) + carry;
+				val = static_cast<typename Properties::unsigned_t>((val << 1) + carry);
 				cl--;
 			}
 			cl = 1;
@@ -655,21 +721,21 @@ static void UnpackMO3DeltaPredictionSample(FileReader &file, typename Properties
 
 static size_t VorbisfileFilereaderRead(void *ptr, size_t size, size_t nmemb, void *datasource)
 {
-	FileReader &file = *reinterpret_cast<FileReader *>(datasource);
+	FileReader &file = *mpt::void_ptr<FileReader>(datasource);
 	return file.ReadRaw(mpt::span(mpt::void_cast<std::byte *>(ptr), size * nmemb)).size() / size;
 }
 
 static int VorbisfileFilereaderSeek(void *datasource, ogg_int64_t offset, int whence)
 {
-	FileReader &file = *reinterpret_cast<FileReader *>(datasource);
+	FileReader &file = *mpt::void_ptr<FileReader>(datasource);
 	switch(whence)
 	{
 	case SEEK_SET:
-		if(!mpt::in_range<FileReader::off_t>(offset))
+		if(!mpt::in_range<FileReader::pos_type>(offset))
 		{
 			return -1;
 		}
-		return file.Seek(mpt::saturate_cast<FileReader::off_t>(offset)) ? 0 : -1;
+		return file.Seek(mpt::saturate_cast<FileReader::pos_type>(offset)) ? 0 : -1;
 
 	case SEEK_CUR:
 		if(offset < 0)
@@ -678,31 +744,31 @@ static int VorbisfileFilereaderSeek(void *datasource, ogg_int64_t offset, int wh
 			{
 				return -1;
 			}
-			if(!mpt::in_range<FileReader::off_t>(0 - offset))
+			if(!mpt::in_range<FileReader::pos_type>(0 - offset))
 			{
 				return -1;
 			}
-			return file.SkipBack(mpt::saturate_cast<FileReader::off_t>(0 - offset)) ? 0 : -1;
+			return file.SkipBack(mpt::saturate_cast<FileReader::pos_type>(0 - offset)) ? 0 : -1;
 		} else
 		{
-			if(!mpt::in_range<FileReader::off_t>(offset))
+			if(!mpt::in_range<FileReader::pos_type>(offset))
 			{
 				return -1;
 			}
-			return file.Skip(mpt::saturate_cast<FileReader::off_t>(offset)) ? 0 : -1;
+			return file.Skip(mpt::saturate_cast<FileReader::pos_type>(offset)) ? 0 : -1;
 		}
 		break;
 
 	case SEEK_END:
-		if(!mpt::in_range<FileReader::off_t>(offset))
+		if(!mpt::in_range<FileReader::pos_type>(offset))
 		{
 			return -1;
 		}
-		if(!mpt::in_range<FileReader::off_t>(file.GetLength() + offset))
+		if(!mpt::in_range<FileReader::pos_type>(file.GetLength() + offset))
 		{
 			return -1;
 		}
-		return file.Seek(mpt::saturate_cast<FileReader::off_t>(file.GetLength() + offset)) ? 0 : -1;
+		return file.Seek(mpt::saturate_cast<FileReader::pos_type>(file.GetLength() + offset)) ? 0 : -1;
 
 	default:
 		return -1;
@@ -711,8 +777,8 @@ static int VorbisfileFilereaderSeek(void *datasource, ogg_int64_t offset, int wh
 
 static long VorbisfileFilereaderTell(void *datasource)
 {
-	FileReader &file = *reinterpret_cast<FileReader *>(datasource);
-	FileReader::off_t result = file.GetPosition();
+	FileReader &file = *mpt::void_ptr<FileReader>(datasource);
+	FileReader::pos_type result = file.GetPosition();
 	if(!mpt::in_range<long>(result))
 	{
 		return -1;
@@ -725,7 +791,7 @@ static long VorbisfileFilereaderTell(void *datasource)
 
 struct MO3ContainerHeader
 {
-	char     magic[3];   // MO3
+	char     magic[3];  // MO3
 	uint8le  version;
 	uint32le musicSize;
 };
@@ -739,7 +805,9 @@ static bool ValidateHeader(const MO3ContainerHeader &containerHeader)
 	{
 		return false;
 	}
-	if(containerHeader.musicSize <= sizeof(MO3FileHeader) || containerHeader.musicSize >= uint32_max / 2u)
+	// Due to the LZ algorithm's unbounded back window, we could reach gigantic sizes with just a few dozen bytes.
+	// 512 MB of music data (not samples) is chosen as a safeguard that is probably (hopefully) *way* beyond anything a real-world module will ever reach.
+	if(containerHeader.musicSize <= sizeof(MO3FileHeader) || containerHeader.musicSize >= 0x2000'0000)
 	{
 		return false;
 	}
@@ -798,54 +866,45 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 		reserveSize = std::min(Util::MaxValueOfType(reserveSize) / 32u, compressedSize) * 32u;
 	}
 
-	std::vector<uint8> musicData;
-	// We don't always reserve the whole uncompressed size as claimed by the module to guard against broken files
-	// that e.g. claim that the uncompressed size is 1GB while the MO3 file itself is only 100 bytes.
-	// As the LZ compression used in MO3 doesn't allow for establishing a clear upper bound for the maximum size,
-	// this is probably the only sensible way we can prevent DoS due to huge allocations.
-	musicData.reserve(std::min(reserveSize, containerHeader.musicSize.get()));
-	if(!UnpackMO3Data(file, musicData, containerHeader.musicSize))
-	{
-		return false;
-	}
-	if(version >= 5)
-	{
-		file.Seek(12 + compressedSize);
-	}
+	std::shared_ptr<mpt::PathString> filenamePtr;
+	if(auto filename = file.GetOptionalFileName(); filename)
+		filenamePtr = std::make_shared<mpt::PathString>(std::move(*filename));
+	auto musicChunkData = std::make_shared<MO3FileReaderBuffer>(file, containerHeader.musicSize, reserveSize);
+	mpt::IO::FileCursor<mpt::IO::FileCursorTraitsFileData, mpt::IO::FileCursorFilenameTraits<mpt::PathString>> fileCursor{musicChunkData, std::move(filenamePtr)};
+	FileReader musicChunk{fileCursor};
 
-	InitializeGlobals();
-	InitializeChannels();
-
-	FileReader musicChunk(mpt::as_span(musicData));
-	musicChunk.ReadNullString(m_songName);
-	musicChunk.ReadNullString(m_songMessage);
+	std::string songName, songMessage;
+	musicChunk.ReadNullString(songName);
+	musicChunk.ReadNullString(songMessage);
 
 	MO3FileHeader fileHeader;
 	if(!musicChunk.ReadStruct(fileHeader)
 	   || fileHeader.numChannels == 0 || fileHeader.numChannels > MAX_BASECHANNELS
+	   || fileHeader.restartPos > fileHeader.numOrders
 	   || fileHeader.numInstruments >= MAX_INSTRUMENTS
 	   || fileHeader.numSamples >= MAX_SAMPLES)
 	{
 		return false;
 	}
 
-	m_nChannels = fileHeader.numChannels;
+	MODTYPE modType = MOD_TYPE_XM;
+	if(fileHeader.flags & MO3FileHeader::isIT)
+		modType = MOD_TYPE_IT;
+	else if(fileHeader.flags & MO3FileHeader::isS3M)
+		modType = MOD_TYPE_S3M;
+	else if(fileHeader.flags & MO3FileHeader::isMOD)
+		modType = MOD_TYPE_MOD;
+	else if(fileHeader.flags & MO3FileHeader::isMTM)
+		modType = MOD_TYPE_MTM;
+
+	InitializeGlobals(modType, fileHeader.numChannels);
 	Order().SetRestartPos(fileHeader.restartPos);
 	m_nInstruments = fileHeader.numInstruments;
 	m_nSamples = fileHeader.numSamples;
-	m_nDefaultSpeed = fileHeader.defaultSpeed ? fileHeader.defaultSpeed : 6;
-	m_nDefaultTempo.Set(fileHeader.defaultTempo ? fileHeader.defaultTempo : 125, 0);
-
-	if(fileHeader.flags & MO3FileHeader::isIT)
-		SetType(MOD_TYPE_IT);
-	else if(fileHeader.flags & MO3FileHeader::isS3M)
-		SetType(MOD_TYPE_S3M);
-	else if(fileHeader.flags & MO3FileHeader::isMOD)
-		SetType(MOD_TYPE_MOD);
-	else if(fileHeader.flags & MO3FileHeader::isMTM)
-		SetType(MOD_TYPE_MTM);
-	else
-		SetType(MOD_TYPE_XM);
+	Order().SetDefaultSpeed(fileHeader.defaultSpeed ? fileHeader.defaultSpeed : 6);
+	Order().SetDefaultTempoInt(fileHeader.defaultTempo ? fileHeader.defaultTempo : 125);
+	m_songName = std::move(songName);
+	m_songMessage.SetRaw(std::move(songMessage));
 
 	m_SongFlags.set(SONG_IMPORTED);
 	if(fileHeader.flags & MO3FileHeader::linearSlides)
@@ -867,6 +926,8 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 		m_nDefaultGlobalVolume = std::min(fileHeader.globalVol.get(), uint8(128)) * 2;
 	else if(m_nType == MOD_TYPE_S3M)
 		m_nDefaultGlobalVolume = std::min(fileHeader.globalVol.get(), uint8(64)) * 4;
+	else if(m_nType == MOD_TYPE_MOD)
+		m_SongFlags.set(SONG_FORMAT_NO_VOLCOL);
 
 	if(fileHeader.sampleVolume < 0)
 		m_nSamplePreAmp = fileHeader.sampleVolume + 52;
@@ -874,7 +935,7 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 		m_nSamplePreAmp = static_cast<uint32>(std::exp(fileHeader.sampleVolume * 3.1 / 20.0)) + 51;
 
 	// Header only has room for 64 channels, like in IT
-	const CHANNELINDEX headerChannels = std::min(m_nChannels, CHANNELINDEX(64));
+	const CHANNELINDEX headerChannels = std::min(GetNumChannels(), CHANNELINDEX(64));
 	for(CHANNELINDEX i = 0; i < headerChannels; i++)
 	{
 		if(m_nType == MOD_TYPE_IT)
@@ -907,20 +968,21 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 		for(uint32 i = 0; i < 16; i++)
 		{
 			if(fileHeader.sfxMacros[i])
-				mpt::String::WriteAutoBuf(m_MidiCfg.szMidiSFXExt[i]) = MPT_AFORMAT("F0F0{}z")(mpt::afmt::HEX0<2>(fileHeader.sfxMacros[i] - 1));
+				m_MidiCfg.SFx[i] = MPT_AFORMAT("F0F0{}z")(mpt::afmt::HEX0<2>(fileHeader.sfxMacros[i] - 1));
 			else
-				mpt::String::WriteAutoBuf(m_MidiCfg.szMidiSFXExt[i]) = "";
+				m_MidiCfg.SFx[i] = "";
 		}
 		for(uint32 i = 0; i < 128; i++)
 		{
 			if(fileHeader.fixedMacros[i][1])
-				mpt::String::WriteAutoBuf(m_MidiCfg.szMidiZXXExt[i]) = MPT_AFORMAT("F0F0{}{}")(mpt::afmt::HEX0<2>(fileHeader.fixedMacros[i][1] - 1), mpt::afmt::HEX0<2>(fileHeader.fixedMacros[i][0].get()));
+				m_MidiCfg.Zxx[i] = MPT_AFORMAT("F0F0{}{}")(mpt::afmt::HEX0<2>(fileHeader.fixedMacros[i][1] - 1), mpt::afmt::HEX0<2>(fileHeader.fixedMacros[i][0].get()));
 			else
-				mpt::String::WriteAutoBuf(m_MidiCfg.szMidiZXXExt[i]) = "";
+				m_MidiCfg.Zxx[i] = "";
 		}
 	}
 
-	ReadOrderFromFile<uint8>(Order(), musicChunk, fileHeader.numOrders, 0xFF, 0xFE);
+	const bool hasOrderSeparators = !(m_nType & (MOD_TYPE_MOD | MOD_TYPE_XM));
+	ReadOrderFromFile<uint8>(Order(), musicChunk, fileHeader.numOrders, hasOrderSeparators ? 0xFF : uint16_max, hasOrderSeparators ? 0xFE : uint16_max);
 
 	// Track assignments for all patterns
 	FileReader trackChunk = musicChunk.ReadChunk(fileHeader.numPatterns * fileHeader.numChannels * sizeof(uint16));
@@ -930,6 +992,10 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 	for(auto &track : tracks)
 	{
 		uint32 len = musicChunk.ReadUint32LE();
+		// A pattern can be at most 65535 rows long, one row can contain at most 15 events (with the status bytes, that 31 bytes per row).
+		// Leaving some margin for error, that gives us an upper limit of 2MB per track.
+		if(len >= 0x20'0000)
+			return false;
 		track = musicChunk.ReadChunk(len);
 	}
 
@@ -990,28 +1056,31 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 	35 = CMD_XPARAM (IT)
 	36 = CMD_SMOOTHMIDI (IT)
 	37 = CMD_DELAYCUT (IT)
+	38 = CMD_FINETUNE (MPTM)
+	39 = CMD_FINETUNE_SMOOTH (MPTM)
 
 	Note: S3M/IT CMD_TONEPORTAVOL / CMD_VIBRATOVOL are encoded as two commands:
 	K= 07 00 22 x
 	L= 06 00 22 x
 	*/
 
-	static constexpr ModCommand::COMMAND effTrans[] =
+	static constexpr EffectCommand effTrans[] =
 	{
-		CMD_NONE,				CMD_NONE,				CMD_NONE,				CMD_ARPEGGIO,
-		CMD_PORTAMENTOUP,		CMD_PORTAMENTODOWN,		CMD_TONEPORTAMENTO,		CMD_VIBRATO,
-		CMD_TONEPORTAVOL,		CMD_VIBRATOVOL,			CMD_TREMOLO,			CMD_PANNING8,
-		CMD_OFFSET,				CMD_VOLUMESLIDE,		CMD_POSITIONJUMP,		CMD_VOLUME,
-		CMD_PATTERNBREAK,		CMD_MODCMDEX,			CMD_TEMPO,				CMD_TREMOR,
-		VOLCMD_VOLSLIDEUP,		VOLCMD_FINEVOLUP,		CMD_GLOBALVOLUME,		CMD_GLOBALVOLSLIDE,
-		CMD_KEYOFF,				CMD_SETENVPOSITION,		CMD_PANNINGSLIDE,		VOLCMD_PANSLIDELEFT,
-		CMD_RETRIG,				CMD_XFINEPORTAUPDOWN,	CMD_XFINEPORTAUPDOWN,	VOLCMD_VIBRATOSPEED,
-		VOLCMD_VIBRATODEPTH,	CMD_SPEED,				CMD_VOLUMESLIDE,		CMD_PORTAMENTODOWN,
-		CMD_PORTAMENTOUP,		CMD_TREMOR,				CMD_RETRIG,				CMD_FINEVIBRATO,
-		CMD_CHANNELVOLUME,		CMD_CHANNELVOLSLIDE,	CMD_PANNINGSLIDE,		CMD_S3MCMDEX,
-		CMD_TEMPO,				CMD_GLOBALVOLSLIDE,		CMD_PANBRELLO,			CMD_MIDI,
-		VOLCMD_FINEVOLUP,		VOLCMD_PORTADOWN,		VOLCMD_PORTAUP,			CMD_NONE,
-		VOLCMD_OFFSET,			CMD_XPARAM,				CMD_SMOOTHMIDI,			CMD_DELAYCUT
+		CMD_NONE,               CMD_NONE,               CMD_NONE,               CMD_ARPEGGIO,
+		CMD_PORTAMENTOUP,       CMD_PORTAMENTODOWN,     CMD_TONEPORTAMENTO,     CMD_VIBRATO,
+		CMD_TONEPORTAVOL,       CMD_VIBRATOVOL,         CMD_TREMOLO,            CMD_PANNING8,
+		CMD_OFFSET,             CMD_VOLUMESLIDE,        CMD_POSITIONJUMP,       CMD_VOLUME,
+		CMD_PATTERNBREAK,       CMD_MODCMDEX,           CMD_TEMPO,              CMD_TREMOR,
+		CMD_NONE,/*VolSlideUp*/ CMD_NONE,/*VolSlideDn*/ CMD_GLOBALVOLUME,       CMD_GLOBALVOLSLIDE,
+		CMD_KEYOFF,             CMD_SETENVPOSITION,     CMD_PANNINGSLIDE,       CMD_NONE,/*PanSlide*/
+		CMD_RETRIG,             CMD_XFINEPORTAUPDOWN,   CMD_XFINEPORTAUPDOWN,   CMD_NONE,/*VibSpeed*/
+		CMD_NONE,/*VibDepth*/   CMD_SPEED,              CMD_VOLUMESLIDE,        CMD_PORTAMENTODOWN,
+		CMD_PORTAMENTOUP,       CMD_TREMOR,             CMD_RETRIG,             CMD_FINEVIBRATO,
+		CMD_CHANNELVOLUME,      CMD_CHANNELVOLSLIDE,    CMD_PANNINGSLIDE,       CMD_S3MCMDEX,
+		CMD_TEMPO,              CMD_GLOBALVOLSLIDE,     CMD_PANBRELLO,          CMD_MIDI,
+		CMD_NONE,/*FineVolSld*/ CMD_NONE,/*PortaDown*/  CMD_NONE, /*PortaUp*/   CMD_DUMMY,
+		CMD_NONE,/*ITVolCol*/   CMD_XPARAM,             CMD_SMOOTHMIDI,         CMD_DELAYCUT,
+		CMD_FINETUNE,           CMD_FINETUNE_SMOOTH,
 	};
 
 	uint8 noteOffset = NOTE_MIN;
@@ -1045,11 +1114,10 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 					break;
 
 				const uint8 numCommands = (b & 0x0F), rep = (b >> 4);
-				ModCommand m = ModCommand::Empty();
+				ModCommand m;
 				for(uint8 c = 0; c < numCommands; c++)
 				{
-					uint8 cmd[2];
-					track.ReadArray(cmd);
+					const auto cmd = track.ReadArray<uint8, 2>();
 
 					// Import pattern commands
 					switch(cmd[0])
@@ -1076,8 +1144,7 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 						// Tone portamento
 						if(m.volcmd == VOLCMD_NONE && m_nType == MOD_TYPE_XM && !(cmd[1] & 0x0F))
 						{
-							m.volcmd = VOLCMD_TONEPORTAMENTO;
-							m.vol = cmd[1] >> 4;
+							m.SetVolumeCommand(VOLCMD_TONEPORTAMENTO, cmd[1] >> 4);
 							break;
 						} else if(m.volcmd == VOLCMD_NONE && m_nType == MOD_TYPE_IT)
 						{
@@ -1085,27 +1152,23 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 							{
 								if(ImpulseTrackerPortaVolCmd[i] == cmd[1])
 								{
-									m.volcmd = VOLCMD_TONEPORTAMENTO;
-									m.vol = i;
+									m.SetVolumeCommand(VOLCMD_TONEPORTAMENTO, i);
 									break;
 								}
 							}
 							if(m.volcmd != VOLCMD_NONE)
 								break;
 						}
-						m.command = CMD_TONEPORTAMENTO;
-						m.param = cmd[1];
+						m.SetEffectCommand(CMD_TONEPORTAMENTO, cmd[1]);
 						break;
 					case 0x07:
 						// Vibrato
 						if(m.volcmd == VOLCMD_NONE && cmd[1] < 10 && m_nType == MOD_TYPE_IT)
 						{
-							m.volcmd = VOLCMD_VIBRATODEPTH;
-							m.vol = cmd[1];
+							m.SetVolumeCommand(VOLCMD_VIBRATODEPTH, cmd[1]);
 						} else
 						{
-							m.command = CMD_VIBRATO;
-							m.param = cmd[1];
+							m.SetEffectCommand(CMD_VIBRATO, cmd[1]);
 						}
 						break;
 					case 0x0B:
@@ -1114,88 +1177,65 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 						{
 							if(m_nType == MOD_TYPE_IT && cmd[1] == 0xFF)
 							{
-								m.volcmd = VOLCMD_PANNING;
-								m.vol = 64;
+								m.SetVolumeCommand(VOLCMD_PANNING, 64);
 								break;
 							}
 							if((m_nType == MOD_TYPE_IT && !(cmd[1] & 0x03))
 							   || (m_nType == MOD_TYPE_XM && !(cmd[1] & 0x0F)))
 							{
-								m.volcmd = VOLCMD_PANNING;
-								m.vol = cmd[1] / 4;
+								m.SetVolumeCommand(VOLCMD_PANNING, cmd[1] / 4);
 								break;
 							}
 						}
-						m.command = CMD_PANNING8;
-						m.param = cmd[1];
+						m.SetEffectCommand(CMD_PANNING8, cmd[1]);
 						break;
 					case 0x0F:
 						// Volume
 						if(m_nType != MOD_TYPE_MOD && m.volcmd == VOLCMD_NONE && cmd[1] <= 64)
-						{
-							m.volcmd = VOLCMD_VOLUME;
-							m.vol = cmd[1];
-						} else
-						{
-							m.command = CMD_VOLUME;
-							m.param = cmd[1];
-						}
+							m.SetVolumeCommand(VOLCMD_VOLUME, cmd[1]);
+						else
+							m.SetEffectCommand(CMD_VOLUME, cmd[1]);
 						break;
 					case 0x10:
 						// Pattern break
-						m.command = CMD_PATTERNBREAK;
-						m.param = cmd[1];
+						m.SetEffectCommand(CMD_PATTERNBREAK, cmd[1]);
 						if(m_nType != MOD_TYPE_IT)
-							m.param = ((m.param >> 4) * 10) + (m.param & 0x0F);
+							m.param = static_cast<ModCommand::PARAM>(((m.param >> 4) * 10) + (m.param & 0x0F));
 						break;
 					case 0x12:
 						// Combined Tempo / Speed command
-						m.param = cmd[1];
-						if(m.param < 0x20)
-							m.command = CMD_SPEED;
-						else
-							m.command = CMD_TEMPO;
+						m.SetEffectCommand((cmd[1] < 0x20) ? CMD_SPEED : CMD_TEMPO, cmd[1]);
 						break;
 					case 0x14:
 					case 0x15:
 						// XM volume column volume slides
 						if(cmd[1] & 0xF0)
 						{
-							m.volcmd = static_cast<ModCommand::VOLCMD>((cmd[0] == 0x14) ? VOLCMD_VOLSLIDEUP : VOLCMD_FINEVOLUP);
-							m.vol = cmd[1] >> 4;
+							m.SetVolumeCommand((cmd[0] == 0x14) ? VOLCMD_VOLSLIDEUP : VOLCMD_FINEVOLUP, cmd[1] >> 4);
 						} else
 						{
-							m.volcmd = static_cast<ModCommand::VOLCMD>((cmd[0] == 0x14) ? VOLCMD_VOLSLIDEDOWN : VOLCMD_FINEVOLDOWN);
-							m.vol = cmd[1] & 0x0F;
+							m.SetVolumeCommand((cmd[0] == 0x14) ? VOLCMD_VOLSLIDEDOWN : VOLCMD_FINEVOLDOWN, cmd[1] & 0x0F);
 						}
 						break;
 					case 0x1B:
 						// XM volume column panning slides
 						if(cmd[1] & 0xF0)
-						{
-							m.volcmd = VOLCMD_PANSLIDERIGHT;
-							m.vol = cmd[1] >> 4;
-						} else
-						{
-							m.volcmd = VOLCMD_PANSLIDELEFT;
-							m.vol = cmd[1] & 0x0F;
-						}
+							m.SetVolumeCommand(VOLCMD_PANSLIDERIGHT, cmd[1] >> 4);
+						else
+							m.SetVolumeCommand(VOLCMD_PANSLIDELEFT, cmd[1] & 0x0F);
 						break;
 					case 0x1D:
 						// XM extra fine porta up
-						m.command = CMD_XFINEPORTAUPDOWN;
-						m.param = 0x10 | cmd[1];
+						m.SetEffectCommand(CMD_XFINEPORTAUPDOWN, 0x10 | cmd[1]);
 						break;
 					case 0x1E:
 						// XM extra fine porta down
-						m.command = CMD_XFINEPORTAUPDOWN;
-						m.param = 0x20 | cmd[1];
+						m.SetEffectCommand(CMD_XFINEPORTAUPDOWN, 0x20 | cmd[1]);
 						break;
 					case 0x1F:
 					case 0x20:
 						// XM volume column vibrato
-						m.volcmd = effTrans[cmd[0]];
-						m.vol = cmd[1];
+						m.SetVolumeCommand((cmd[0] == 0x1F) ? VOLCMD_VIBRATOSPEED: VOLCMD_VIBRATODEPTH, cmd[1]);
 						break;
 					case 0x22:
 						// IT / S3M volume slide
@@ -1222,23 +1262,16 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 					case 0x31:
 					case 0x32:
 						// IT volume column portamento
-						m.volcmd = effTrans[cmd[0]];
-						m.vol = cmd[1];
+						m.SetVolumeCommand((cmd[0] == 0x31) ? VOLCMD_PORTADOWN: VOLCMD_PORTAUP, cmd[1]);
 						break;
 					case 0x34:
 						// Any unrecognized IT volume command
 						if(cmd[1] >= 223 && cmd[1] <= 232)
-						{
-							m.volcmd = VOLCMD_OFFSET;
-							m.vol = cmd[1] - 223;
-						}
+							m.SetVolumeCommand(VOLCMD_OFFSET, cmd[1] - 223);
 						break;
 					default:
 						if(cmd[0] < std::size(effTrans))
-						{
-							m.command = effTrans[cmd[0]];
-							m.param = cmd[1];
-						}
+							m.SetEffectCommand(effTrans[cmd[0]], cmd[1]);
 						break;
 					}
 				}
@@ -1277,7 +1310,8 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 				while(musicChunk.ReadUint8() != 0)
 					;
 			}
-			musicChunk.Skip(sizeof(MO3Instrument));
+			if(!musicChunk.Skip(sizeof(MO3Instrument)))
+				return false;
 			continue;
 		}
 
@@ -1292,7 +1326,7 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 
 		MO3Instrument insHeader;
 		if(!musicChunk.ReadStruct(insHeader))
-			break;
+			return false;
 		insHeader.ConvertToMPT(*pIns, m_nType);
 
 		if(m_nType == MOD_TYPE_XM)
@@ -1301,10 +1335,8 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 	if(isSampleMode)
 		m_nInstruments = 0;
 
-	std::vector<MO3SampleChunk> sampleChunks(m_nSamples);
-
+	std::vector<MO3SampleInfo> sampleInfos;
 	const bool frequencyIsHertz = (version >= 5 || !(fileHeader.flags & MO3FileHeader::linearSlides));
-	bool unsupportedSamples = false;
 	for(SAMPLEINDEX smp = 1; smp <= m_nSamples; smp++)
 	{
 		ModSample &sample = Samples[smp];
@@ -1312,15 +1344,15 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 		musicChunk.ReadNullString(name);
 		m_szNames[smp] = name;
 		if(version >= 5)
-		{
 			musicChunk.ReadNullString(name);
-			sample.filename = name;
-		}
+		else
+			name.clear();
 
 		MO3Sample smpHeader;
 		if(!musicChunk.ReadStruct(smpHeader))
-			break;
+			return false;
 		smpHeader.ConvertToMPT(sample, m_nType, frequencyIsHertz);
+		sample.filename = name;
 
 		int16 sharedOggHeader = 0;
 		if(version >= 5 && (smpHeader.flags & MO3Sample::smpCompressionMask) == MO3Sample::smpSharedOgg)
@@ -1328,130 +1360,328 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 			sharedOggHeader = musicChunk.ReadInt16LE();
 		}
 
-		if(!(loadFlags & loadSampleData))
-			continue;
-
-		const uint32 compression = (smpHeader.flags & MO3Sample::smpCompressionMask);
-		if(!compression && smpHeader.compressedSize == 0)
+		if(loadFlags & loadSampleData)
 		{
-			// Uncompressed sample
-			SampleIO(
-			    (smpHeader.flags & MO3Sample::smp16Bit) ? SampleIO::_16bit : SampleIO::_8bit,
-			    (smpHeader.flags & MO3Sample::smpStereo) ? SampleIO::stereoSplit : SampleIO::mono,
-			    SampleIO::littleEndian,
-			    SampleIO::signedPCM)
-			    .ReadSample(Samples[smp], file);
-		} else if(smpHeader.compressedSize < 0 && (smp + smpHeader.compressedSize) > 0)
-		{
-			// Duplicate sample
-			sample.CopyWaveform(Samples[smp + smpHeader.compressedSize]);
-		} else if(smpHeader.compressedSize > 0)
-		{
-			if(smpHeader.flags & MO3Sample::smp16Bit)
-				sample.uFlags.set(CHN_16BIT);
-			if(smpHeader.flags & MO3Sample::smpStereo)
-				sample.uFlags.set(CHN_STEREO);
+			sampleInfos.reserve(m_nSamples);
+			sampleInfos.emplace_back(smpHeader, sharedOggHeader);
+		}
+	}
 
-			FileReader sampleData = file.ReadChunk(smpHeader.compressedSize);
-			const uint8 numChannels = sample.GetNumChannels();
+	if(m_nType == MOD_TYPE_XM)
+	{
+		// Transfer XM instrument vibrato to samples
+		for(INSTRUMENTINDEX ins = 0; ins < m_nInstruments; ins++)
+		{
+			PropagateXMAutoVibrato(ins + 1, static_cast<VibratoType>(instrVibrato[ins].type.get()), instrVibrato[ins].sweep, instrVibrato[ins].depth, instrVibrato[ins].rate);
+		}
+	}
 
-			if(compression == MO3Sample::smpDeltaCompression || compression == MO3Sample::smpDeltaPrediction)
+	if((fileHeader.flags & MO3FileHeader::hasPlugins) && musicChunk.CanRead(1))
+	{
+		// Plugin data
+		uint8 pluginFlags = musicChunk.ReadUint8();
+		if(pluginFlags & 1)
+		{
+			// Channel plugins
+			for(auto &chn : ChnSettings)
 			{
-				// In the best case, MO3 compression represents each sample point as two bits.
-				// As a result, if we have a file length of n, we know that the sample can be at most n*4 sample points long.
-				auto maxLength = sampleData.GetLength();
-				uint8 maxSamplesPerByte = 4 / numChannels;
-				if(Util::MaxValueOfType(maxLength) / maxSamplesPerByte >= maxLength)
-					maxLength *= maxSamplesPerByte;
-				else
-					maxLength = Util::MaxValueOfType(maxLength);
-				LimitMax(sample.nLength, mpt::saturate_cast<SmpLength>(maxLength));
+				chn.nMixPlugin = static_cast<PLUGINDEX>(musicChunk.ReadUint32LE());
 			}
-
-			if(compression == MO3Sample::smpDeltaCompression)
+		}
+		while(musicChunk.CanRead(1))
+		{
+			PLUGINDEX plug = musicChunk.ReadUint8();
+			if(!plug)
+				break;
+			uint32 len = musicChunk.ReadUint32LE();
+			if(len >= containerHeader.musicSize || containerHeader.musicSize - len < musicChunk.GetPosition())
+				return false;
+			FileReader pluginChunk = musicChunk.ReadChunk(len);
+			if(plug <= MAX_MIXPLUGINS)
 			{
-				if(sample.AllocateSample())
-				{
-					if(smpHeader.flags & MO3Sample::smp16Bit)
-						UnpackMO3DeltaSample<MO3Delta16BitParams>(sampleData, sample.sample16(), sample.nLength, numChannels);
-					else
-						UnpackMO3DeltaSample<MO3Delta8BitParams>(sampleData, sample.sample8(), sample.nLength, numChannels);
-				}
-			} else if(compression == MO3Sample::smpDeltaPrediction)
-			{
-				if(sample.AllocateSample())
-				{
-					if(smpHeader.flags & MO3Sample::smp16Bit)
-						UnpackMO3DeltaPredictionSample<MO3Delta16BitParams>(sampleData, sample.sample16(), sample.nLength, numChannels);
-					else
-						UnpackMO3DeltaPredictionSample<MO3Delta8BitParams>(sampleData, sample.sample8(), sample.nLength, numChannels);
-				}
-			} else if(compression == MO3Sample::smpCompressionOgg || compression == MO3Sample::smpSharedOgg)
-			{
-				// Since shared Ogg headers can stem from a sample that has not been read yet, postpone Ogg import.
-				sampleChunks[smp - 1] = MO3SampleChunk(sampleData, smpHeader.encoderDelay, sharedOggHeader);
-			} else if(compression == MO3Sample::smpCompressionMPEG)
-			{
-				// Old MO3 encoders didn't remove LAME info frames. This is unfortunate since the encoder delay
-				// specified in the sample header does not take the gapless information from the LAME info frame
-				// into account. We should not depend on the MP3 decoder's capabilities to read or ignore such frames:
-				// - libmpg123 has MPG123_IGNORE_INFOFRAME but that requires API version 31 (mpg123 v1.14) or higher
-				// - Media Foundation does (currently) not read LAME gapless information at all
-				// So we just play safe and remove such frames.
-				FileReader mpegData(sampleData);
-				MPEGFrame frame(sampleData);
-				uint16 frameDelay = frame.numSamples * 2;
-				if(frame.isLAME && smpHeader.encoderDelay >= frameDelay)
-				{
-					// The info frame does not produce any output, but still counts towards the encoder delay.
-					smpHeader.encoderDelay -= frameDelay;
-					sampleData.Seek(frame.frameSize);
-					mpegData = sampleData.ReadChunk(sampleData.BytesLeft());
-				}
-
-				if(ReadMP3Sample(smp, mpegData, true, true) || ReadMediaFoundationSample(smp, mpegData, true))
-				{
-					if(smpHeader.encoderDelay > 0 && smpHeader.encoderDelay < sample.GetSampleSizeInBytes())
-					{
-						SmpLength delay = smpHeader.encoderDelay / sample.GetBytesPerSample();
-						memmove(sample.sampleb(), sample.sampleb() + smpHeader.encoderDelay, sample.GetSampleSizeInBytes() - smpHeader.encoderDelay);
-						sample.nLength -= delay;
-					}
-					LimitMax(sample.nLength, smpHeader.length);
-				} else
-				{
-					unsupportedSamples = true;
-				}
-			} else if(compression == MO3Sample::smpOPLInstrument)
-			{
-				OPLPatch patch;
-				if(sampleData.ReadArray(patch))
-				{
-					sample.SetAdlib(true, patch);
-				}
-			} else
-			{
-				unsupportedSamples = true;
+				ReadMixPluginChunk(pluginChunk, m_MixPlugins[plug - 1]);
 			}
 		}
 	}
 
-	// Now we can load Ogg samples with shared headers.
-	if(loadFlags & loadSampleData)
+	mpt::ustring madeWithTracker;
+	uint16 cwtv = 0;
+	uint16 cmwt = 0;
+	while(musicChunk.CanRead(8))
 	{
-		for(SAMPLEINDEX smp = 1; smp <= m_nSamples; smp++)
+		uint32 id = musicChunk.ReadUint32LE();
+		uint32 len = musicChunk.ReadUint32LE();
+		if(len >= containerHeader.musicSize || containerHeader.musicSize - len < musicChunk.GetPosition())
+			return false;
+		FileReader chunk = musicChunk.ReadChunk(len);
+		switch(id)
 		{
-			MO3SampleChunk &sampleChunk = sampleChunks[smp - 1];
-			// Is this an Ogg sample?
-			if(!sampleChunk.chunk.IsValid())
-				continue;
+		case MagicLE("VERS"):
+			// Tracker magic bytes (depending on format)
+			switch(m_nType)
+			{
+			case MOD_TYPE_IT:
+				cwtv = chunk.ReadUint16LE();
+				cmwt = chunk.ReadUint16LE();
+				/*switch(cwtv >> 12)
+				{
+					
+				}*/
+				break;
+			case MOD_TYPE_S3M:
+				cwtv = chunk.ReadUint16LE();
+				break;
+			case MOD_TYPE_XM:
+				chunk.ReadString<mpt::String::spacePadded>(madeWithTracker, mpt::Charset::CP437, std::min(FileReader::pos_type(32), chunk.GetLength()));
+				break;
+			case MOD_TYPE_MTM:
+			{
+				uint8 mtmVersion = chunk.ReadUint8();
+				madeWithTracker = MPT_UFORMAT("MultiTracker {}.{}")(mtmVersion >> 4, mtmVersion & 0x0F);
+			}
+			break;
+			default:
+				break;
+			}
+			break;
+		case MagicLE("PRHI"):
+			m_nDefaultRowsPerBeat = chunk.ReadUint8();
+			m_nDefaultRowsPerMeasure = chunk.ReadUint8();
+			break;
+		case MagicLE("MIDI"):
+			// Full MIDI config
+			chunk.ReadStruct<MIDIMacroConfigData>(m_MidiCfg);
+			m_MidiCfg.Sanitize();
+			break;
+		case MagicLE("OMPT"):
+			// Read pattern names: "PNAM"
+			if(chunk.ReadMagic("PNAM"))
+			{
+				FileReader patterns = chunk.ReadChunk(chunk.ReadUint32LE());
+				const PATTERNINDEX namedPats = std::min(static_cast<PATTERNINDEX>(patterns.GetLength() / MAX_PATTERNNAME), Patterns.Size());
 
-			SAMPLEINDEX sharedOggHeader = smp + sampleChunk.sharedHeader;
+				for(PATTERNINDEX pat = 0; pat < namedPats; pat++)
+				{
+					char patName[MAX_PATTERNNAME];
+					patterns.ReadString<mpt::String::maybeNullTerminated>(patName, MAX_PATTERNNAME);
+					Patterns[pat].SetName(patName);
+				}
+			}
+
+			// Read channel names: "CNAM"
+			if(chunk.ReadMagic("CNAM"))
+			{
+				FileReader channels = chunk.ReadChunk(chunk.ReadUint32LE());
+				const CHANNELINDEX namedChans = std::min(static_cast<CHANNELINDEX>(channels.GetLength() / MAX_CHANNELNAME), GetNumChannels());
+				for(CHANNELINDEX chn = 0; chn < namedChans; chn++)
+				{
+					channels.ReadString<mpt::String::maybeNullTerminated>(ChnSettings[chn].szName, MAX_CHANNELNAME);
+				}
+			}
+
+			LoadExtendedInstrumentProperties(chunk);
+			LoadExtendedSongProperties(chunk, true);
+			if(cwtv > 0x0889 && cwtv <= 0x8FF)
+			{
+				m_nType = MOD_TYPE_MPT;
+				LoadMPTMProperties(chunk, cwtv);
+			}
+
+			if(m_dwLastSavedWithVersion)
+			{
+				madeWithTracker = UL_("OpenMPT ") + mpt::ufmt::val(m_dwLastSavedWithVersion);
+			}
+			break;
+		}
+	}
+
+	if((GetType() == MOD_TYPE_IT && cwtv >= 0x0100 && cwtv < 0x0214)
+	   || (GetType() == MOD_TYPE_S3M && cwtv >= 0x3100 && cwtv < 0x3214)
+	   || (GetType() == MOD_TYPE_S3M && cwtv >= 0x1300 && cwtv < 0x1320))
+	{
+		// Ignore MIDI data in files made with IT older than version 2.14 and old ST3 versions.
+		m_MidiCfg.ClearZxxMacros();
+	}
+
+	if(fileHeader.flags & MO3FileHeader::modplugMode)
+	{
+		// Apply some old ModPlug (mis-)behaviour
+		if(!m_dwLastSavedWithVersion)
+		{
+			// These fixes are only applied when the OpenMPT version number is not known, as otherwise the song upgrade feature will take care of it.
+			for(INSTRUMENTINDEX i = 1; i <= GetNumInstruments(); i++)
+			{
+				if(ModInstrument *ins = Instruments[i])
+				{
+					// Fix pitch / filter envelope being shortened by one tick (for files before v1.20)
+					ins->GetEnvelope(ENV_PITCH).Convert(MOD_TYPE_XM, GetType());
+					// Fix excessive pan swing range (for files before v1.26)
+					ins->nPanSwing = static_cast<uint8>((ins->nPanSwing + 3) / 4u);
+				}
+			}
+		}
+		if(m_dwLastSavedWithVersion < MPT_V("1.18.00.00"))
+		{
+			m_playBehaviour.reset(kITOffset);
+			m_playBehaviour.reset(kFT2ST3OffsetOutOfRange);
+		}
+		if(m_dwLastSavedWithVersion < MPT_V("1.23.00.00"))
+			m_playBehaviour.reset(kFT2Periods);
+		if(m_dwLastSavedWithVersion < MPT_V("1.26.00.00"))
+			m_playBehaviour.reset(kITInstrWithNoteOff);
+	}
+
+	if(madeWithTracker.empty())
+		madeWithTracker = MPT_UFORMAT("MO3 v{}")(version);
+	else
+		madeWithTracker = MPT_UFORMAT("MO3 v{} ({})")(version, madeWithTracker);
+
+	m_modFormat.formatName = MPT_UFORMAT("Un4seen MO3 v{}")(version);
+	m_modFormat.type = UL_("mo3");
+
+	switch(GetType())
+	{
+	case MOD_TYPE_MTM:
+		m_modFormat.originalType = UL_("mtm");
+		m_modFormat.originalFormatName = UL_("MultiTracker");
+		break;
+	case MOD_TYPE_MOD:
+		m_modFormat.originalType = UL_("mod");
+		m_modFormat.originalFormatName = UL_("Generic MOD");
+		break;
+	case MOD_TYPE_XM:
+		m_modFormat.originalType = UL_("xm");
+		m_modFormat.originalFormatName = UL_("FastTracker 2");
+		break;
+	case MOD_TYPE_S3M:
+		m_modFormat.originalType = UL_("s3m");
+		m_modFormat.originalFormatName = UL_("Scream Tracker 3");
+		break;
+	case MOD_TYPE_IT:
+		m_modFormat.originalType = UL_("it");
+		if(cmwt)
+			m_modFormat.originalFormatName = MPT_UFORMAT("Impulse Tracker {}.{}")(cmwt >> 8, mpt::ufmt::hex0<2>(cmwt & 0xFF));
+		else
+			m_modFormat.originalFormatName = UL_("Impulse Tracker");
+		break;
+	case MOD_TYPE_MPT:
+		m_modFormat.originalType = UL_("mptm");
+		m_modFormat.originalFormatName = UL_("OpenMPT MPTM");
+		break;
+	default:
+		MPT_ASSERT_NOTREACHED();
+	}
+	m_modFormat.madeWithTracker = std::move(madeWithTracker);
+	if(m_dwLastSavedWithVersion)
+		m_modFormat.charset = mpt::Charset::Windows1252;
+	else if(GetType() == MOD_TYPE_MOD)
+		m_modFormat.charset = mpt::Charset::Amiga_no_C1;
+	else
+		m_modFormat.charset = mpt::Charset::CP437;
+
+	if(!(loadFlags & loadSampleData))
+		return true;
+
+	if(containerHeader.version < 5)
+	{
+		// As we don't know where the compressed data ends, we don't know where the sample data starts, either.
+		if(!musicChunkData->UnpackedSuccessfully())
+			return false;
+		file.Seek(musicChunkData->SourcePosition());
+	} else
+	{
+		file.Seek(12 + compressedSize);
+	}
+
+	bool unsupportedSamples = false;
+	for(SAMPLEINDEX smp = 1; smp <= m_nSamples; smp++)
+	{
+		MO3SampleInfo &smpInfo = sampleInfos[smp - 1];
+		const MO3Sample &smpHeader = smpInfo.smpHeader;
+		const uint32 compression = (smpHeader.flags & MO3Sample::smpCompressionMask);
+
+		if(!compression && smpHeader.compressedSize == 0)
+		{
+			// Uncompressed sample
+			SampleIO(
+				(smpHeader.flags & MO3Sample::smp16Bit) ? SampleIO::_16bit : SampleIO::_8bit,
+				(smpHeader.flags & MO3Sample::smpStereo) ? SampleIO::stereoSplit : SampleIO::mono,
+				SampleIO::littleEndian,
+				SampleIO::signedPCM)
+				.ReadSample(Samples[smp], file);
+		} else if(smpHeader.compressedSize > 0)
+		{
+			// Compressed sample; we read those in a second pass because Ogg samples with shared headers may reference a later sample's header
+			smpInfo.chunk = file.ReadChunk(smpHeader.compressedSize);
+		}
+	}
+
+	for(SAMPLEINDEX smp = 1; smp <= m_nSamples; smp++)
+	{
+		ModSample &sample = Samples[smp];
+		MO3SampleInfo &smpInfo = sampleInfos[smp - 1];
+		const MO3Sample &smpHeader = smpInfo.smpHeader;
+
+		if(smpHeader.compressedSize < 0 && (smp + smpHeader.compressedSize) > 0)
+		{
+			// Duplicate sample
+			sample.CopyWaveform(Samples[smp + smpHeader.compressedSize]);
+			continue;
+		}
+
+		// Not a compressed sample?
+		if(!smpHeader.length || !smpInfo.chunk.IsValid())
+			continue;
+
+		if(smpHeader.flags & MO3Sample::smp16Bit)
+			sample.uFlags.set(CHN_16BIT);
+		if(smpHeader.flags & MO3Sample::smpStereo)
+			sample.uFlags.set(CHN_STEREO);
+
+		FileReader &sampleData = smpInfo.chunk;
+		const uint8 numChannels = sample.GetNumChannels();
+		const uint32 compression = (smpHeader.flags & MO3Sample::smpCompressionMask);
+
+		if(compression == MO3Sample::smpDeltaCompression || compression == MO3Sample::smpDeltaPrediction)
+		{
+			// In the best case, MO3 compression represents each sample point as two bits.
+			// As a result, if we have a file length of n, we know that the sample can be at most n*4 sample points long.
+			auto maxLength = sampleData.GetLength();
+			uint8 maxSamplesPerByte = 4 / numChannels;
+			if(Util::MaxValueOfType(maxLength) / maxSamplesPerByte >= maxLength)
+				maxLength *= maxSamplesPerByte;
+			else
+				maxLength = Util::MaxValueOfType(maxLength);
+			LimitMax(sample.nLength, mpt::saturate_cast<SmpLength>(maxLength));
+		}
+
+		if(compression == MO3Sample::smpDeltaCompression)
+		{
+			if(sample.AllocateSample())
+			{
+				if(smpHeader.flags & MO3Sample::smp16Bit)
+					UnpackMO3DeltaSample<MO3Delta16BitParams>(sampleData, sample.sample16(), sample.nLength, numChannels);
+				else
+					UnpackMO3DeltaSample<MO3Delta8BitParams>(sampleData, sample.sample8(), sample.nLength, numChannels);
+			}
+		} else if(compression == MO3Sample::smpDeltaPrediction)
+		{
+			if(sample.AllocateSample())
+			{
+				if(smpHeader.flags & MO3Sample::smp16Bit)
+					UnpackMO3DeltaPredictionSample<MO3Delta16BitParams>(sampleData, sample.sample16(), sample.nLength, numChannels);
+				else
+					UnpackMO3DeltaPredictionSample<MO3Delta8BitParams>(sampleData, sample.sample8(), sample.nLength, numChannels);
+			}
+		} else if(compression == MO3Sample::smpCompressionOgg || compression == MO3Sample::smpSharedOgg)
+		{
+			const uint16 sharedHeaderSize = smpHeader.encoderDelay;
+			SAMPLEINDEX sharedOggHeader = (smp + smpInfo.sharedHeader > 0) ? static_cast<SAMPLEINDEX>(smp + smpInfo.sharedHeader) : smp;
 			// Which chunk are we going to read the header from?
 			// Note: Every Ogg stream has a unique serial number.
 			// stb_vorbis (currently) ignores this serial number so we can just stitch
 			// together our sample without adjusting the shared header's serial number.
-			const bool sharedHeader = sharedOggHeader != smp && sharedOggHeader > 0 && sharedOggHeader <= m_nSamples;
+			const bool sharedHeader = sharedOggHeader != smp && sharedOggHeader > 0 && sharedOggHeader <= m_nSamples && sharedHeaderSize > 0;
 
 #if defined(MPT_WITH_VORBIS) && defined(MPT_WITH_VORBISFILE)
 
@@ -1478,8 +1708,8 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 				std::ostringstream mergedStream(std::ios::binary);
 				mergedStream.imbue(std::locale::classic());
 
-				sampleChunks[sharedOggHeader - 1].chunk.Rewind();
-				FileReader sharedChunk = sampleChunks[sharedOggHeader - 1].chunk.ReadChunk(sampleChunk.headerSize);
+				sampleInfos[sharedOggHeader - 1].chunk.Rewind();
+				FileReader sharedChunk = sampleInfos[sharedOggHeader - 1].chunk.ReadChunk(sharedHeaderSize);
 				sharedChunk.Rewind();
 
 				std::vector<uint32> streamSerials;
@@ -1502,7 +1732,7 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 				}
 
 				streamSerials.clear();
-				while(Ogg::ReadPageAndSkipJunk(sampleChunk.chunk, oggPageInfo, oggPageData))
+				while(Ogg::ReadPageAndSkipJunk(smpInfo.chunk, oggPageInfo, oggPageData))
 				{
 					auto it = std::find(streamSerials.begin(), streamSerials.end(), oggPageInfo.header.bitstream_serial_number);
 					if(it == streamSerials.end())
@@ -1527,8 +1757,8 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 				std::ostringstream mergedStream(std::ios::binary);
 				mergedStream.imbue(std::locale::classic());
 
-				sampleChunks[sharedOggHeader - 1].chunk.Rewind();
-				FileReader sharedChunk = sampleChunks[sharedOggHeader - 1].chunk.ReadChunk(sampleChunk.headerSize);
+				sampleInfos[sharedOggHeader - 1].chunk.Rewind();
+				FileReader sharedChunk = sampleInfos[sharedOggHeader - 1].chunk.ReadChunk(sharedHeaderSize);
 				sharedChunk.Rewind();
 
 				std::vector<uint32> dataStreamSerials;
@@ -1538,7 +1768,7 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 
 				// Gather bitstream serial numbers form sample data chunk
 				dataStreamSerials.clear();
-				while(Ogg::ReadPageAndSkipJunk(sampleChunk.chunk, oggPageInfo, oggPageData))
+				while(Ogg::ReadPageAndSkipJunk(smpInfo.chunk, oggPageInfo, oggPageData))
 				{
 					if(!mpt::contains(dataStreamSerials, oggPageInfo.header.bitstream_serial_number))
 					{
@@ -1596,8 +1826,8 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 				std::string mergedStreamData = mergedStream.str();
 				mergedData.insert(mergedData.end(), mergedStreamData.begin(), mergedStreamData.end());
 
-				sampleChunk.chunk.Rewind();
-				FileReader::PinnedView sampleChunkView = sampleChunk.chunk.GetPinnedView();
+				smpInfo.chunk.Rewind();
+				FileReader::PinnedView sampleChunkView = smpInfo.chunk.GetPinnedView();
 				mpt::span<const char> sampleChunkViewSpan = mpt::byte_cast<mpt::span<const char>>(sampleChunkView.span());
 				mergedData.insert(mergedData.end(), sampleChunkViewSpan.begin(), sampleChunkViewSpan.end());
 
@@ -1605,21 +1835,20 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 			}
 			FileReader mergedDataChunk(mpt::byte_cast<mpt::const_byte_span>(mpt::as_span(mergedData)));
 
-			FileReader &sampleData = sharedHeader ? mergedDataChunk : sampleChunk.chunk;
-			FileReader &headerChunk = sampleData;
+			FileReader &sampleChunk = sharedHeader ? mergedDataChunk : smpInfo.chunk;
+			FileReader &headerChunk = sampleChunk;
 
 #else  // !(MPT_WITH_VORBIS && MPT_WITH_VORBISFILE)
 
-			FileReader &sampleData = sampleChunk.chunk;
-			FileReader &headerChunk = sharedHeader ? sampleChunks[sharedOggHeader - 1].chunk : sampleData;
+			FileReader &headerChunk = sharedHeader ? sampleInfos[sharedOggHeader - 1].chunk : sampleData;
 #if defined(MPT_WITH_STBVORBIS)
-			std::size_t initialRead = sharedHeader ? sampleChunk.headerSize : headerChunk.GetLength();
+			std::size_t initialRead = sharedHeader ? sharedHeaderSize : headerChunk.GetLength();
 #endif  // MPT_WITH_STBVORBIS
 
 #endif  // MPT_WITH_VORBIS && MPT_WITH_VORBISFILE
 
 			headerChunk.Rewind();
-			if(sharedHeader && !headerChunk.CanRead(sampleChunk.headerSize))
+			if(sharedHeader && !headerChunk.CanRead(sharedHeaderSize))
 				continue;
 
 #if defined(MPT_WITH_VORBIS) && defined(MPT_WITH_VORBISFILE)
@@ -1631,14 +1860,13 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 			    &VorbisfileFilereaderTell};
 			OggVorbis_File vf;
 			MemsetZero(vf);
-			if(ov_open_callbacks(&sampleData, &vf, nullptr, 0, callbacks) == 0)
+			if(ov_open_callbacks(mpt::void_ptr<FileReader>(&sampleChunk), &vf, nullptr, 0, callbacks) == 0)
 			{
 				if(ov_streams(&vf) == 1)
 				{  // we do not support chained vorbis samples
 					vorbis_info *vi = ov_info(&vf, -1);
 					if(vi && vi->rate > 0 && vi->channels > 0)
 					{
-						ModSample &sample = Samples[smp];
 						sample.AllocateSample();
 						SmpLength offset = 0;
 						int channels = vi->channels;
@@ -1669,7 +1897,7 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 										CopyAudio(mpt::audio_span_interleaved(sample.sample8() + (offset * sample.GetNumChannels()), sample.GetNumChannels(), decodedSamples), mpt::audio_span_planar(output, channels, decodedSamples));
 									}
 								}
-								offset += decodedSamples;
+								offset += static_cast<SmpLength>(decodedSamples);
 							}
 						}
 					} else
@@ -1718,7 +1946,6 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 			if(vorb)
 			{
 				// Header has been read, proceed to reading the sample data
-				ModSample &sample = Samples[smp];
 				sample.AllocateSample();
 				SmpLength offset = 0;
 				while((error == VORBIS__no_error || (error == VORBIS_need_more_data && dataLeft > 0))
@@ -1755,217 +1982,51 @@ bool CSoundFile::ReadMO3(FileReader &file, ModLoadingFlags loadFlags)
 			unsupportedSamples = true;
 
 #endif  // VORBIS
-		}
-	}
-
-	if(m_nType == MOD_TYPE_XM)
-	{
-		// Transfer XM instrument vibrato to samples
-		for(INSTRUMENTINDEX ins = 0; ins < m_nInstruments; ins++)
+		} else if(compression == MO3Sample::smpCompressionMPEG)
 		{
-			PropagateXMAutoVibrato(ins + 1, static_cast<VibratoType>(instrVibrato[ins].type.get()), instrVibrato[ins].sweep, instrVibrato[ins].depth, instrVibrato[ins].rate);
-		}
-	}
-
-	if((fileHeader.flags & MO3FileHeader::hasPlugins) && musicChunk.CanRead(1))
-	{
-		// Plugin data
-		uint8 pluginFlags = musicChunk.ReadUint8();
-		if(pluginFlags & 1)
-		{
-			// Channel plugins
-			for(CHANNELINDEX chn = 0; chn < m_nChannels; chn++)
+			// Old MO3 encoders didn't remove LAME info frames. This is unfortunate since the encoder delay
+			// specified in the sample header does not take the gapless information from the LAME info frame
+			// into account. We should not depend on the MP3 decoder's capabilities to read or ignore such frames:
+			// - libmpg123 has MPG123_IGNORE_INFOFRAME but that requires API version 31 (mpg123 v1.14) or higher
+			// - Media Foundation does (currently) not read LAME gapless information at all
+			// So we just play safe and remove such frames.
+			FileReader mpegData(sampleData);
+			MPEGFrame frame(sampleData);
+			uint16 encoderDelay = smpHeader.encoderDelay;
+			uint16 frameDelay = frame.numSamples * 2;
+			if(frame.isLAME && encoderDelay >= frameDelay)
 			{
-				ChnSettings[chn].nMixPlugin = static_cast<PLUGINDEX>(musicChunk.ReadUint32LE());
+				// The info frame does not produce any output, but still counts towards the encoder delay.
+				encoderDelay -= frameDelay;
+				sampleData.Seek(frame.frameSize);
+				mpegData = sampleData.ReadChunk(sampleData.BytesLeft());
 			}
-		}
-		while(musicChunk.CanRead(1))
-		{
-			PLUGINDEX plug = musicChunk.ReadUint8();
-			if(!plug)
-				break;
-			FileReader pluginChunk = musicChunk.ReadChunk(musicChunk.ReadUint32LE());
-#ifndef NO_PLUGINS
-			if(plug <= MAX_MIXPLUGINS)
-			{
-				ReadMixPluginChunk(pluginChunk, m_MixPlugins[plug - 1]);
-			}
-#endif  // NO_PLUGINS
-		}
-	}
 
-	mpt::ustring madeWithTracker;
-	uint16 cwtv = 0;
-	uint16 cmwt = 0;
-	while(musicChunk.CanRead(8))
-	{
-		uint32 id = musicChunk.ReadUint32LE();
-		uint32 len = musicChunk.ReadUint32LE();
-		FileReader chunk = musicChunk.ReadChunk(len);
-		switch(id)
-		{
-		case MagicLE("VERS"):
-			// Tracker magic bytes (depending on format)
-			switch(m_nType)
+			if(ReadMP3Sample(smp, mpegData, true, true) || ReadMediaFoundationSample(smp, mpegData, true))
 			{
-			case MOD_TYPE_IT:
-				cwtv = chunk.ReadUint16LE();
-				cmwt = chunk.ReadUint16LE();
-				/*switch(cwtv >> 12)
+				if(encoderDelay > 0 && encoderDelay < sample.GetSampleSizeInBytes())
 				{
-					
-				}*/
-				break;
-			case MOD_TYPE_S3M:
-				cwtv = chunk.ReadUint16LE();
-				break;
-			case MOD_TYPE_XM:
-				chunk.ReadString<mpt::String::spacePadded>(madeWithTracker, mpt::Charset::CP437, std::min(FileReader::off_t(32), chunk.GetLength()));
-				break;
-			case MOD_TYPE_MTM:
-			{
-				uint8 mtmVersion = chunk.ReadUint8();
-				madeWithTracker = MPT_UFORMAT("MultiTracker {}.{}")(mtmVersion >> 4, mtmVersion & 0x0F);
-			}
-			break;
-			default:
-				break;
-			}
-			break;
-		case MagicLE("PRHI"):
-			m_nDefaultRowsPerBeat = chunk.ReadUint8();
-			m_nDefaultRowsPerMeasure = chunk.ReadUint8();
-			break;
-		case MagicLE("MIDI"):
-			// Full MIDI config
-			chunk.ReadStruct<MIDIMacroConfigData>(m_MidiCfg);
-			m_MidiCfg.Sanitize();
-			break;
-		case MagicLE("OMPT"):
-			// Read pattern names: "PNAM"
-			if(chunk.ReadMagic("PNAM"))
-			{
-				FileReader patterns = chunk.ReadChunk(chunk.ReadUint32LE());
-				const PATTERNINDEX namedPats = std::min(static_cast<PATTERNINDEX>(patterns.GetLength() / MAX_PATTERNNAME), Patterns.Size());
-
-				for(PATTERNINDEX pat = 0; pat < namedPats; pat++)
-				{
-					char patName[MAX_PATTERNNAME];
-					patterns.ReadString<mpt::String::maybeNullTerminated>(patName, MAX_PATTERNNAME);
-					Patterns[pat].SetName(patName);
+					SmpLength delay = encoderDelay / sample.GetBytesPerSample();
+					memmove(sample.sampleb(), sample.sampleb() + encoderDelay, sample.GetSampleSizeInBytes() - encoderDelay);
+					sample.nLength -= delay;
 				}
-			}
-
-			// Read channel names: "CNAM"
-			if(chunk.ReadMagic("CNAM"))
+				LimitMax(sample.nLength, smpHeader.length);
+			} else
 			{
-				FileReader channels = chunk.ReadChunk(chunk.ReadUint32LE());
-				const CHANNELINDEX namedChans = std::min(static_cast<CHANNELINDEX>(channels.GetLength() / MAX_CHANNELNAME), GetNumChannels());
-				for(CHANNELINDEX chn = 0; chn < namedChans; chn++)
-				{
-					channels.ReadString<mpt::String::maybeNullTerminated>(ChnSettings[chn].szName, MAX_CHANNELNAME);
-				}
+				unsupportedSamples = true;
 			}
-
-			LoadExtendedInstrumentProperties(chunk);
-			LoadExtendedSongProperties(chunk, true);
-			if(cwtv > 0x0889 && cwtv <= 0x8FF)
-			{
-				m_nType = MOD_TYPE_MPT;
-				LoadMPTMProperties(chunk, cwtv);
-			}
-
-			if(m_dwLastSavedWithVersion)
-			{
-				madeWithTracker = U_("OpenMPT ") + mpt::ufmt::val(m_dwLastSavedWithVersion);
-			}
-			break;
-		}
-	}
-
-	if((GetType() == MOD_TYPE_IT && cwtv >= 0x0100 && cwtv < 0x0214)
-	   || (GetType() == MOD_TYPE_S3M && cwtv >= 0x3100 && cwtv < 0x3214)
-	   || (GetType() == MOD_TYPE_S3M && cwtv >= 0x1300 && cwtv < 0x1320))
-	{
-		// Ignore MIDI data in files made with IT older than version 2.14 and old ST3 versions.
-		m_MidiCfg.ClearZxxMacros();
-	}
-
-	if(fileHeader.flags & MO3FileHeader::modplugMode)
-	{
-		// Apply some old ModPlug (mis-)behaviour
-		if(!m_dwLastSavedWithVersion)
+		} else if(compression == MO3Sample::smpOPLInstrument)
 		{
-			// These fixes are only applied when the OpenMPT version number is not known, as otherwise the song upgrade feature will take care of it.
-			for(INSTRUMENTINDEX i = 1; i <= GetNumInstruments(); i++)
+			OPLPatch patch;
+			if(sampleData.ReadArray(patch))
 			{
-				if(ModInstrument *ins = Instruments[i])
-				{
-					// Fix pitch / filter envelope being shortened by one tick (for files before v1.20)
-					ins->GetEnvelope(ENV_PITCH).Convert(MOD_TYPE_XM, GetType());
-					// Fix excessive pan swing range (for files before v1.26)
-					ins->nPanSwing = (ins->nPanSwing + 3) / 4u;
-				}
+				sample.SetAdlib(true, patch);
 			}
-		}
-		if(m_dwLastSavedWithVersion < MPT_V("1.18.00.00"))
+		} else
 		{
-			m_playBehaviour.reset(kITOffset);
-			m_playBehaviour.reset(kFT2ST3OffsetOutOfRange);
+			unsupportedSamples = true;
 		}
-		if(m_dwLastSavedWithVersion < MPT_V("1.23.00.00"))
-			m_playBehaviour.reset(kFT2Periods);
-		if(m_dwLastSavedWithVersion < MPT_V("1.26.00.00"))
-			m_playBehaviour.reset(kITInstrWithNoteOff);
 	}
-
-	if(madeWithTracker.empty())
-		madeWithTracker = MPT_UFORMAT("MO3 v{}")(version);
-	else
-		madeWithTracker = MPT_UFORMAT("MO3 v{} ({})")(version, madeWithTracker);
-
-	m_modFormat.formatName = MPT_UFORMAT("Un4seen MO3 v{}")(version);
-	m_modFormat.type = U_("mo3");
-
-	switch(GetType())
-	{
-	case MOD_TYPE_MTM:
-		m_modFormat.originalType = U_("mtm");
-		m_modFormat.originalFormatName = U_("MultiTracker");
-		break;
-	case MOD_TYPE_MOD:
-		m_modFormat.originalType = U_("mod");
-		m_modFormat.originalFormatName = U_("Generic MOD");
-		break;
-	case MOD_TYPE_XM:
-		m_modFormat.originalType = U_("xm");
-		m_modFormat.originalFormatName = U_("FastTracker 2");
-		break;
-	case MOD_TYPE_S3M:
-		m_modFormat.originalType = U_("s3m");
-		m_modFormat.originalFormatName = U_("ScreamTracker 3");
-		break;
-	case MOD_TYPE_IT:
-		m_modFormat.originalType = U_("it");
-		if(cmwt)
-			m_modFormat.originalFormatName = MPT_UFORMAT("Impulse Tracker {}.{}")(cmwt >> 8, mpt::ufmt::hex0<2>(cmwt & 0xFF));
-		else
-			m_modFormat.originalFormatName = U_("Impulse Tracker");
-		break;
-	case MOD_TYPE_MPT:
-		m_modFormat.originalType = U_("mptm");
-		m_modFormat.originalFormatName = U_("OpenMPT MPTM");
-		break;
-	default:
-		MPT_ASSERT_NOTREACHED();
-	}
-	m_modFormat.madeWithTracker = std::move(madeWithTracker);
-	if(m_dwLastSavedWithVersion)
-		m_modFormat.charset = mpt::Charset::Windows1252;
-	else if(GetType() == MOD_TYPE_MOD)
-		m_modFormat.charset = mpt::Charset::ISO8859_1;
-	else
-		m_modFormat.charset = mpt::Charset::CP437;
 
 	if(unsupportedSamples)
 	{

@@ -10,24 +10,22 @@
 
 #include "stdafx.h"
 
-#ifndef NO_PLUGINS
-#include "../Sndfile.h"
 #include "SymMODEcho.h"
+#include "../Sndfile.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
-IMixPlugin *SymMODEcho::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin *SymMODEcho::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) SymMODEcho(factory, sndFile, mixStruct);
 }
 
 
-SymMODEcho::SymMODEcho(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+SymMODEcho::SymMODEcho(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 	: IMixPlugin(factory, sndFile, mixStruct)
 	, m_chunk(PluginChunk::Default())
 {
 	m_mixBuffer.Initialize(2, 2);
-	InsertIntoFactoryList();
 	RecalculateEchoParams();
 }
 
@@ -38,7 +36,7 @@ void SymMODEcho::Process(float* pOutL, float* pOutR, uint32 numFrames)
 	float *outL = m_mixBuffer.GetOutputBuffer(0), *outR = m_mixBuffer.GetOutputBuffer(1);
 
 	const uint32 delayTime = m_SndFile.m_PlayState.m_nSamplesPerTick * m_chunk.param[kEchoDelay];
-	// SymMODs don't have a variable tempo so the tick duration should never change... but if someone loads a module into an MPTM file we have to account for this.
+	// SymMODs don't have a variable tempo so the tick duration should never change... but if someone loads an instance into an MPTM file we have to account for this.
 	if(m_delayLine.size() < delayTime * 2)
 		m_delayLine.resize(delayTime * 2);
 
@@ -71,7 +69,7 @@ void SymMODEcho::Process(float* pOutL, float* pOutR, uint32 numFrames)
 			{
 				case DSPType::Off:
 					break;
-				case DSPType::Normal:  // Normal
+				case DSPType::Normal:
 					lOut = (lDelay + lDry) * m_feedback;
 					rOut = (rDelay + rDry) * m_feedback;
 					break;
@@ -142,11 +140,11 @@ PlugParamValue SymMODEcho::GetParameter(PlugParamIndex index)
 }
 
 
-void SymMODEcho::SetParameter(PlugParamIndex index, PlugParamValue value)
+void SymMODEcho::SetParameter(PlugParamIndex index, PlugParamValue value, PlayState *, CHANNELINDEX)
 {
 	if(index < kEchoNumParameters)
 	{
-		m_chunk.param[index] = mpt::saturate_round<uint8>(std::clamp(value, 0.0f, 1.0f) * 127.0f);
+		m_chunk.param[index] = mpt::saturate_round<uint8>(mpt::safe_clamp(value, 0.0f, 1.0f) * 127.0f);
 		RecalculateEchoParams();
 	}
 }
@@ -210,15 +208,15 @@ CString SymMODEcho::GetParamDisplay(PlugParamIndex param)
 	switch(static_cast<Parameters>(param))
 	{
 	case kEchoType:
-			switch(GetDSPType())
-			{
-				case DSPType::Off: return _T("Off");
-				case DSPType::Normal: return _T("Normal");
-				case DSPType::Cross: return _T("Cross");
-				case DSPType::Cross2: return _T("Cross 2");
-				case DSPType::Center: return _T("Center");
-				case DSPType::NumTypes: break;
-			}
+		switch(GetDSPType())
+		{
+			case DSPType::Off: return _T("Off");
+			case DSPType::Normal: return _T("Normal");
+			case DSPType::Cross: return _T("Cross");
+			case DSPType::Cross2: return _T("Cross 2");
+			case DSPType::Center: return _T("Center");
+			case DSPType::NumTypes: break;
+		}
 		break;
 	case kEchoDelay:
 		return mpt::cfmt::val(m_chunk.param[kEchoDelay]);
@@ -267,5 +265,3 @@ void SymMODEcho::RecalculateEchoParams()
 }
 
 OPENMPT_NAMESPACE_END
-
-#endif // NO_PLUGINS

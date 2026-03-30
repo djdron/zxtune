@@ -9,8 +9,8 @@
 
 
 #include "stdafx.h"
-#include "Mptrack.h"
 #include "PatternGotoDialog.h"
+#include "resource.h"
 #include "Sndfile.h"
 
 
@@ -20,7 +20,7 @@ OPENMPT_NAMESPACE_BEGIN
 // CPatternGotoDialog dialog
 
 CPatternGotoDialog::CPatternGotoDialog(CWnd *pParent, ROWINDEX row, CHANNELINDEX chan, PATTERNINDEX pat, ORDERINDEX ord, CSoundFile &sndFile)
-	: CDialog(IDD_EDIT_GOTO, pParent)
+	: DialogBase(IDD_EDIT_GOTO, pParent)
 	, m_SndFile(sndFile)
 	, m_nRow(row)
 	, m_nChannel(chan)
@@ -32,7 +32,7 @@ CPatternGotoDialog::CPatternGotoDialog(CWnd *pParent, ROWINDEX row, CHANNELINDEX
 
 void CPatternGotoDialog::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
+	DialogBase::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_SPIN1, m_SpinRow);
 	DDX_Control(pDX, IDC_SPIN2, m_SpinChannel);
 	DDX_Control(pDX, IDC_SPIN3, m_SpinPattern);
@@ -40,7 +40,7 @@ void CPatternGotoDialog::DoDataExchange(CDataExchange* pDX)
 }
 
 
-BEGIN_MESSAGE_MAP(CPatternGotoDialog, CDialog)
+BEGIN_MESSAGE_MAP(CPatternGotoDialog, DialogBase)
 	ON_EN_CHANGE(IDC_GOTO_PAT, &CPatternGotoDialog::OnPatternChanged)
 	ON_EN_CHANGE(IDC_GOTO_ORD, &CPatternGotoDialog::OnOrderChanged)
 	ON_EN_CHANGE(IDC_GOTO_ROW, &CPatternGotoDialog::OnRowChanged)
@@ -51,9 +51,13 @@ END_MESSAGE_MAP()
 
 BOOL CPatternGotoDialog::OnInitDialog()
 {
-	CDialog::OnInitDialog();
-	m_SpinRow.SetRange32(0, MAX_PATTERN_ROWS - 1);
-	m_SpinChannel.SetRange32(1, MAX_BASECHANNELS);
+	DialogBase::OnInitDialog();
+	HICON icon = ::LoadIcon(AfxGetResourceHandle(), MAKEINTRESOURCE(IDR_MODULETYPE));
+	SetIcon(icon, FALSE);
+	SetIcon(icon, TRUE);
+
+	UpdateNumRows();
+	m_SpinChannel.SetRange32(1, m_SndFile.GetNumChannels());
 	m_SpinPattern.SetRange32(0, std::max(m_SndFile.Patterns.GetNumPatterns(), PATTERNINDEX(1)) - 1);
 	m_SpinOrder.SetRange32(0, std::max(m_SndFile.Order().GetLengthTailTrimmed(), ORDERINDEX(1)) - 1);
 	SetDlgItemInt(IDC_GOTO_ROW, m_nRow);
@@ -89,7 +93,7 @@ void CPatternGotoDialog::OnOK()
 	LimitMax(m_nRow, m_SndFile.Patterns[m_nPattern].GetNumRows() - ROWINDEX(1));
 	Limit(m_nChannel, CHANNELINDEX(1), m_SndFile.GetNumChannels());
 
-	CDialog::OnOK();
+	DialogBase::OnOK();
 }
 
 void CPatternGotoDialog::OnPatternChanged()
@@ -107,6 +111,7 @@ void CPatternGotoDialog::OnPatternChanged()
 
 	LockControls();
 	SetDlgItemInt(IDC_GOTO_ORD, m_nOrder);
+	UpdateNumRows();
 	UpdateTime();
 	UnlockControls();
 }
@@ -125,6 +130,7 @@ void CPatternGotoDialog::OnOrderChanged()
 
 	LockControls();
 	SetDlgItemInt(IDC_GOTO_PAT, m_nPattern);
+	UpdateNumRows();
 	UpdateTime();
 	UnlockControls();
 }
@@ -157,8 +163,8 @@ void CPatternGotoDialog::OnTimeChanged()
 	if(!result.targetReached)
 		return;
 
-	m_nOrder = result.lastOrder;
-	m_nRow = result.lastRow;
+	m_nOrder = result.restartOrder;
+	m_nRow = result.restartRow;
 	if(m_SndFile.Order().IsValidPat(m_nOrder))
 		m_nPattern = m_SndFile.Order()[m_nOrder];
 
@@ -167,6 +173,18 @@ void CPatternGotoDialog::OnTimeChanged()
 	SetDlgItemInt(IDC_GOTO_ROW, m_nRow);
 	SetDlgItemInt(IDC_GOTO_PAT, m_nPattern);
 	UnlockControls();
+}
+
+
+void CPatternGotoDialog::UpdateNumRows()
+{
+	const ROWINDEX maxRow = (m_SndFile.Patterns.IsValidPat(m_nPattern) ? m_SndFile.Patterns[m_nPattern].GetNumRows() : MAX_PATTERN_ROWS) - 1;
+	m_SpinRow.SetRange32(0, maxRow);
+	if(m_nRow > maxRow)
+	{
+		m_nRow = maxRow;
+		SetDlgItemInt(IDC_GOTO_ROW, m_nRow);
+	}
 }
 
 

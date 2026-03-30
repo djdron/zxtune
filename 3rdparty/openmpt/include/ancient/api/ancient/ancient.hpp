@@ -52,28 +52,28 @@ class ANCIENT_API Error : public std::exception
 {
 public:
 	Error() noexcept;
-	virtual ~Error();
+	virtual ~Error() noexcept;
 };
 
 class ANCIENT_API InvalidFormatError : public Error
 {
 public:
 	InvalidFormatError() noexcept;
-	virtual ~InvalidFormatError();
+	~InvalidFormatError() noexcept;
 };
 
 class ANCIENT_API DecompressionError : public Error
 {
 public:
 	DecompressionError() noexcept;
-	virtual ~DecompressionError();
+	~DecompressionError() noexcept;
 };
 
 class ANCIENT_API VerificationError : public Error
 {
 public:
 	VerificationError() noexcept;
-	virtual ~VerificationError();
+	~VerificationError() noexcept;
 };
 
 class ANCIENT_API Decompressor final
@@ -116,7 +116,7 @@ public:
 	std::optional<size_t> getRawSize() const noexcept;
 
 	// in case of disk image based formats the data does not necessarily start
-	// from logical beginnig of the image but it is offsetted inside the logical image (f.e. DMS).
+	// from logical beginning of the image but it is offsetted inside the logical image (f.e. DMS).
 	// getDataOffset will return the offset which can also be 0, or std::nullopt if not image-based format.
 	// getImageSize will return the size of the the logical image, or std::nullopt if not image-based format.
 	std::optional<size_t> getImageSize() const noexcept;
@@ -128,7 +128,7 @@ public:
 	// can throw VerificationError if verify enabled and checksum does not match
 	std::vector<uint8_t> decompress(bool verify);
 
-	~Decompressor();
+	~Decompressor() noexcept;
 
 private:
 

@@ -12,21 +12,19 @@
 
 #include "openmpt/all/BuildSettings.hpp"
 
-#include "resource.h"  // main symbols
-#include "Settings.h"
-#include "MPTrackUtil.h"
-#include "Reporting.h"
+#include "../common/mptRandom.h"
+#include "../misc/mptMutex.h"
 #include "../soundlib/MIDIMacros.h"
 #include "../soundlib/modcommand.h"
-#include "../common/ComponentManager.h"
-#include "../misc/mptMutex.h"
-#include "../common/mptRandom.h"
+
+#include <future>
 
 OPENMPT_NAMESPACE_BEGIN
 
 class CModDoc;
 class CModDocTemplate;
 class CVstPluginManager;
+struct UpdateHint;
 namespace SoundDevice
 {
 class Manager;
@@ -35,6 +33,11 @@ struct AllSoundDeviceComponents;
 class CDLSBank;
 class DebugSettings;
 class TrackerSettings;
+class CachedIniFileSettingsBackend;
+template <typename Backend> class FileSettingsContainer;
+using IniFileSettingsBackend = CachedIniFileSettingsBackend;
+using IniFileSettingsContainer = FileSettingsContainer<CachedIniFileSettingsBackend>;
+class SettingsContainer;
 class ComponentManagerSettings;
 namespace mpt
 {
@@ -60,7 +63,9 @@ struct MODPLUGDIB
 /////////////////////////////////////////////////////////////////////////////
 // Midi Library
 
-using MidiLibrary = std::array<mpt::PathString, 128 * 2>;  // 128 instruments + 128 percussions
+// 128 melodic instruments + 128 percussions
+// std::nullopt = default, empty string = unassigned by user
+using MidiLibrary = std::array<std::optional<mpt::PathString>, 128 * 2>;
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -82,8 +87,16 @@ enum DragonDropType
 
 struct DRAGONDROP
 {
+	enum class InsertType
+	{
+		Unspecified,
+		Replace,
+		InsertNew
+	};
+
 	const CSoundFile *sndFile = nullptr;
 	DragonDropType dropType = DRAGONDROP_NOTHING;
+	InsertType insertType = InsertType::Unspecified;
 	uint32 dropItem = 0;
 	LPARAM dropParam = 0;
 
@@ -112,10 +125,28 @@ protected:
 	static MidiLibrary midiLibrary;
 
 public:
-	static std::vector<CDLSBank *> gpDLSBanks;
+	static std::vector<std::unique_ptr<CDLSBank>> gpDLSBanks;
 
 protected:
+
 	mpt::recursive_mutex_with_lock_count m_GlobalMutex;
+
+	mpt::log::GlobalLogger m_GlobalLogger{};
+
+	mpt::PathString m_InstallPath;         // i.e. "C:\Program Files\OpenMPT\" (installer mode) or "G:\OpenMPT\" (portable mode)
+	mpt::PathString m_InstallBinPath;      // i.e. "C:\Program Files\OpenMPT\bin\" (multi-arch mode) or InstallPath (legacy mode)
+	mpt::PathString m_InstallBinArchPath;  // i.e. "C:\Program Files\OpenMPT\bin\amd64\" (multi-arch mode) or InstallPath (legacy mode)
+	mpt::PathString m_InstallPkgPath;      // i.e. "C:\Program Files\OpenMPT\" (installer mode) or "G:\OpenMPT\" (portable mode)
+
+	mpt::PathString m_ConfigPath;  // InstallPath (portable mode) or "%AppData%\OpenMPT\"
+
+	mpt::PathString m_szConfigFileName;
+	mpt::PathString m_PluginStateFileName;
+	mpt::PathString m_szPluginCacheFileName;
+
+	bool m_bInstallerMode = false;
+	bool m_bPortableMode = false;
+	bool m_bSourceTreeMode = false;
 
 	DWORD m_GuiThreadId = 0;
 
@@ -126,48 +157,53 @@ protected:
 
 	std::shared_ptr<mpt::OS::Wine::VersionContext> m_WineVersion;
 
-	IniFileSettingsBackend *m_pSettingsIniFile;
-	SettingsContainer *m_pSettings = nullptr;
-	DebugSettings *m_pDebugSettings = nullptr;
-	TrackerSettings *m_pTrackerSettings = nullptr;
-	IniFileSettingsBackend *m_pSongSettingsIniFile = nullptr;
-	SettingsContainer *m_pSongSettings = nullptr;
-	ComponentManagerSettings *m_pComponentManagerSettings = nullptr;
-	IniFileSettingsContainer *m_pPluginCache = nullptr;
+	std::unique_ptr<IniFileSettingsBackend> m_pSettingsIniFile;
+	std::unique_ptr<SettingsContainer> m_pSettings;
+	std::unique_ptr<DebugSettings> m_pDebugSettings;
+	std::unique_ptr<TrackerSettings> m_pTrackerSettings;
+
+	std::unique_ptr<IniFileSettingsBackend> m_pSongSettingsIniFile;
+	std::unique_ptr<SettingsContainer> m_pSongSettings;
+
+	std::unique_ptr<IniFileSettingsContainer> m_pPluginState;
+	std::unique_ptr<IniFileSettingsContainer> m_pPluginCache;
+
+	std::unique_ptr<ComponentManagerSettings> m_pComponentManagerSettings;
+
+	std::shared_ptr<mpt::Wine::Context> m_WineIntegration;
+	mpt::PathString m_WineWrapperDllName;
+
 	CModDocTemplate *m_pModTemplate = nullptr;
-	CVstPluginManager *m_pPluginManager = nullptr;
-	mpt::log::GlobalLogger m_GlobalLogger{};
+
 	std::unique_ptr<AllSoundDeviceComponents> m_pAllSoundDeviceComponents;
 	std::unique_ptr<SoundDevice::Manager> m_pSoundDevicesManager;
 
-	mpt::PathString m_InstallPath;         // i.e. "C:\Program Files\OpenMPT\" (installer mode) or "G:\OpenMPT\" (portable mode)
-	mpt::PathString m_InstallBinPath;      // i.e. "C:\Program Files\OpenMPT\bin\" (multi-arch mode) or InstallPath (legacy mode)
-	mpt::PathString m_InstallBinArchPath;  // i.e. "C:\Program Files\OpenMPT\bin\amd64\" (multi-arch mode) or InstallPath (legacy mode)
-	mpt::PathString m_InstallPkgPath;      // i.e. "C:\Program Files\OpenMPT\" (installer mode) or "G:\OpenMPT\" (portable mode)
+	std::future<std::vector<std::unique_ptr<CDLSBank>>> m_scannedDlsBanks;
+	std::atomic<bool> m_scannedDlsBanksAvailable = false;
 
-	mpt::PathString m_ConfigPath;  // InstallPath (portable mode) or "%AppData%\OpenMPT\"
+	CVstPluginManager *m_pPluginManager = nullptr;
 
-	mpt::PathString m_szConfigFileName;
-	mpt::PathString m_szPluginCacheFileName;
-
-	std::shared_ptr<mpt::Wine::Context> m_Wine;
-	mpt::PathString m_WineWrapperDllName;
 	// Default macro configuration
 	MIDIMacroConfig m_MidiCfg;
+
 	DWORD m_dwLastPluginIdleCall = 0;
-	bool m_bInstallerMode = false;
-	bool m_bPortableMode = false;
-	bool m_bSourceTreeMode = false;
 
 public:
 	CTrackApp();
+	~CTrackApp();
 
 	CDataRecoveryHandler *GetDataRecoveryHandler() override;
+
+	CModDoc *NewDocument(MODTYPE newType = MOD_TYPE_NONE);
+	CDocument *OpenTemplateFile(const mpt::PathString &file) const;
 	void AddToRecentFileList(LPCTSTR lpszPathName) override;
 	void AddToRecentFileList(const mpt::PathString &path);
 	/// Removes item from MRU-list; most recent item has index zero.
 	void RemoveMruItem(const size_t item);
 	void RemoveMruItem(const mpt::PathString &path);
+
+	int GetOpenDocumentCount() const;
+	std::vector<CModDoc *> GetOpenDocuments() const;
 
 public:
 	bool IsMultiArchInstall() const { return m_InstallPath == m_InstallBinArchPath; }
@@ -183,7 +219,7 @@ public:
 	static void ExportMidiConfig(const mpt::PathString &filename);
 	static void ImportMidiConfig(SettingsContainer &file, const mpt::PathString &path, bool forgetSettings = false);
 	static void ExportMidiConfig(SettingsContainer &file);
-	static void LoadDefaultDLSBanks();
+	static std::future<std::vector<std::unique_ptr<CDLSBank>>> LoadDefaultDLSBanks();
 	static void SaveDefaultDLSBanks();
 	static void RemoveDLSBank(UINT nBank);
 	static bool AddDLSBank(const mpt::PathString &filename);
@@ -191,16 +227,16 @@ public:
 	static bool OpenURL(const std::string &url);  // UTF8
 	static bool OpenURL(const CString &url);
 	static bool OpenURL(const mpt::ustring &url);
-	static bool OpenURL(const mpt::PathString &lpszURL);
+	static bool OpenURL(const mpt::PathString &lpszURL, const mpt::tstring &param = {});
 	static bool OpenFile(const mpt::PathString &file) { return OpenURL(file); };
-	static bool OpenDirectory(const mpt::PathString &directory) { return OpenURL(directory); };
+	static bool OpenDirectory(const mpt::PathString &directory);
 
 	// Retrieve the user-supplied MIDI port name for a MIDI input or output port.
 	mpt::ustring GetFriendlyMIDIPortName(const mpt::ustring &deviceName, bool isInputPort, bool addDeviceName = true);
 	CString GetFriendlyMIDIPortName(const CString &deviceName, bool isInputPort, bool addDeviceName = true);
 
-	int GetOpenDocumentCount() const;
-	std::vector<CModDoc *> GetOpenDocuments() const;
+	void UpdateAllViews(UpdateHint hint, CObject *pHint = nullptr);
+	void PostMessageToAllViews(UINT uMsg, WPARAM wParam = 0, LPARAM lParam = 0);
 
 public:
 	inline mpt::recursive_mutex_with_lock_count &GetGlobalMutexRef() { return m_GlobalMutex; }
@@ -212,10 +248,11 @@ public:
 	SoundDevice::Manager *GetSoundDevicesManager() const { return m_pSoundDevicesManager.get(); }
 	void GetDefaultMidiMacro(MIDIMacroConfig &cfg) const { cfg = m_MidiCfg; }
 	void SetDefaultMidiMacro(const MIDIMacroConfig &cfg) { m_MidiCfg = cfg; }
+	mpt::PathString GetConfigDirectory() const { return m_ConfigPath; }
 	mpt::PathString GetConfigFileName() const { return m_szConfigFileName; }
 	SettingsContainer *GetpSettings()
 	{
-		return m_pSettings;
+		return m_pSettings.get();
 	}
 	SettingsContainer &GetSettings()
 	{
@@ -239,28 +276,28 @@ public:
 	{
 		return m_bSourceTreeMode;
 	}
-
-	SettingsContainer &GetPluginCache()
+	mpt::ustring GetInstallationMode() const
 	{
-		ASSERT(m_pPluginCache);
-		return *m_pPluginCache;
+		if(IsInstallerMode())
+		{
+			return MPT_USTRING("installer");
+		}
+		if(IsPortableMode())
+		{
+			return MPT_USTRING("portable");
+		}
+		if(IsSourceTreeMode())
+		{
+			return MPT_USTRING("sourcetree");
+		}
+		return MPT_USTRING("unknown");
 	}
 
-	SettingsContainer &GetSongSettings()
-	{
-		ASSERT(m_pSongSettings);
-		return *m_pSongSettings;
-	}
-	const mpt::PathString &GetSongSettingsFilename() const
-	{
-		return m_pSongSettingsIniFile->GetFilename();
-	}
+	SettingsContainer &GetPluginState();
+	SettingsContainer &GetPluginCache();
+	SettingsContainer &GetSongSettings();
+	const mpt::PathString &GetSongSettingsFilename() const;
 
-	void SetWineVersion(std::shared_ptr<mpt::OS::Wine::VersionContext> wineVersion)
-	{
-		MPT_ASSERT_ALWAYS(mpt::OS::Windows::IsWine());
-		m_WineVersion = wineVersion;
-	}
 	std::shared_ptr<mpt::OS::Wine::VersionContext> GetWineVersion() const
 	{
 		MPT_ASSERT_ALWAYS(mpt::OS::Windows::IsWine());
@@ -268,13 +305,13 @@ public:
 		return m_WineVersion;
 	}
 
-	void SetWine(std::shared_ptr<mpt::Wine::Context> wine)
+	void SetWineIntegration(std::shared_ptr<mpt::Wine::Context> wine)
 	{
-		m_Wine = wine;
+		m_WineIntegration = wine;
 	}
-	std::shared_ptr<mpt::Wine::Context> GetWine() const
+	std::shared_ptr<mpt::Wine::Context> GetWineIntegration() const
 	{
-		return m_Wine;
+		return m_WineIntegration;
 	}
 
 	void SetWineWrapperDllFilename(mpt::PathString filename)
@@ -288,18 +325,20 @@ public:
 
 	/// Returns path to config folder including trailing '\'.
 	mpt::PathString GetConfigPath() const { return m_ConfigPath; }
+	mpt::PathString GetUserTemplatesPath() const;
+	mpt::PathString GetExampleSongsPath() const;
 	void SetupPaths(bool overridePortable);
 	void CreatePaths();
 
-#if !defined(MPT_BUILD_RETRO)
+#if defined(MPT_ENABLE_SYSTEM_SUPPORT_CHECK)
 	bool CheckSystemSupport();
-#endif // !MPT_BUILD_RETRO
+#endif // MPT_ENABLE_SYSTEM_SUPPORT_CHECK
 
 	// Relative / absolute paths conversion
-	mpt::PathString PathAbsoluteToInstallRelative(const mpt::PathString &path) { return path.AbsolutePathToRelative(GetInstallPath()); }
-	mpt::PathString PathInstallRelativeToAbsolute(const mpt::PathString &path) { return path.RelativePathToAbsolute(GetInstallPath()); }
-	mpt::PathString PathAbsoluteToInstallBinArchRelative(const mpt::PathString &path) { return path.AbsolutePathToRelative(GetInstallBinArchPath()); }
-	mpt::PathString PathInstallBinArchRelativeToAbsolute(const mpt::PathString &path) { return path.RelativePathToAbsolute(GetInstallBinArchPath()); }
+	mpt::PathString PathAbsoluteToInstallRelative(const mpt::PathString &path) { return mpt::AbsolutePathToRelative(path, GetInstallPath()); }
+	mpt::PathString PathInstallRelativeToAbsolute(const mpt::PathString &path) { return mpt::RelativePathToAbsolute(path, GetInstallPath()); }
+	mpt::PathString PathAbsoluteToInstallBinArchRelative(const mpt::PathString &path) { return mpt::AbsolutePathToRelative(path, GetInstallBinArchPath()); }
+	mpt::PathString PathInstallBinArchRelativeToAbsolute(const mpt::PathString &path) { return mpt::RelativePathToAbsolute(path, GetInstallBinArchPath()); }
 
 	static void OpenModulesDialog(std::vector<mpt::PathString> &files, const mpt::PathString &overridePath = mpt::PathString());
 
@@ -308,10 +347,9 @@ public:
 	static CString GetResamplingModeName(ResamplingMode mode, int length, bool addTaps);
 
 	// Overrides
-public:
+protected:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CTrackApp)
-public:
 	BOOL InitInstance() override;
 	BOOL InitInstanceEarly(CMPTCommandLineInfo &cmdInfo);
 	BOOL InitInstanceLate(CMPTCommandLineInfo &cmdInfo);
@@ -326,10 +364,9 @@ public:
 	// Implementation
 
 	//{{AFX_MSG(CTrackApp)
-	CModDoc *NewDocument(MODTYPE newType = MOD_TYPE_NONE);
-
 	afx_msg void OnFileNew() { NewDocument(); }
-	afx_msg void OnFileNewMOD() { NewDocument(MOD_TYPE_MOD); }
+	afx_msg void OnFileNewMOD_Amiga() { NewDocument(MOD_TYPE_MOD); }
+	afx_msg void OnFileNewMOD_PC() { NewDocument(MOD_TYPE_MOD_PC); }
 	afx_msg void OnFileNewS3M() { NewDocument(MOD_TYPE_S3M); }
 	afx_msg void OnFileNewXM() { NewDocument(MOD_TYPE_XM); }
 	afx_msg void OnFileNewIT() { NewDocument(MOD_TYPE_IT); }
@@ -344,11 +381,20 @@ public:
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 
-protected:
+	size_t AddScannedDLSBanks();
+
 	void InitializeDXPlugins();
 	void UninitializeDXPlugins();
 
 	bool MoveConfigFile(const mpt::PathString &fileName, mpt::PathString subDir = {}, mpt::PathString newFileName = {});
+
+	UINT GetProfileInt(LPCTSTR lpszSection, LPCTSTR lpszEntry, int nDefault) override;
+	BOOL WriteProfileInt(LPCTSTR lpszSection, LPCTSTR lpszEntry, int nValue) override;
+	CString GetProfileString(LPCTSTR lpszSection, LPCTSTR lpszEntry, LPCTSTR lpszDefault = NULL) override;
+	BOOL WriteProfileString(LPCTSTR lpszSection, LPCTSTR lpszEntry, LPCTSTR lpszValue) override;
+	BOOL GetProfileBinary(LPCTSTR lpszSection, LPCTSTR lpszEntry, LPBYTE* ppData, UINT* pBytes) override;
+	BOOL WriteProfileBinary(LPCTSTR lpszSection, LPCTSTR lpszEntry, LPBYTE pData, UINT nBytes) override;
+
 };
 
 
@@ -371,14 +417,14 @@ protected:
 	};
 
 	MODPLUGFASTDIB m_Dib;
-	UINT m_nTextColor, m_nBkColor;
+	UINT m_nTextColor = 0, m_nBkColor = 0;
 	MODPLUGDIB *m_pTextDib;
-	uint8 m_nBlendOffset;
-	uint8 m_n4BitPalette[16];
-	uint8 m_nXShiftFactor;
+	uint8 m_nBlendOffset = 0;
+	uint8 m_n4BitPalette[16] = {{}};
+	uint8 m_nXShiftFactor = 0;
 
 public:
-	CFastBitmap() {}
+	CFastBitmap() = default;
 
 public:
 	void Init(MODPLUGDIB *lpTextDib = nullptr);
@@ -411,18 +457,13 @@ RGBQUAD rgb2quad(COLORREF c);
 // Other bitmap functions
 int DrawTextT(HDC hdc, const wchar_t *lpchText, int cchText, LPRECT lprc, UINT format);
 int DrawTextT(HDC hdc, const char *lpchText, int cchText, LPRECT lprc, UINT format);
-void DrawButtonRect(HDC hdc, const RECT *lpRect, LPCSTR lpszText = nullptr, BOOL bDisabled = FALSE, BOOL bPushed = FALSE, DWORD dwFlags = (DT_CENTER | DT_VCENTER), uint32 topMargin = 0);
-void DrawButtonRect(HDC hdc, const RECT *lpRect, LPCWSTR lpszText = nullptr, BOOL bDisabled = FALSE, BOOL bPushed = FALSE, DWORD dwFlags = (DT_CENTER | DT_VCENTER), uint32 topMargin = 0);
+void DrawButtonRect(HDC hdc, int lineWidth, const CRect &rect, const char *text = nullptr, bool disabled = false, bool pushed = false, DWORD dwFlags = (DT_CENTER | DT_VCENTER), uint32 topMargin = 0);
+void DrawButtonRect(HDC hdc, int lineWidth, const CRect &rect, const wchar_t *text = nullptr, bool disabled = false, bool pushed = false, DWORD dwFlags = (DT_CENTER | DT_VCENTER), uint32 topMargin = 0);
+void DrawButtonRect(HDC hdc, int lineWidth, HFONT font, const CRect &rect, const char *text = nullptr, bool disabled = false, bool pushed = false, DWORD dwFlags = (DT_CENTER | DT_VCENTER), uint32 topMargin = 0);
+void DrawButtonRect(HDC hdc, int lineWidth, HFONT font, const CRect &rect, const wchar_t *text = nullptr, bool disabled = false, bool pushed = false, DWORD dwFlags = (DT_CENTER | DT_VCENTER), uint32 topMargin = 0);
 
 // Misc functions
 void ErrorBox(UINT nStringID, CWnd *p = nullptr);
-
-// Helper function declarations.
-struct SNDMIXPLUGIN;
-class IMixPlugin;
-void AddPluginNamesToCombobox(CComboBox &CBox, const SNDMIXPLUGIN *plugarray, const bool libraryName = false, const PLUGINDEX updatePlug = PLUGINDEX_INVALID);
-void AddPluginParameternamesToCombobox(CComboBox &CBox, SNDMIXPLUGIN &plugarray);
-void AddPluginParameternamesToCombobox(CComboBox &CBox, IMixPlugin &plug);
 
 // Append note names in range [noteStart, noteEnd] to given combobox. Index starts from 0.
 void AppendNotesToControl(CComboBox &combobox, ModCommand::NOTE noteStart, ModCommand::NOTE noteEnd);
@@ -436,8 +477,14 @@ void AppendNotesToControlEx(CComboBox &combobox, const CSoundFile &sndFile, INST
 // Get window text (e.g. edit box content) as a CString
 CString GetWindowTextString(const CWnd &wnd);
 
-// Get window text (e.g. edit box content) as a unicode string
-mpt::ustring GetWindowTextUnicode(const CWnd &wnd);
+CString FormatFileSize(uint64 fileSize);
+
+CString FormatOrderRow(uint32 value);
+
+bool ValidateMacroString(CEdit &wnd, const std::string_view prevMacro, bool isParametric, bool allowVariables, bool allowMultiline);
+
+mpt::ustring ConstructSampleFormatFileFilter(bool includeRaw);
+
 
 ///////////////////////////////////////////////////
 // Tables

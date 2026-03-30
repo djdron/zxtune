@@ -10,18 +10,15 @@
 
 #include "stdafx.h"
 
-#ifndef NO_PLUGINS
-#include "../../Sndfile.h"
 #include "I3DL2Reverb.h"
+#include "../../Sndfile.h"
 #ifdef MODPLUG_TRACKER
 #include "../../../sounddsp/Reverb.h"
 #endif // MODPLUG_TRACKER
 #include "mpt/base/numbers.hpp"
-#endif // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_BEGIN
 
-#ifndef NO_PLUGINS
 
 namespace DMO
 {
@@ -51,7 +48,7 @@ void I3DL2Reverb::DelayLine::Advance()
 }
 
 
-MPT_FORCEINLINE void I3DL2Reverb::DelayLine::Set(float value)
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE void I3DL2Reverb::DelayLine::Set(float value)
 {
 	at(m_position) = value;
 }
@@ -66,19 +63,19 @@ float I3DL2Reverb::DelayLine::Get(int32 offset) const
 }
 
 
-MPT_FORCEINLINE float I3DL2Reverb::DelayLine::Get() const
+MPT_ATTR_ALWAYSINLINE MPT_INLINE_FORCE float I3DL2Reverb::DelayLine::Get() const
 {
 	return at(m_delayPosition);
 }
 
 
-IMixPlugin* I3DL2Reverb::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin* I3DL2Reverb::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) I3DL2Reverb(factory, sndFile, mixStruct);
 }
 
 
-I3DL2Reverb::I3DL2Reverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+I3DL2Reverb::I3DL2Reverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 	: IMixPlugin(factory, sndFile, mixStruct)
 {
 	m_param[kI3DL2ReverbRoom] = 0.9f;
@@ -98,7 +95,6 @@ I3DL2Reverb::I3DL2Reverb(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGI
 	SetCurrentProgram(m_program);
 
 	m_mixBuffer.Initialize(2, 2);
-	InsertIntoFactoryList();
 }
 
 
@@ -309,7 +305,7 @@ int32 I3DL2Reverb::GetNumPrograms() const
 void I3DL2Reverb::SetCurrentProgram(int32 program)
 {
 #ifdef MODPLUG_TRACKER
-	if(program < NUM_REVERBTYPES)
+	if(program < static_cast<int32>(NUM_REVERBTYPES))
 	{
 		m_program = program;
 		const auto &preset = *GetReverbPreset(m_program);
@@ -343,11 +339,11 @@ PlugParamValue I3DL2Reverb::GetParameter(PlugParamIndex index)
 }
 
 
-void I3DL2Reverb::SetParameter(PlugParamIndex index, PlugParamValue value)
+void I3DL2Reverb::SetParameter(PlugParamIndex index, PlugParamValue value, PlayState *, CHANNELINDEX)
 {
 	if(index < kI3DL2ReverbNumParameters)
 	{
-		Limit(value, 0.0f, 1.0f);
+		value = mpt::safe_clamp(value, 0.0f, 1.0f);
 		if(index == kI3DL2ReverbQuality)
 			value = mpt::round(value * 3.0f) / 3.0f;
 		m_param[index] = value;
@@ -506,7 +502,7 @@ void I3DL2Reverb::RecalculateI3DL2ReverbParams()
 		m_roomFilter = 0.0f;
 	} else
 	{
-		float freq = std::cos(HFReference() * (2.0f * mpt::numbers::pi_v<float>) / m_effectiveSampleRate);
+		float freq = std::min(std::cos(HFReference() * (2.0f * mpt::numbers::pi_v<float>) / m_effectiveSampleRate), 0.9999f);
 		float roomFilter = (freq * (roomHF + roomHF) - 2.0f + std::sqrt(freq * (roomHF * roomHF * freq * 4.0f) + roomHF * 8.0f - roomHF * roomHF * 4.0f - roomHF * freq * 8.0f)) / (roomHF + roomHF - 2.0f);
 		m_roomFilter = Clamp(roomFilter, 0.0f, 1.0f);
 	}
@@ -613,17 +609,19 @@ float I3DL2Reverb::CalcDecayCoeffs(int32 index)
 	if(decayHFRatio > 1.0f)
 		hfRef = mpt::numbers::pi_v<float>;
 
-	float c1 = std::pow(10.0f, ((m_delayTaps[index] / m_effectiveSampleRate) * -60.0f / DecayTime()) / 20.0f);
+	float c1 = std::pow(10.0f, ((static_cast<float>(m_delayTaps[index]) / m_effectiveSampleRate) * -60.0f / DecayTime()) / 20.0f);
 	float c2 = 0.0f;
 
 	float c21 = (std::pow(c1, 2.0f - 2.0f / decayHFRatio) - 1.0f) / (1.0f - std::cos(hfRef));
-	if(c21 != 0)
+	if(c21 != 0 && std::isfinite(c21))
 	{
 		float c22 = -2.0f * c21 - 2.0f;
-		float c23 = std::sqrt(c22 * c22 - c21 * c21 * 4.0f);
+		float c23sq = c22 * c22 - c21 * c21 * 4.0f;
+		float c23 = c23sq > 0.0f ? std::sqrt(c23sq) : 0.0f;
 		c2 = (c23 - c22) / (c21 + c21);
 		if(std::abs(c2) > 1.0f)
 			c2 = (-c22 - c23) / (c21 + c21);
+		c2 = mpt::sanitize_nan(c2);
 	}
 	m_delayCoeffs[index][0] = c1;
 	m_delayCoeffs[index][1] = c2;
@@ -635,9 +633,5 @@ float I3DL2Reverb::CalcDecayCoeffs(int32 index)
 
 } // namespace DMO
 
-#else
-MPT_MSVC_WORKAROUND_LNK4221(I3DL2Reverb)
-
-#endif // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_END

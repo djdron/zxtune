@@ -5,7 +5,7 @@
 -- and wildcard matches. Provides functions match match these criteria
 -- against various contexts.
 --
--- Copyright (c) 2012-2015 Jason Perkins and the Premake project
+-- Copyright (c) 2012-2015 Jess Perkins and the Premake project
 --
 
 	local p = premake
@@ -114,6 +114,19 @@
 					local fld = p.field.get(prefix)
 					if fld and fld.aliases then
 						word[1] = fld.aliases[word[1]] or word[1]
+					end
+				end
+
+				-- Check if the prefix is an action
+				if prefix == "action" or prefix == "_action" then
+					local actname = word[1]
+					-- Resolve the action alias
+					word[1] = p.action.resolvealias(actname)
+
+					-- Check if the action was deprecated
+					local actiondeprecation = p.action.deprecatedalias(actname)
+					if actiondeprecation ~= nil and actiondeprecation.filter ~= nil and type(actiondeprecation.filter) == "function" then
+						actiondeprecation.filter()
 					end
 				end
 

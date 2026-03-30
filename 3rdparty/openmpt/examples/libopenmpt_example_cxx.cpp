@@ -11,6 +11,10 @@
  * Usage: libopenmpt_example_cxx SOMEMODULE
  */
 
+#if defined( __MINGW32__ ) && !defined( __MINGW64__ )
+#include <sys/types.h>
+#endif
+
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -33,9 +37,23 @@
 #endif
 #endif
 
+#if defined( __DJGPP__ )
+#include <crt0.h>
+#endif /* __DJGPP__ */
+
+#if defined( __DJGPP__ )
+/* clang-format off */
+extern "C" int _crt0_startup_flags = 0
+	| _CRT0_FLAG_NONMOVE_SBRK          /* force interrupt compatible allocation */
+	| _CRT0_DISABLE_SBRK_ADDRESS_WRAP  /* force NT compatible allocation */
+	| _CRT0_FLAG_LOCK_MEMORY           /* lock all code and data at program startup */
+	| 0;
+/* clang-format on */
+#endif /* __DJGPP__ */
 #if ( defined( _WIN32 ) || defined( WIN32 ) ) && ( defined( _UNICODE ) || defined( UNICODE ) )
-#if defined( __GNUC__ )
+#if defined( __GNUC__ ) || ( defined( __clang__ ) && !defined( _MSC_VER ) )
 // mingw-w64 g++ does only default to special C linkage for "main", but not for "wmain" (see <https://sourceforge.net/p/mingw-w64/wiki2/Unicode%20apps/>).
+extern "C" int wmain( int /*argc*/, wchar_t * /*argv*/[] );
 extern "C" int wmain( int argc, wchar_t * argv[] ) {
 #else
 int wmain( int argc, wchar_t * argv[] ) {
@@ -43,6 +61,11 @@ int wmain( int argc, wchar_t * argv[] ) {
 #else
 int main( int argc, char * argv[] ) {
 #endif
+#if defined( __DJGPP__ )
+	/* clang-format off */
+	_crt0_startup_flags &= ~_CRT0_FLAG_LOCK_MEMORY;  /* disable automatic locking for all further memory allocations */
+	/* clang-format on */
+#endif /* __DJGPP__ */
 	try {
 		if ( argc != 2 ) {
 			throw std::runtime_error( "Usage: libopenmpt_example_cxx SOMEMODULE" );
@@ -64,7 +87,8 @@ int main( int argc, char * argv[] ) {
 		portaudio::StreamParameters stream_parameters( portaudio::DirectionSpecificStreamParameters::null(), outputstream_parameters, samplerate, paFramesPerBufferUnspecified, paNoFlag );
 		portaudio::BlockingStream stream( stream_parameters );
 #else
-		portaudio::BlockingStream stream = [&]() {
+		portaudio::BlockingStream stream = [&]()
+		{
 			try {
 				is_interleaved = false;
 				portaudio::DirectionSpecificStreamParameters outputstream_parameters( portaudio.defaultOutputDevice(), 2, portaudio::FLOAT32, false, portaudio.defaultOutputDevice().defaultHighOutputLatency(), 0 );

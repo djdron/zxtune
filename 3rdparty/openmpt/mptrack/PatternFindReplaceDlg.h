@@ -14,24 +14,25 @@
 
 #include "EffectInfo.h"
 #include "PatternCursor.h"
+#include "PatternFindReplace.h"
+#include "PluginComboBox.h"
 
 OPENMPT_NAMESPACE_BEGIN
 
 /////////////////////////////////////////////////////////////////////////
 // Search/Replace
 
-struct FindReplace;
-
 class CFindReplaceTab: public CPropertyPage
 {
 protected:
-	CComboBox m_cbnNote, m_cbnInstr, m_cbnVolCmd, m_cbnVolume, m_cbnCommand, m_cbnParam, m_cbnPCParam;
+	CComboBox m_cbnNote, m_cbnVolCmd, m_cbnVolume, m_cbnCommand, m_cbnParam, m_cbnPCParam;
+	PluginComboBox m_cbnInstr;
 
-	CSoundFile &m_sndFile;
+	const CSoundFile &m_sndFile;
 	FindReplace &m_settings;
 	EffectInfo m_effectInfo;
 	ModCommand m_initialValues;
-	bool m_isReplaceTab;
+	const bool m_isReplaceTab;
 
 	// Special ItemData values
 	enum
@@ -49,16 +50,18 @@ protected:
 
 		kReplaceInstrumentMinusOne = INT_MAX - 5,
 		kReplaceInstrumentPlusOne = INT_MAX - 6,
+
+		kBeginSpecial = kReplaceInstrumentPlusOne
 	};
 
 public:
-	CFindReplaceTab(UINT nIDD, bool isReplaceTab, CSoundFile &sf, FindReplace &settings, const ModCommand &initialValues)
-		: CPropertyPage(nIDD)
-		, m_sndFile(sf)
-		, m_settings(settings)
-		, m_effectInfo(sf)
-		, m_initialValues(initialValues)
-		, m_isReplaceTab(isReplaceTab)
+	CFindReplaceTab(UINT dlgID, bool isReplaceTab, const CSoundFile &sf, FindReplace &settings, const ModCommand &initialValues)
+		: CPropertyPage{dlgID}
+		, m_sndFile{sf}
+		, m_settings{settings}
+		, m_effectInfo{sf}
+		, m_initialValues{initialValues}
+		, m_isReplaceTab{isReplaceTab}
 	{ }
 
 protected:
@@ -73,23 +76,23 @@ protected:
 	void UpdateParamList();
 
 	// When a combobox is focussed, check the corresponding checkbox.
-	void CheckOnChange(int nIDButton) { CheckDlgButton(nIDButton, BST_CHECKED); CheckReplace(nIDButton); };
+	void CheckOnChange(int buttonID) { CheckDlgButton(buttonID, BST_CHECKED); CheckReplace(buttonID); };
 	afx_msg void OnNoteChanged();
 	afx_msg void OnInstrChanged();
-	afx_msg void OnVolCmdChanged()	{ CheckOnChange(IDC_CHECK3); UpdateVolumeList(); };
+	afx_msg void OnVolCmdChanged();
 	afx_msg void OnVolumeChanged();
-	afx_msg void OnEffectChanged()	{ CheckOnChange(IDC_CHECK5); UpdateParamList(); };
+	afx_msg void OnEffectChanged();
 	afx_msg void OnParamChanged();
 	afx_msg void OnPCParamChanged();
 	// When a checkbox is checked, also check "Replace By".
-	afx_msg void OnCheckNote()		{ CheckReplace(IDC_CHECK1); };
-	afx_msg void OnCheckInstr()		{ CheckReplace(IDC_CHECK2); };
-	afx_msg void OnCheckVolCmd()	{ CheckReplace(IDC_CHECK3); };
-	afx_msg void OnCheckVolume()	{ CheckReplace(IDC_CHECK4); };
-	afx_msg void OnCheckEffect()	{ CheckReplace(IDC_CHECK5); };
-	afx_msg void OnCheckParam()		{ CheckReplace(IDC_CHECK6); };
+	afx_msg void OnCheckNote();
+	afx_msg void OnCheckInstr();
+	afx_msg void OnCheckVolCmd();
+	afx_msg void OnCheckVolume();
+	afx_msg void OnCheckEffect();
+	afx_msg void OnCheckParam();
 	// Check "Replace By"
-	afx_msg void CheckReplace(int nIDButton)	{ if(m_isReplaceTab && IsDlgButtonChecked(nIDButton)) CheckDlgButton(IDC_CHECK7, BST_CHECKED); };
+	afx_msg void CheckReplace(int buttonID);
 
 	afx_msg void OnCheckChannelSearch();
 

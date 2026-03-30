@@ -101,7 +101,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 // 0x49      - I - Finder flags
 // 0x4a      - Z - "Must be zero for compatibility"
 // 0x4b-0x4c - I - Icon vertical position
-// 0x4d-0x4e - I - Icon horizonal position
+// 0x4d-0x4e - I - Icon horizontal position
 // 0x4f-0x50 - I - Window ID
 // 0x51      - I - "Protected" flag
 // 0x52      - Z - "Must be zero for compatibility"
@@ -425,7 +425,7 @@ static size_t macbinary_decoder_read(void *_decoder, uint8_t *buf)
 	return result;
 }
 
-static LHADecoderType macbinary_decoder_type = {
+static const LHADecoderType macbinary_decoder_type = {
 	macbinary_decoder_init,
 	NULL,
 	macbinary_decoder_read,
@@ -448,4 +448,3 @@ LHADecoder *lha_macbinary_passthrough(LHADecoder *decoder,
 
 	return result;
 }
-

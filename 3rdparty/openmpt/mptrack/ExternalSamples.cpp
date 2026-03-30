@@ -9,20 +9,23 @@
 
 
 #include "stdafx.h"
-#include "Moddoc.h"
 #include "ExternalSamples.h"
 #include "FileDialog.h"
 #include "FolderScanner.h"
-#include "TrackerSettings.h"
+#include "Moddoc.h"
+#include "MPTrackUtil.h"
 #include "Reporting.h"
 #include "resource.h"
+#include "TrackerSettings.h"
+#include "UpdateHints.h"
+#include "mpt/fs/fs.hpp"
 
 OPENMPT_NAMESPACE_BEGIN
 
 BEGIN_MESSAGE_MAP(MissingExternalSamplesDlg, ResizableDialog)
 	//{{AFX_MSG_MAP(ExternalSamplesDlg)
-	ON_NOTIFY(NM_DBLCLK,	IDC_LIST1,	&MissingExternalSamplesDlg::OnSetPath)
-	ON_COMMAND(IDC_BUTTON1,				&MissingExternalSamplesDlg::OnScanFolder)
+	ON_NOTIFY(NM_DBLCLK, IDC_LIST1, &MissingExternalSamplesDlg::OnSetPath)
+	ON_COMMAND(IDC_BUTTON1,         &MissingExternalSamplesDlg::OnScanFolder)
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
@@ -49,14 +52,14 @@ BOOL MissingExternalSamplesDlg::OnInitDialog()
 	// Initialize table
 	const CListCtrlEx::Header headers[] =
 	{
-		{ _T("Sample"),				128, LVCFMT_LEFT },
-		{ _T("External Filename"),	308, LVCFMT_LEFT },
+		{ _T("Sample"),            128, LVCFMT_LEFT },
+		{ _T("External Filename"), 308, LVCFMT_LEFT },
 	};
 	m_List.SetHeaders(headers);
 	m_List.SetExtendedStyle(m_List.GetExtendedStyle() | LVS_EX_FULLROWSELECT);
 
 	GenerateList();
-	SetWindowText((_T("Missing External Samples - ") + m_modDoc.GetPathNameMpt().GetFullFileName().AsNative()).c_str());
+	SetWindowText((_T("Missing External Samples - ") + m_modDoc.GetPathNameMpt().GetFilename().AsNative()).c_str());
 
 	return TRUE;
 }
@@ -96,7 +99,7 @@ void MissingExternalSamplesDlg::OnSetPath(NMHDR *, LRESULT *)
 
 	const mpt::PathString path = m_modDoc.GetSoundFile().GetSamplePath(smp);
 	FileDialog dlg = OpenFileDialog()
-		.ExtensionFilter("All Samples|*.wav;*.flac|All files(*.*)|*.*||");  // Only show samples that we actually can save as well.
+		.ExtensionFilter(U_("All Samples|*.wav;*.flac|All files(*.*)|*.*||"));  // Only show samples that we actually can save as well.
 	if(TrackerSettings::Instance().previewInFileDialogs)
 		dlg.EnableAudioPreview();
 	if(path.empty())
@@ -121,6 +124,7 @@ void MissingExternalSamplesDlg::OnScanFolder()
 	}
 
 	BrowseForFolder dlg(TrackerSettings::Instance().PathSamples.GetWorkingDir(), _T("Select a folder to search for missing samples..."));
+	dlg.AddPlace(m_modDoc.GetPathNameMpt().GetDirectoryWithDrive());
 	if(dlg.Show())
 	{
 		TrackerSettings::Instance().PathSamples.SetWorkingDir(dlg.GetDirectory());
@@ -144,7 +148,7 @@ void MissingExternalSamplesDlg::OnScanFolder()
 			{
 				if(m_sndFile.IsExternalSampleMissing(smp))
 				{
-					if(!mpt::PathString::CompareNoCase(m_sndFile.GetSamplePath(smp).GetFullFileName(), fileName.GetFullFileName()))
+					if(!mpt::PathCompareNoCase(m_sndFile.GetSamplePath(smp).GetFilename(), fileName.GetFilename()))
 					{
 						if(SetSample(smp, fileName))
 						{
@@ -250,7 +254,7 @@ BOOL ModifiedExternalSamplesDlg::OnInitDialog()
 	m_List.SetExtendedStyle(m_List.GetExtendedStyle() | LVS_EX_FULLROWSELECT | LVS_EX_CHECKBOXES);
 
 	GenerateList();
-	SetWindowText((_T("Modified External Samples - ") + m_modDoc.GetPathNameMpt().GetFullFileName().AsNative()).c_str());
+	SetWindowText((_T("Modified External Samples - ") + m_modDoc.GetPathNameMpt().GetFilename().AsNative()).c_str());
 
 	return TRUE;
 }
@@ -269,7 +273,9 @@ void ModifiedExternalSamplesDlg::GenerateList()
 
 		if(m_sndFile.GetSample(smp).uFlags[SMP_MODIFIED])
 			status = _T("modified");
-		else if(!m_sndFile.GetSamplePath(smp).IsFile())
+		else if(!m_sndFile.GetSample(smp).HasSampleData())
+			continue;  // Sample was already missing when the file was loaded, nothing we can do here
+		else if(!mpt::native_fs{}.is_file(m_sndFile.GetSamplePath(smp)))
 			status = _T("missing");
 		else
 			continue;

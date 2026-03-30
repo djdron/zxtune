@@ -12,27 +12,24 @@
 
 #include "stdafx.h"
 
-#ifndef NO_PLUGINS
-#include "../../Sndfile.h"
 #include "Distortion.h"
+#include "../../Sndfile.h"
 #include "DMOUtils.h"
 #include "mpt/base/numbers.hpp"
-#endif // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_BEGIN
 
-#ifndef NO_PLUGINS
 
 namespace DMO
 {
 
-IMixPlugin* Distortion::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin* Distortion::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) Distortion(factory, sndFile, mixStruct);
 }
 
 
-Distortion::Distortion(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+Distortion::Distortion(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 	: IMixPlugin(factory, sndFile, mixStruct)
 {
 	m_param[kDistGain] = 0.7f;
@@ -42,7 +39,6 @@ Distortion::Distortion(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN 
 	m_param[kDistPostEQBandwidth] = 0.291f;
 
 	m_mixBuffer.Initialize(2, 2);
-	InsertIntoFactoryList();
 }
 
 
@@ -93,11 +89,11 @@ PlugParamValue Distortion::GetParameter(PlugParamIndex index)
 }
 
 
-void Distortion::SetParameter(PlugParamIndex index, PlugParamValue value)
+void Distortion::SetParameter(PlugParamIndex index, PlugParamValue value, PlayState *, CHANNELINDEX)
 {
 	if(index < kDistNumParameters)
 	{
-		Limit(value, 0.0f, 1.0f);
+		value = mpt::safe_clamp(value, 0.0f, 1.0f);
 		m_param[index] = value;
 		RecalculateDistortionParams();
 	}
@@ -141,9 +137,11 @@ CString Distortion::GetParamLabel(PlugParamIndex param)
 {
 	switch(param)
 	{
-	case kDistGain: return _T("dB");
+	case kDistGain:
+		return _T("dB");
 	case kDistPreLowpassCutoff:
 	case kDistPostEQCenterFrequency:
+	case kDistPostEQBandwidth:
 		return _T("Hz");
 	}
 	return CString();
@@ -178,24 +176,13 @@ CString Distortion::GetParamDisplay(PlugParamIndex param)
 void Distortion::RecalculateDistortionParams()
 {
 	// Pre-EQ
-	m_preEQb1 = std::sqrt((2.0f * std::cos(2.0f * mpt::numbers::pi_v<float> * std::min(FreqInHertz(m_param[kDistPreLowpassCutoff]) / m_SndFile.GetSampleRate(), 0.5f)) + 3.0f) / 5.0f);
+	m_preEQb1 = std::sqrt((2.0f * std::cos(2.0f * mpt::numbers::pi_v<float> * std::min(FreqInHertz(m_param[kDistPreLowpassCutoff]) / static_cast<float>(m_SndFile.GetSampleRate()), 0.5f)) + 3.0f) / 5.0f);
 	m_preEQa0 = std::sqrt(1.0f - m_preEQb1 * m_preEQb1);
 
 	// Distortion
 	float edge = 2.0f + m_param[kDistEdge] * 29.0f;
-	m_edge = static_cast<uint8>(edge);	// 2...31 shifted bits
-
-	// Work out the magical shift factor (= floor(log2(edge)) + 1 == index of highest bit + 1)
-	uint8 shift;
-	if(m_edge <= 3)
-		shift = 2;
-	else if(m_edge <= 7)
-		shift = 3;
-	else if(m_edge <= 15)
-		shift = 4;
-	else
-		shift = 5;
-	m_shift = shift;
+	m_edge = static_cast<uint8>(edge);  // 2...31 shifted bits
+	m_shift = static_cast<uint8>(mpt::bit_width(m_edge));
 
 	static constexpr float LogNorm[32] =
 	{
@@ -207,8 +194,8 @@ void Distortion::RecalculateDistortionParams()
 
 	// Post-EQ
 	const float gain = std::pow(10.0f, GainInDecibel() / 20.0f);
-	const float postFreq = 2.0f * mpt::numbers::pi_v<float> * std::min(FreqInHertz(m_param[kDistPostEQCenterFrequency]) / m_SndFile.GetSampleRate(), 0.5f);
-	const float postBw = 2.0f * mpt::numbers::pi_v<float> * std::min(FreqInHertz(m_param[kDistPostEQBandwidth]) / m_SndFile.GetSampleRate(), 0.5f);
+	const float postFreq = 2.0f * mpt::numbers::pi_v<float> * std::min(FreqInHertz(m_param[kDistPostEQCenterFrequency]) / static_cast<float>(m_SndFile.GetSampleRate()), 0.5f);
+	const float postBw = 2.0f * mpt::numbers::pi_v<float> * std::min(FreqInHertz(m_param[kDistPostEQBandwidth]) / static_cast<float>(m_SndFile.GetSampleRate()), 0.5f);
 	const float t = std::tan(5.0e-1f * postBw);
 	m_postEQb1 = ((1.0f - t) / (1.0f + t));
 	m_postEQb0 = -std::cos(postFreq);
@@ -217,9 +204,5 @@ void Distortion::RecalculateDistortionParams()
 
 } // namespace DMO
 
-#else
-MPT_MSVC_WORKAROUND_LNK4221(Distortion)
-
-#endif // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_END

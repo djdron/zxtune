@@ -51,7 +51,7 @@ typedef enum {
  *                    an error occurred in generating the string.
  */
 
-int lha_arch_vasprintf(char **result, char *fmt, va_list args);
+int lha_arch_vasprintf(char **result, const char *fmt, va_list args);
 
 /**
  * Change the mode of the specified FILE handle to be binary mode.
@@ -157,4 +157,3 @@ LHAFileType lha_arch_exists(char *filename);
 int lha_arch_symlink(char *path, char *target);
 
 #endif /* ifndef LHASA_LHA_ARCH_H */
-

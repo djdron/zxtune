@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <core/plugins/player_plugin.h>
 
 
+extern const GUID preferences_guid = { 0xce451919, 0xd1db, 0x44ed, { 0x8e, 0x6a, 0x38, 0x87, 0xa7, 0x56, 0xfb, 0x81 } };
+
 static const GUID player_plugins_disabled_guid = { 0xe8d7b860, 0x5a8b, 0x4954, { 0xb4, 0x7d, 0x4c, 0x9f, 0xfb, 0x23, 0xd0, 0xfc } };
 static cfg_string player_plugins_disabled_cfg(player_plugins_disabled_guid, "");
 

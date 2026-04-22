@@ -42,7 +42,7 @@ const std::vector<PlayerPlugin::Ptr>& PlayerPlugins();
 // As for 1.1, the version numbers are used by the component update finder to find updates; for that to work, you must have ONLY ONE declaration per DLL. If there are multiple declarations, the component is assumed to be outdated and a version number of "0" is assumed, to overwrite the component with whatever is currently on the site assuming that it comes with proper version numbers.
 DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.10",
 "ZXTune (C) 2008 - 2026 by Vitamin/CAIG.\n"
-"based on r5100 + develop mar 10 2026\n"
+"based on r5100 + develop mar 26 2026\n"
 "foobar2000 plugin by djdron (C) 2013 - 2026.\n"
 "https://github.com/djdron/zxtune/tree/cmake\n\n"
 
@@ -69,11 +69,13 @@ DECLARE_COMPONENT_VERSION("ZXTune Decoders", "0.0.10",
 "v2m-player library by Farbrausch and Joakim L. Gilje\n"
 "libvgm library by Valley Bell\n"
 "sseqplayer by Naram Qashat, fincs and Christopher Snowhill\n"
-"openmpt library\n"
+"openmpt library by Jörn ‘manx’ Heusipp, Johannes ‘Saga Musix’ Schultz and Olivier Lapicque\n"
 );
 
 // This will prevent users from renaming your component around (important for proper troubleshooter behaviors) or loading multiple instances of it.
 VALIDATE_COMPONENT_FILENAME("foo_input_zxtune.dll");
+
+extern const GUID preferences_guid;
 
 const std::vector<std::string>& SupportedExts();
 
@@ -119,6 +121,7 @@ public:
 
 	static const char* g_get_name() { return "ZXTune Decoders"; }
 	static GUID g_get_guid();
+	static GUID g_get_preferences_guid() { return preferences_guid; }
 
 private:
 	void ParseModules(abort_callback& p_abort);

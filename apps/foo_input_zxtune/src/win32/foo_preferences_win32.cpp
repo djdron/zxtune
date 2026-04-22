@@ -181,17 +181,14 @@ bool CMyPreferences::HasChangedNeedRestart()
 	return players_disabled != players_list.disabled;
 }
 
+extern const GUID preferences_guid;
+
 class preferences_page_myimpl : public preferences_page_impl<CMyPreferences>
 {
 public:
-	const char * get_name() { return "ZXTune"; }
-	GUID get_guid()
-	{
-		static const GUID guid = { 0xce451919, 0xd1db, 0x44ed, { 0x8e, 0x6a, 0x38, 0x87, 0xa7, 0x56, 0xfb, 0x81 } };
-		return guid;
-	}
-	GUID get_parent_guid() { return guid_input; }
+	virtual const char* get_name() override { return "ZXTune"; }
+	virtual GUID get_guid() override { return preferences_guid; }
+	virtual GUID get_parent_guid() override { return guid_input; }
 };
 
-static preferences_page_factory_t<preferences_page_myimpl> g_preferences_page_myimpl_factory;
-
+FB2K_SERVICE_FACTORY(preferences_page_myimpl);

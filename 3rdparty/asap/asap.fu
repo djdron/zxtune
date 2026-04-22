@@ -1,0 +1,958 @@
+// asap.fu - emulation engine
+//
+// Copyright (C) 2010-2026  Piotr Fusik
+//
+// This file is part of ASAP (Another Slight Atari Player),
+// see http://asap.sourceforge.net
+//
+// ASAP is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published
+// by the Free Software Foundation; either version 2 of the License,
+// or (at your option) any later version.
+//
+// ASAP is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty
+// of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with ASAP; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+class ASAPModuleTransfer
+{
+	internal byte[] Source;
+	internal int SourceOffset;
+	internal byte[]! Output;
+	internal int OutputOffset;
+	int AddressDiff;
+
+	void WriteByte!(byte value)
+	{
+		Output[OutputOffset++] = value;
+	}
+
+	void WriteWord!(ushort value)
+	{
+		WriteByte(value & 0xff);
+		WriteByte(value >> 8);
+	}
+
+	internal void WriteBytes!(byte[] source, int offset, int count)
+	{
+		source.CopyTo(offset, Output, OutputOffset, count);
+		OutputOffset += count;
+	}
+
+	ushort ReadWord!()
+	{
+		ushort value = ASAPInfo.GetWord(Source, SourceOffset);
+		SourceOffset += 2;
+		return value;
+	}
+
+	void Copy!(int count)
+	{
+		WriteBytes(Source, SourceOffset, count);
+		SourceOffset += count;
+	}
+
+	void RelocateBytes!(int lowOffset, int highOffset, int count, int shift)
+	{
+		lowOffset += SourceOffset;
+		highOffset += SourceOffset;
+		for (int i = 0; i < count; i++) {
+			int address = Source[lowOffset + i] + (Source[highOffset + i] << 8);
+			if (address != 0 && address != 0xffff)
+				address += AddressDiff;
+			WriteByte((address >> shift) & 0xff);
+		}
+		SourceOffset += count;
+	}
+
+	void RelocateLowHigh!(int count)
+	{
+		RelocateBytes(0, count, count, 0);
+		RelocateBytes(-count, 0, count, 8);
+	}
+
+	void RelocateWords!(int count)
+	{
+		while (--count >= 0) {
+			int address = ReadWord();
+			if (address != 0 && address != 0xffff)
+				address += AddressDiff;
+			WriteWord(address);
+		}
+	}
+
+	internal void TransferModule!(ASAPInfo info, int sourceEnd, bool outputFile)
+	{
+		SourceOffset += 2;
+		ushort startAddr = ReadWord();
+		ushort endAddr = ReadWord();
+		AddressDiff = info.Music < 0 ? 0 : info.Music - startAddr;
+		if (outputFile) {
+			WriteWord(0xffff);
+			WriteWord(startAddr + AddressDiff);
+			WriteWord(endAddr + AddressDiff);
+		}
+		switch (info.OriginalType) {
+		case ASAPModuleType.Cmc:
+		case ASAPModuleType.Cm3:
+		case ASAPModuleType.Cmr:
+		case ASAPModuleType.Cms:
+			// CMC/SAP -> CMC
+			Copy(20); // CMC header
+			RelocateLowHigh(64); // patterns
+			break;
+		case ASAPModuleType.Dlt:
+			// DLT/SAP -> DLT
+			break;
+		case ASAPModuleType.Mpt:
+		case ASAPModuleType.Md1:
+		case ASAPModuleType.Md2:
+			// MPT/SAP -> MPT
+			RelocateWords(32 + 64); // instruments, patterns
+			Copy(256); // frequency tables
+			RelocateLowHigh(4); // tracks
+			break;
+		case ASAPModuleType.Rmt:
+			// RMT/SAP -> RMT
+			int startOffset = SourceOffset;
+			int channels = Source[startOffset + 3] - '0';
+			Copy(8); // RMT header
+			ushort patternLowAddr = ASAPInfo.GetWord(Source, startOffset + 10);
+			ushort patternHighAddr = ASAPInfo.GetWord(Source, startOffset + 12);
+			ushort songAddr = ASAPInfo.GetWord(Source, startOffset + 14);
+			RelocateWords((patternLowAddr - startAddr - 8) >> 1); // 4 pointers, instruments
+			RelocateLowHigh(patternHighAddr - patternLowAddr); // patterns
+			Copy(songAddr - startAddr + startOffset - SourceOffset); // patterns
+			int songEnd = endAddr + 1 - startAddr + startOffset;
+			while (SourceOffset < songEnd) {
+				int songLineLen = Math.Min(channels, songEnd - SourceOffset);
+				if (songLineLen >= 4 && Source[SourceOffset] == 0xfe) {
+					// song jump
+					Copy(2); // 0xfe, line_number
+					RelocateWords(1); // jump address
+					songLineLen -= 4;
+				}
+				Copy(songLineLen);
+			}
+			if (!outputFile)
+				return;
+			if (sourceEnd >= songEnd + 5)
+				RelocateWords(2); // DOS header of text info: title and instrument names
+			break;
+		case ASAPModuleType.Tmc:
+			// TMC/SAP -> TMC
+			Copy(32); // TMC header
+			RelocateLowHigh(64); // instruments
+			RelocateLowHigh(128); // patterns
+			break;
+		case ASAPModuleType.Tm2:
+			// TM2/SAP -> TM2
+			Copy(128); // TM2 header
+			RelocateBytes(0, 0x280, 128, 0); // instruments/low
+			RelocateLowHigh(256); // patterns
+			RelocateBytes(-0x280, 0, 128, 8); // instruments/high
+			break;
+		default:
+			assert false;
+		}
+		Copy(sourceEnd - SourceOffset); // copy remaining bytes
+	}
+}
+
+#if !ASAP_ONLY_SAP && !OPENCL
+public abstract class ASAPFileLoader
+{
+	public abstract int Load(string filename, byte[]! buffer, int length);
+}
+
+class ASAPMptSamples
+{
+	const int MinLength = 32 + 256;
+	const int MaxLength = 32 + 12 * 1024;
+	internal byte[MaxLength] Content;
+	internal int ContentLength;
+	internal bool Is15kHz;
+
+	bool DoLoad!(ASAPFileLoader loader, string moduleFilename, nint moduleFilenameLength, int extNumber)
+	{
+		string extInitial = moduleFilename[moduleFilenameLength - 3] == 'M' ? "D" : "d";
+		string() filename = $"{moduleFilename.Substring(0, moduleFilenameLength - 3)}{extInitial}{extNumber}";
+		ContentLength = loader.Load(filename, Content, MaxLength);
+		if (ContentLength < MinLength)
+			return false;
+		int end = -1;
+		for (int i = 0; i < 16; i++) {
+			int start = Content[i];
+			if (start == 0) {
+				for (; i < 16; i++) {
+					if (Content[i] != 0 || Content[16 + i] != 0)
+						return false;
+				}
+				break;
+			}
+			if (i > 0 && start != end)
+				return false;
+			end = Content[16 + i];
+			if (end <= start)
+				return false;
+		}
+		return ContentLength >= (end - Content[0] << 8) + 0x20; // equal, or garbage data at the end
+	}
+
+	public bool Load!(ASAPFileLoader loader, string moduleFilename)
+	{
+		nint moduleFilenameLength = moduleFilename.Length;
+		if (moduleFilename[moduleFilenameLength - 1] == '1'
+		 && DoLoad(loader, moduleFilename, moduleFilenameLength, 15)) {
+			Is15kHz = true;
+			return true;
+		}
+		if (DoLoad(loader, moduleFilename, moduleFilenameLength, 8)) {
+			Is15kHz = false;
+			return true;
+		}
+		return false;
+	}
+
+	public void Relocate!(int music, int musicLast)
+	{
+		int start = (Content[0] << 8) - 0x20;
+		if ((musicLast < start || music >= start + ContentLength) && start >= 0xf00) // assume player ends before $0f00
+			return;
+		int h = 0x0fe0 + ContentLength <= music ? 0x10 : (0xd020 - ContentLength) >> 8;
+		h -= Content[0];
+		for (int i = 0; i < 32; i++) {
+			if (Content[i] != 0)
+				Content[i] += h;
+		}
+	}
+}
+#endif
+
+enum NmiStatus
+{
+	Reset,
+	OnVBlank,
+	WasVBlank
+}
+
+/// Atari 8-bit chip music emulator.
+/// This class performs no I/O operations - all music data must be passed in byte arrays.
+public class ASAP
+{
+	/// Default output sample rate.
+	public const int SampleRate = 44100;
+
+	internal int NextEventCycle;
+
+	Cpu6502() Cpu;
+
+	// ANTIC:
+	int NextScanlineCycle;
+	NmiStatus Nmist;
+
+	// GTIA:
+	int Consol;
+
+	// COVOX:
+	byte[4] Covox;
+
+	// POKEYs:
+	PokeyPair() Pokeys;
+
+	ASAPInfo() ModuleInfo;
+	int MptSamplesPage; // MD1/MD2 only
+	bool MptSamples15kHz; // MD1/MD2 only
+	int MptSamplesCurrentAddress; // D15/D8 only
+	bool MptSamplesSecondNibble; // D15/D8 only
+	int NextPlayerCycle;
+	int TmcPerFrameCounter;
+	int CurrentSong;
+	int CurrentDuration;
+	int BlocksPlayed;
+	int SilenceCycles;
+	int SilenceCyclesCounter;
+	bool GtiaOrCovoxPlayedThisFrame;
+
+	public ASAP()
+	{
+		SilenceCycles = 0;
+		Cpu.Asap = this;
+	}
+
+	int CurrentSampleRate = SampleRate;
+
+	/// Returns the output sample rate.
+	public int GetSampleRate() => CurrentSampleRate;
+
+	/// Sets the output sample rate.
+	public void SetSampleRate!(int sampleRate)
+	{
+		CurrentSampleRate = sampleRate;
+	}
+
+	/// Enables silence detection.
+	/// Causes playback to stop after the specified period of silence.
+	public void DetectSilence!(
+		/// Length of silence which ends playback. Zero disables silence detection.
+		int seconds)
+	{
+		// for simplicity ignore PAL/NTSC difference - this doesn't need to be precise
+		SilenceCyclesCounter = SilenceCycles = seconds * 1773447;
+	}
+
+	internal int PeekHardware(int addr)
+	{
+		switch (addr & 0xff1f) {
+		case 0xd014:
+			return ModuleInfo.IsNtsc() ? 0xf : 1;
+		case 0xd01f:
+			return ~Consol & 0xf;
+		case 0xd20a:
+		case 0xd21a:
+		case 0xd20e:
+		case 0xd21e:
+			return Pokeys.Peek(addr, Cpu.Cycle);
+		case 0xd20c:
+		case 0xd21c:
+		case 0xd20f: // just because some SAP files rely on this
+		case 0xd21f:
+			return 0xff;
+		case 0xd40b:
+		case 0xd41b:
+			int cycle = Cpu.Cycle;
+			if (cycle > (ModuleInfo.IsNtsc() ? 262 * 114 : 312 * 114))
+				return 0;
+			return cycle / 228;
+		case 0xd40f:
+		case 0xd41f:
+			switch (Nmist) {
+			case NmiStatus.Reset:
+				return 0x1f;
+			case NmiStatus.WasVBlank:
+				return 0x5f;
+			default: // case NmiStatus.OnVBlank:
+				return Cpu.Cycle < 28291 ? 0x1f : 0x5f;
+			}
+		default:
+			return Cpu.Memory[addr];
+		}
+	}
+
+	internal void PokeHardware!(int addr, int data)
+	{
+		if (addr >> 8 == 0xd2) {
+			int t = Pokeys.Poke(addr, data, Cpu.Cycle);
+			if (NextEventCycle > t)
+				NextEventCycle = t;
+		}
+		else if ((addr & 0xff0f) == 0xd40a) {
+			int x = Cpu.Cycle % 114;
+			Cpu.Cycle += (x <= 106 ? 106 : 106 + 114) - x;
+		}
+		else if ((addr & 0xff0f) == 0xd40f) {
+			Nmist = Cpu.Cycle < 28292 ? NmiStatus.OnVBlank : NmiStatus.Reset;
+		}
+		else if ((addr & 0xff00) == ModuleInfo.GetCovoxAddress()) {
+			addr &= 3;
+			Pokey! pokey = addr == 0 || addr == 3 ? Pokeys.BasePokey : Pokeys.ExtraPokey;
+			int delta = data - Covox[addr];
+			if (delta != 0) {
+				const int DeltaShiftCOVOX = 17;
+				pokey.AddExternalDelta(Pokeys, Cpu.Cycle, delta << DeltaShiftCOVOX);
+				Covox[addr] = data;
+				GtiaOrCovoxPlayedThisFrame = true;
+			}
+		}
+		else if ((addr & 0xff1f) == 0xd01f) {
+			const int DeltaShiftGTIA = 20;
+			// NOT data - Consol; reverse to the POKEY sound
+			int delta = ((Consol & 8) - (data & 8)) << DeltaShiftGTIA;
+			if (delta != 0) {
+				int cycle = Cpu.Cycle;
+				Pokeys.BasePokey.AddExternalDelta(Pokeys, cycle, delta);
+				Pokeys.ExtraPokey.AddExternalDelta(Pokeys, cycle, delta);
+				GtiaOrCovoxPlayedThisFrame = true;
+			}
+			Consol = data;
+		}
+		else
+			Cpu.Memory[addr] = data;
+	}
+
+	void StoreJsr!(int addr, int target)
+	{
+		Cpu.Memory[addr] = 0x20; // JSR
+		Cpu.Memory[addr + 1] = target & 0xff;
+		Cpu.Memory[addr + 2] = target >> 8;
+	}
+
+	void Call6502!(int target)
+	{
+		const int codeAddr = 0xd200;
+		StoreJsr(codeAddr, target);
+		Cpu.Memory[codeAddr + 3] = 0xd2; // escape
+		Cpu.Pc = codeAddr;
+	}
+
+	void Call6502PreservingRegisters!(int target)
+	{
+		Cpu.PushPc();
+		const int codeAddr = 0xd200;
+		Cpu.Memory[codeAddr] = 0x08; // PHP
+		Cpu.Memory[codeAddr + 1] = 0x48; // PHA
+		Cpu.Memory[codeAddr + 2] = 0x8a; // TXA
+		Cpu.Memory[codeAddr + 3] = 0x48; // PHA
+		Cpu.Memory[codeAddr + 4] = 0x98; // TYA
+		Cpu.Memory[codeAddr + 5] = 0x48; // PHA
+		StoreJsr(codeAddr + 6, target);
+		Cpu.Memory[codeAddr + 9] = 0x68; // PLA
+		Cpu.Memory[codeAddr + 10] = 0xa8; // TAY
+		Cpu.Memory[codeAddr + 11] = 0x68; // PLA
+		Cpu.Memory[codeAddr + 12] = 0xaa; // TAX
+		Cpu.Memory[codeAddr + 13] = 0x68; // PLA
+		Cpu.Memory[codeAddr + 14] = 0x40; // RTI
+		Cpu.Pc = codeAddr;
+	}
+
+	void Call6502Player!()
+	{
+		int player = ModuleInfo.Player;
+		switch (ModuleInfo.Type) {
+		case ASAPModuleType.SapB:
+			Call6502(player);
+			break;
+		case ASAPModuleType.SapC:
+#if !ASAP_ONLY_SAP
+		case ASAPModuleType.Cmc:
+		case ASAPModuleType.Cm3:
+		case ASAPModuleType.Cmr:
+		case ASAPModuleType.Cms:
+#endif
+			Call6502(player + 6);
+			break;
+		case ASAPModuleType.SapD:
+			if (player >= 0)
+				Call6502PreservingRegisters(player);
+			break;
+		case ASAPModuleType.SapS:
+			int i = Cpu.Memory[0x45] - 1;
+			Cpu.Memory[0x45] = i & 0xff;
+			if (i == 0)
+				Cpu.Memory[0xb07b] = (Cpu.Memory[0xb07b] + 1) & 0xff;
+			break;
+#if !ASAP_ONLY_SAP
+		case ASAPModuleType.Dlt:
+			Call6502(player + 0x103);
+			break;
+		case ASAPModuleType.Mpt:
+		case ASAPModuleType.Rmt:
+		case ASAPModuleType.Tm2:
+		case ASAPModuleType.Fc:
+			Call6502(player + 3);
+			break;
+		case ASAPModuleType.Md1:
+		case ASAPModuleType.Md2:
+			Call6502PreservingRegisters(player + 3);
+			break;
+		case ASAPModuleType.Tmc:
+			if (--TmcPerFrameCounter <= 0) {
+				TmcPerFrameCounter = Cpu.Memory[ModuleInfo.Music + 0x1f];
+				Call6502(player + 3);
+			}
+			else
+				Call6502(player + 6);
+			break;
+		case ASAPModuleType.D15:
+			if (Cpu.Cycle < ASAPInfo.MptSamplesVblkPauseScanlines * 114 // pause samples every frame
+			 || MptSamplesCurrentAddress >> 8 >= Cpu.Memory[ModuleInfo.Music + 0x10 + CurrentSong]) // sample finished?
+				break;
+			int b = Cpu.Memory[MptSamplesCurrentAddress];
+			if (MptSamplesSecondNibble) {
+				MptSamplesCurrentAddress++;
+				MptSamplesSecondNibble = false;
+			}
+			else {
+				b >>= 4;
+				MptSamplesSecondNibble = true;
+			}
+			Pokeys.Poke(0xd201, b | 0xf0, Cpu.Cycle);
+			break;
+#if EXPERIMENTAL_XEX
+		case ASAPModuleType.Xex:
+			break;
+#endif
+#endif
+		}
+	}
+
+	internal bool IsIrq() => Pokeys.BasePokey.Irqst != 0xff;
+
+	internal void HandleEvent!()
+	{
+		int cycle = Cpu.Cycle;
+		if (cycle >= NextScanlineCycle) {
+			if (cycle - NextScanlineCycle < 50) // not WSYNC
+				Cpu.Cycle = cycle += 9;
+			NextScanlineCycle += 114;
+			if (cycle >= NextPlayerCycle) {
+				Call6502Player();
+				NextPlayerCycle += 114 * ModuleInfo.GetPlayerRateScanlines();
+			}
+		}
+		int nextEventCycle = NextScanlineCycle;
+		nextEventCycle = Pokeys.BasePokey.CheckIrq(cycle, nextEventCycle);
+		nextEventCycle = Pokeys.ExtraPokey.CheckIrq(cycle, nextEventCycle);
+		NextEventCycle = nextEventCycle;
+	}
+
+	int Do6502Frame!()
+	{
+		NextEventCycle = 0;
+		NextScanlineCycle = 0;
+		Nmist = Nmist == NmiStatus.Reset ? NmiStatus.OnVBlank : NmiStatus.WasVBlank;
+		int cycles = ModuleInfo.IsNtsc() ? 262 * 114 : 312 * 114;
+		Cpu.DoFrame(cycles);
+		Cpu.Cycle -= cycles;
+		if (NextPlayerCycle != Pokey.NeverCycle)
+			NextPlayerCycle -= cycles;
+		for (int i = 3; ; i >>= 1) {
+			Pokeys.BasePokey.Channels[i].EndFrame(cycles);
+			Pokeys.ExtraPokey.Channels[i].EndFrame(cycles);
+			if (i == 0)
+				break;
+		}
+		return cycles;
+	}
+
+	int DoFrame!()
+	{
+		GtiaOrCovoxPlayedThisFrame = false;
+		Pokeys.StartFrame();
+		int cycles = Do6502Frame();
+		Pokeys.EndFrame(cycles);
+		return cycles;
+	}
+
+	/// Loads music data ("module").
+	public void Load!(
+		/// Filename, used to determine the format.
+		string? filename,
+		/// Contents of the file.
+		byte[] module,
+		/// Length of the file.
+		int moduleLen)
+		throws ASAPFormatException
+	{
+#if !ASAP_ONLY_SAP && !OPENCL
+		LoadWithExtraFiles(filename, module, moduleLen, null);
+	}
+
+	/// Loads music data, possibly from several files.
+	public void LoadFiles!(
+		/// Filename of the main file ("module").
+		string filename,
+		/// File loader.
+		ASAPFileLoader loader)
+		throws ASAPFormatException
+	{
+		byte[ASAPInfo.MaxModuleLength] module;
+		int moduleLen = loader.Load(filename, module, module.Length);
+		if (moduleLen < 0)
+			throw ASAPFormatException("File not found");
+		LoadWithExtraFiles(filename, module, moduleLen, loader);
+	}
+
+	/// Loads music data, possibly with extra files.
+	public void LoadWithExtraFiles!(
+		/// Filename, used to determine the format.
+		string? filename,
+		/// Contents of the main file.
+		byte[] module,
+		/// Length of the main file.
+		int moduleLen,
+		/// Loader for extra files, should they be needed.
+		ASAPFileLoader? loader)
+		throws ASAPFormatException
+	{
+#endif
+		ModuleInfo.Load(filename, module, moduleLen);
+		Cpu.Memory.Fill(0);
+		int music = ModuleInfo.Music;
+#if !ASAP_ONLY_SAP
+		if (ModuleInfo.Type == ASAPModuleType.D15) {
+			module.CopyTo(0, Cpu.Memory, music, moduleLen);
+			return;
+		}
+		byte[]? playerRoutine = ASAP6502.GetPlayerRoutine(ModuleInfo);
+		if (playerRoutine != null) {
+			int player = ASAPInfo.GetWord(playerRoutine, 2);
+			if (ModuleInfo.Type == ASAPModuleType.Fc)
+				module.CopyTo(0, Cpu.Memory, music, moduleLen);
+			else {
+				int musicLow = ModuleInfo.Type == ASAPModuleType.Tm2 ? 0x1400 : 0x1000; // must be synchronized with 6502/*.lst
+				if (music < musicLow)
+					ModuleInfo.Music = music = musicLow;
+#if !OPENCL
+				if (ModuleInfo.Type == ASAPModuleType.Md1 || ModuleInfo.Type == ASAPModuleType.Md2) {
+					if (loader == null)
+						throw ASAPFormatException("MD1/MD2 not supported in this ASAP port");
+					ASAPMptSamples() samples;
+					if (!samples.Load(loader, filename))
+						throw ASAPFormatException("Missing D15/D8 file");
+					samples.Relocate(music, music + moduleLen - 5);
+					MptSamplesPage = samples.Content[0];
+					MptSamples15kHz = samples.Is15kHz;
+					samples.Content.CopyTo(0, Cpu.Memory, (MptSamplesPage << 8) - 0x20, samples.ContentLength);
+				}
+#endif
+				ASAPModuleTransfer() trans = { Source = module, SourceOffset = 0, Output = Cpu.Memory, OutputOffset = music };
+				trans.TransferModule(ModuleInfo, moduleLen, false);
+			}
+			int playerLastByte = ASAPInfo.GetWord(playerRoutine, 4);
+			playerRoutine.CopyTo(6, Cpu.Memory, player, playerLastByte + 1 - player);
+			if (ModuleInfo.Player < 0)
+				ModuleInfo.Player = player;
+			return;
+		}
+#endif
+		int moduleIndex = ModuleInfo.HeaderLen + 2;
+		while (moduleIndex + 5 <= moduleLen) {
+			int startAddr = ASAPInfo.GetWord(module, moduleIndex);
+			int blockLen = ASAPInfo.GetWord(module, moduleIndex + 2) + 1 - startAddr;
+			if (blockLen <= 0 || moduleIndex + blockLen > moduleLen)
+				throw ASAPFormatException("Invalid binary block");
+			moduleIndex += 4;
+			module.CopyTo(moduleIndex, Cpu.Memory, startAddr, blockLen);
+			moduleIndex += blockLen;
+			if (moduleIndex == moduleLen)
+				return;
+			if (moduleIndex + 7 <= moduleLen && module[moduleIndex] == 0xff && module[moduleIndex + 1] == 0xff)
+				moduleIndex += 2;
+		}
+		throw ASAPFormatException("Invalid binary block");
+	}
+
+	/// Returns information about the loaded module.
+	public ASAPInfo GetInfo() => ModuleInfo;
+
+	void Do6502Init!(int pc, int a, int x, int y)
+		throws ASAPFormatException
+	{
+		Cpu.Pc = pc;
+		Cpu.A = a & 0xff;
+		Cpu.X = x & 0xff;
+		Cpu.Y = y & 0xff;
+		const int escapeAddr = 0xd200;
+		// escape code
+		Cpu.Memory[escapeAddr] = 0xd2;
+		// return address points to the escape code
+		Cpu.Memory[0x1fe] = (escapeAddr - 1) & 0xff;
+		Cpu.Memory[0x1ff] = (escapeAddr - 1) >> 8;
+		Cpu.S = 0xfd;
+		for (int frame = 0; frame < 50; frame++) {
+			Do6502Frame();
+			if (Cpu.Pc == escapeAddr)
+				return;
+		}
+		throw ASAPFormatException("INIT routine didn't return");
+	}
+
+	/// Mutes the selected POKEY channels.
+	public void MutePokeyChannels!(
+		/// An 8-bit mask which selects POKEY channels to be muted.
+		int mask)
+	{
+		Pokeys.BasePokey.Mute(mask);
+		Pokeys.ExtraPokey.Mute(mask >> 4);
+	}
+
+	void RestartSong!(int muteMask)
+		throws ASAPFormatException
+	{
+		NextPlayerCycle = Pokey.NeverCycle;
+		BlocksPlayed = 0;
+		SilenceCyclesCounter = SilenceCycles;
+
+		Cpu.Reset();
+		Nmist = NmiStatus.OnVBlank;
+		Consol = 8;
+		Covox[0] = 0x80;
+		Covox[1] = 0x80;
+		Covox[2] = 0x80;
+		Covox[3] = 0x80;
+		Pokeys.Initialize(ModuleInfo.IsNtsc(), ModuleInfo.GetChannels() > 1, CurrentSampleRate);
+		MutePokeyChannels(0xff);
+		int player = ModuleInfo.Player;
+		int music = ModuleInfo.Music;
+		switch (ModuleInfo.Type) {
+		case ASAPModuleType.SapB:
+			Do6502Init(ModuleInfo.GetInitAddress(), CurrentSong, 0, 0);
+			break;
+		case ASAPModuleType.SapC:
+#if !ASAP_ONLY_SAP
+		case ASAPModuleType.Cmc:
+		case ASAPModuleType.Cm3:
+		case ASAPModuleType.Cmr:
+		case ASAPModuleType.Cms:
+#endif
+			Do6502Init(player + 3, 0x70, music, music >> 8);
+			Do6502Init(player + 3, 0x00, CurrentSong, 0);
+			break;
+		case ASAPModuleType.SapD:
+		case ASAPModuleType.SapS:
+			Cpu.Pc = ModuleInfo.GetInitAddress();
+			Cpu.A = CurrentSong;
+			Cpu.X = 0x00;
+			Cpu.Y = 0x00;
+			Cpu.S = 0xff;
+			break;
+#if !ASAP_ONLY_SAP
+		case ASAPModuleType.Dlt:
+			Do6502Init(player + 0x100, 0x00, 0x00, ModuleInfo.SongPos[CurrentSong]);
+			break;
+		case ASAPModuleType.Mpt:
+		case ASAPModuleType.Md1:
+		case ASAPModuleType.Md2:
+			Do6502Init(player, 0x00, music >> 8, music);
+			if (ModuleInfo.Type != ASAPModuleType.Mpt)
+				Do6502Init(player, 0x03, MptSamplesPage - 1, 0xe0);
+			Do6502Init(player, 0x02, ModuleInfo.SongPos[CurrentSong], 0);
+			if (ModuleInfo.Type == ASAPModuleType.Mpt)
+				break;
+			Cpu.Pc = player;
+			Cpu.A = ModuleInfo.Type == ASAPModuleType.Md1 ? 0x05 : 0x06;
+			Cpu.X = MptSamples15kHz ? 1 : 0;
+			Cpu.S = 0xff;
+			break;
+		case ASAPModuleType.Rmt:
+			Do6502Init(player, ModuleInfo.SongPos[CurrentSong], music, music >> 8);
+			break;
+		case ASAPModuleType.Tmc:
+		case ASAPModuleType.Tm2:
+			Do6502Init(player, 0x70, music >> 8, music);
+			Do6502Init(player, 0x00, CurrentSong, 0);
+			TmcPerFrameCounter = 1;
+			break;
+		case ASAPModuleType.Fc:
+			Do6502Init(player, CurrentSong, 0, 0);
+			break;
+		case ASAPModuleType.D15:
+			MptSamplesCurrentAddress = Cpu.Memory[ModuleInfo.Music + CurrentSong] << 8;
+			MptSamplesSecondNibble = false;
+			// make 6502 idle
+			const int escapeAddr = 0xd200;
+			Cpu.Memory[escapeAddr] = 0xd2;
+			Cpu.Pc = escapeAddr;
+			break;
+#if EXPERIMENTAL_XEX
+		case ASAPModuleType.Xex:
+			Cpu.Pc = ASAPInfo.GetWord(Cpu.Memory, 0x2e0);
+			Cpu.A = CurrentSong;
+			Cpu.X = 0x00;
+			Cpu.Y = 0x00;
+			Cpu.S = 0xff;
+			break;
+#endif
+#endif
+		}
+		MutePokeyChannels(muteMask);
+		NextPlayerCycle = 0;
+	}
+
+	/// Prepares playback of the specified song of the loaded module.
+	public void PlaySong!(
+		/// Zero-based song index.
+		int song,
+		/// Playback time in milliseconds, -1 means infinity.
+		int duration)
+		throws ASAPArgumentException, ASAPFormatException
+	{
+		if (song < 0 || song >= ModuleInfo.GetSongs())
+			throw ASAPArgumentException("Song number out of range");
+		CurrentSong = song;
+		CurrentDuration = duration;
+		RestartSong(0);
+	}
+
+	/// Returns current playback position in blocks.
+	/// A block is one sample or a pair of samples for stereo.
+	public int GetBlocksPlayed() => BlocksPlayed;
+
+	/// Returns current playback position in milliseconds.
+	public int GetPosition() => BlocksPlayed * 10 / (CurrentSampleRate / 100);
+
+	int MillisecondsToBlocks(int milliseconds) {
+		long ms = milliseconds;
+		return ms * CurrentSampleRate / 1000;
+	}
+
+	/// Changes the playback position.
+	public void SeekSample!(
+		/// The requested absolute position in samples (always 44100 per second, even in stereo).
+		int block)
+		throws ASAPFormatException
+	{
+		if (block < BlocksPlayed)
+			RestartSong(Pokeys.BasePokey.GetMute() | Pokeys.ExtraPokey.GetMute() << 4);
+		while (BlocksPlayed + Pokeys.ReadySamplesEnd < block) {
+			BlocksPlayed += Pokeys.ReadySamplesEnd;
+			DoFrame();
+		}
+		Pokeys.ReadySamplesStart = block - BlocksPlayed;
+		BlocksPlayed = block;
+	}
+
+	/// Changes the playback position.
+	public void Seek!(
+		/// The requested absolute position in milliseconds.
+		int position)
+		throws ASAPFormatException
+	{
+		SeekSample(MillisecondsToBlocks(position));
+	}
+
+	static void PutLittleEndian(byte[]! buffer, int offset, int value)
+	{
+		buffer[offset] = value & 0xff;
+		buffer[offset + 1] = value >> 8 & 0xff;
+		buffer[offset + 2] = value >> 16 & 0xff;
+		buffer[offset + 3] = value >> 24 & 0xff;
+	}
+
+	static int FourCC(string s)
+		=> (s[0] | s[1] << 8 | s[2] << 16 | s[3] << 24) & 0x7fffffff;
+
+	static void PutLittleEndians(byte[]! buffer, int offset, int value1, int value2)
+	{
+		PutLittleEndian(buffer, offset, value1);
+		PutLittleEndian(buffer, offset + 4, value2);
+	}
+
+#if !OPENCL
+	static int PutWavMetadata(byte[]! buffer, int offset, int fourCC, string value)
+	{
+		int len = value.Length;
+		if (len > 0) {
+			// include terminator and round up to the nearest word
+			PutLittleEndians(buffer, offset, fourCC, (len | 1) + 1);
+			offset += 8;
+			for (int i = 0; i < len; i++)
+				buffer[offset++] = value[i];
+			buffer[offset++] = 0;
+			if ((len & 1) == 0)
+				buffer[offset++] = 0;
+		}
+		return offset;
+	}
+#endif
+
+	/// Fills leading bytes of the specified buffer with WAV file header.
+	/// Returns the number of changed bytes.
+	public int GetWavHeader(
+		/// The destination buffer.
+		byte[]! buffer,
+		/// Format of samples.
+		ASAPSampleFormat format,
+		/// Include metadata (title, author, date).
+		bool metadata)
+	{
+		int use16bit = format != ASAPSampleFormat.U8 ? 1 : 0;
+		int blockSize = ModuleInfo.GetChannels() << use16bit;
+		int bytesPerSecond = CurrentSampleRate * blockSize;
+		int totalBlocks = MillisecondsToBlocks(CurrentDuration);
+		int nBytes = (totalBlocks - BlocksPlayed) * blockSize;
+		PutLittleEndian(buffer, 8, FourCC("WAVE"));
+		PutLittleEndians(buffer, 12, FourCC("fmt "), 16);
+		buffer[20] = 1;
+		buffer[21] = 0;
+		buffer[22] = ModuleInfo.GetChannels();
+		buffer[23] = 0;
+		PutLittleEndians(buffer, 24, CurrentSampleRate, bytesPerSecond);
+		buffer[32] = blockSize;
+		buffer[33] = 0;
+		buffer[34] = 8 << use16bit;
+		buffer[35] = 0;
+		int i = 36;
+#if !OPENCL
+		if (metadata) {
+			int year = ModuleInfo.GetYear();
+			if (ModuleInfo.GetTitle().Length > 0 || ModuleInfo.GetAuthor().Length > 0 || year > 0) {
+				PutLittleEndian(buffer, 44, FourCC("INFO"));
+				i = PutWavMetadata(buffer, 48, FourCC("INAM"), ModuleInfo.GetTitle());
+				i = PutWavMetadata(buffer, i, FourCC("IART"), ModuleInfo.GetAuthor());
+				if (year > 0) {
+					PutLittleEndians(buffer, i, FourCC("ICRD"), 6);
+					for (int j = 3; j >= 0; j--) {
+						buffer[i + 8 + j] = '0' + year % 10;
+						year /= 10;
+					}
+					buffer[i + 12] =  0;
+					buffer[i + 13] =  0;
+					i += 14;
+				}
+				PutLittleEndians(buffer, 36, FourCC("LIST"), i - 44);
+			}
+		}
+#endif
+		PutLittleEndians(buffer, 0, FourCC("RIFF"), i + nBytes);
+		PutLittleEndians(buffer, i, FourCC("data"), nBytes);
+		return i + 8;
+	}
+
+	int GenerateAt!(byte[]! buffer, int bufferOffset, int bufferLen, ASAPSampleFormat format)
+	{
+		if (SilenceCycles > 0 && SilenceCyclesCounter <= 0)
+			return 0;
+		int blockShift = ModuleInfo.GetChannels() - (format == ASAPSampleFormat.U8 ? 1 : 0);
+		int bufferBlocks = bufferLen >> blockShift;
+		if (CurrentDuration > 0) {
+			int remainingBlocks = MillisecondsToBlocks(CurrentDuration) - BlocksPlayed;
+			if (bufferBlocks > remainingBlocks)
+				bufferBlocks = remainingBlocks;
+		}
+		int block = 0;
+		for (;;) {
+			int blocks = Pokeys.Generate(buffer, bufferOffset + (block << blockShift), bufferBlocks - block, format);
+			BlocksPlayed += blocks;
+			block += blocks;
+			if (block >= bufferBlocks)
+				break;
+			int cycles = DoFrame();
+			if (SilenceCycles > 0) {
+				if (Pokeys.IsSilent() && !GtiaOrCovoxPlayedThisFrame) {
+					SilenceCyclesCounter -= cycles;
+					if (SilenceCyclesCounter <= 0)
+						break;
+				}
+				else
+					SilenceCyclesCounter = SilenceCycles;
+			}
+		}
+		return block << blockShift;
+	}
+
+	/// Fills the specified buffer with generated samples.
+	public int Generate!(
+		/// The destination buffer.
+		byte[]! buffer,
+		/// Number of bytes to fill.
+		int bufferLen,
+		/// Format of samples.
+		ASAPSampleFormat format)
+		=> GenerateAt(buffer, 0, bufferLen, format);
+
+	/// Returns POKEY channel volume - an integer between 0 and 15.
+	public int GetPokeyChannelVolume(
+		/// POKEY channel number (from 0 to 7).
+		int channel)
+	{
+		Pokey pokey = (channel & 4) == 0 ? Pokeys.BasePokey : Pokeys.ExtraPokey;
+		return pokey.Channels[channel & 3].Audc & 0xf;
+	}
+}

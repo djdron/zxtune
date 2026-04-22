@@ -2,36 +2,19 @@ ifndef DO
 $(error Use "Makefile" instead of "www.mk")
 endif
 
-www: www/index.html www/NEWS.html www/applet.html www/flash.html www/javascript.html www/silverlight.html www/apokeysnd.dll \
-	www/asap.swf www/asap_applet.jar www/asap.js www/asapweb.js www/binaryHttpRequest.js www/SilverASAP.xap \
-	www/favicon.ico www/PORTS.xml www/PORTS.xsl
+WWW_TARGETS = www/index.html www/android.html www/windows.html www/macos.html www/linux.html \
+	www/web.html www/formats.html www/convert.html www/news.html www/sap-format.html www/contact.html \
+	www/apokeysnd.dll www/asap.js www/asapweb.js \
+	www/examples.zip www/favicon.ico www/PORTS.xml www/PORTS.xsl
+CLEAN += $(WWW_TARGETS)
+
+www: $(WWW_TARGETS)
 .PHONY: www
 
-www/index.html: $(call src,README CREDITS)
-	$(call ASCIIDOC,-a asapwww -a asapports)
-
-www/NEWS.html: $(srcdir)NEWS
-	$(call ASCIIDOC,)
-
-www/applet.html: $(srcdir)www/applet.txt
-	$(call ASCIIDOC,)
-
-www/flash.html: $(srcdir)www/flash.txt
-	$(call ASCIIDOC,)
-
-www/javascript.html: $(srcdir)www/javascript.txt
-	$(DO)asciidoc -o - $< | sed -e "s/527bbd;/c02020;/" | xmllint --dropdtd --nonet -o $@ -
-
-www/silverlight.html: $(srcdir)www/silverlight.txt
-	$(call ASCIIDOC,)
+www/%.html: $(call src,www/www.xsl www/%.xml)
+	$(DO)xsltproc -o $@ --stringparam version $(VERSION) $^ && java -jar C:/bin/vnu.jar $@
 
 www/apokeysnd.dll: win32/apokeysnd.dll
-	$(COPY)
-
-www/asap.swf: flash/asap.swf
-	$(COPY)
-
-www/asap_applet.jar: java/asap_applet.jar
 	$(COPY)
 
 www/asap.js: javascript/asap.js
@@ -40,11 +23,8 @@ www/asap.js: javascript/asap.js
 www/asapweb.js: $(srcdir)javascript/asapweb.js
 	$(COPY)
 
-www/binaryHttpRequest.js: $(srcdir)javascript/binaryHttpRequest.js
-	$(COPY)
-
-www/SilverASAP.xap: csharp/SilverASAP.xap
-	$(COPY)
+www/examples.zip: $(srcdir)/examples/*
+	$(MAKEZIP)
 
 www/favicon.ico: $(srcdir)win32/wasap/wasap.ico
 	$(COPY)
@@ -54,3 +34,11 @@ www/PORTS.xml: $(srcdir)PORTS.xml
 
 www/PORTS.xsl: $(srcdir)PORTS.xsl
 	$(COPY)
+
+browser: www/web.html www/asap.js www/asapweb.js
+	$(LOCALAPPDATA)/Programs/Opera/opera --allow-file-access-from-files file:///$(shell cygpath -am $<)
+.PHONY: browser
+
+sftp:
+	sftp pfusik,asap@web.sourceforge.net:htdocs
+.PHONY: sftp

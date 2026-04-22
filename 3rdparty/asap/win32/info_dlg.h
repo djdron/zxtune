@@ -1,7 +1,7 @@
 /*
  * info_dlg.h - file information dialog box
  *
- * Copyright (C) 2007-2014  Piotr Fusik
+ * Copyright (C) 2007-2025  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -22,7 +22,7 @@
  */
 
 #include <windows.h>
-#include <tchar.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,28 +38,33 @@ extern "C" {
 #define IDC_SONGNO     307
 #define IDC_TIME       308
 #define IDC_LOOP       309
-#define IDC_TECHINFO   310
-#define IDC_STILFILE   311
-#define IDC_STILINFO   312
-#define IDC_SAVE       313
-#define IDC_SAVEAS     314
+#define IDC_NTSC       310
+#define IDC_TECHINFO   311
+#define IDC_STILFILE   312
+#define IDC_STILINFO   313
+#define IDC_SAVE       314
+#define IDC_SAVEAS     315
 
 #define IDD_PROGRESS   500
 #define IDC_PROGRESS   501
 
-void combineFilenameExt(LPTSTR dest, LPCTSTR filename, LPCTSTR ext);
-BOOL loadModule(LPCTSTR filename, BYTE *module, int *module_len);
+bool loadInfo(ASAPInfo *info, const char *filename);
+bool loadFiles(ASAP *asap, const char *filename);
 
 extern HWND infoDialog;
-void showInfoDialog(HINSTANCE hInstance, HWND hwndParent, LPCTSTR filename, int song);
-void updateInfoDialog(LPCTSTR filename, int song);
-void setPlayingSong(LPCTSTR filename, int song);
+void showInfoDialog(HINSTANCE hInstance, HWND hwndParent, const char *filename, int song);
+void updateInfoDialog(const char *filename, int song);
+void setPlayingSong(const char *filename, int song);
+#ifdef FOOBAR2000
+void setDarkInfoDialog(HWND hDlg);
+void releaseDarkInfoDialog(void);
+#endif
 #ifdef XMPLAY
 const ASTIL *getPlayingASTIL(void);
 #endif
 #if defined(WINAMP) || defined(FOOBAR2000) || defined(XMPLAY)
 #define PLAYING_INFO
-extern BOOL playing_info;
+extern bool playing_info;
 void onUpdatePlayingInfo(void);
 #endif
 

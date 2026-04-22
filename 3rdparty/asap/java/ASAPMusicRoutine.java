@@ -1,7 +1,7 @@
 /*
  * ASAPMusicRoutine.java - music embeddable in an Atari program
  *
- * Copyright (C) 2011-2012  Piotr Fusik
+ * Copyright (C) 2011-2025  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -23,22 +23,18 @@
 
 package net.sf.asap;
 
-import java.io.ByteArrayOutputStream;
-
 /**
  * Music embeddable in an Atari program.
  * Use this class to transform music into a routine
  * that can be called from your 6502 assembly language program.
- * Link your program with the binary returned by {@link #getBinary()}.
+ * Link your program with the binary returned by {@link #getBinaryContent()}.
  * Call the music routine as specified by {@link #getInitAddress()},
  * {@link #isFulltime()}, {@link #getPlayerAddress()} and {@link #getPlayerRate()}.
  */
 public class ASAPMusicRoutine
 {
-	private final byte[] binary;
-	private final int initAddress;
+	private final ASAPWriter writer = new ASAPWriter();
 	private final boolean fulltime;
-	private final int playerAddress;
 	private final int playerRate;
 
 	/**
@@ -46,23 +42,17 @@ public class ASAPMusicRoutine
 	 * @param filename Name of the source music file. The extension is used to identify the format. No I/O is performed.
 	 * @param module Contents of the source music file. Only <code>moduleLen</code> leading bytes are meaningful.
 	 * @param moduleLen Length of the source music file.
-	 * @throws Exception if the source is invalid, not supported by ASAP or cannot be converted to ASAPMusicRoutine.
+	 * @throws ASAPFormatException if the source is invalid or not supported by ASAP.
+	 * @throws ASAPConversionException if cannot convert to <code>ASAPMusicRoutine</code>.
 	 */
-	public ASAPMusicRoutine(String filename, byte[] module, int moduleLen) throws Exception
+	public ASAPMusicRoutine(String filename, byte[] module, int moduleLen) throws ASAPFormatException, ASAPConversionException
 	{
 		ASAPInfo info = new ASAPInfo();
 		info.load(filename, module, moduleLen);
-		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		int[] initAndPlayer = new int[2];
-		ASAPWriter.writeExecutable(
-			new ByteWriter() { public void run(int data) { baos.write(data); } },
-			initAndPlayer, info, module, moduleLen);
-		binary = baos.toByteArray();
-		initAddress = initAndPlayer[0];
+		writer.writeExecutable(false, info, module, moduleLen);
 		// TODO: SAP_S
 		fulltime = info.type == ASAPModuleType.SAP_D;
-		playerAddress = initAndPlayer[1];
-		playerRate = info.fastplay;
+		playerRate = info.getPlayerRateScanlines();
 	}
 
 	/**
@@ -73,8 +63,15 @@ public class ASAPMusicRoutine
 	 * It is not a complete program, there is no init or run address.
 	 * Currently the loading addresses can be as low as <code>0x200</code>
 	 * which normally conflicts with the Atari operating system.
+	 * @see #getBinaryLength()
 	 */
-	public byte[] getBinary() { return binary; }
+	public byte[] getBinaryContent() { return writer.getOutput(); }
+
+	/**
+	 * Returns length of music data.
+	 * @see #getBinaryContent()
+	 */
+	public int getBinaryLength() { return writer.getOutputLength(); }
 
 	/**
 	 * Returns address of the initialization routine.
@@ -97,7 +94,7 @@ public class ASAPMusicRoutine
 	 *     jsr initMusic ; use the address returned by {@link #getInitAddress()}
 	 * </pre>
 	 */
-	public int getInitAddress() { return initAddress; }
+	public int getInitAddress() { return writer.init; }
 
 	/**
 	 * Returns <code>true</code> if the initialization routine doesn't return
@@ -114,7 +111,7 @@ public class ASAPMusicRoutine
 	 * The player routine should be called at a constant rate
 	 * with a <code>JSR</code>.
 	 */
-	public int getPlayerAddress() { return playerAddress; }
+	public int getPlayerAddress() { return writer.player; }
 
 	/**
 	 * Returns the rate at which the player routine should be called.

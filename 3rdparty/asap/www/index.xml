@@ -1,0 +1,16 @@
+﻿<page title="Home">
+	<p>ASAP plays <a href="https://en.wikipedia.org/wiki/Atari_8-bit_family">Atari 8-bit</a>
+	<a href="https://en.wikipedia.org/wiki/Chiptune">chiptunes</a> on modern computers and mobile devices.
+	It emulates the <a href="https://en.wikipedia.org/wiki/POKEY">POKEY sound chip</a>
+	and the <a href="https://en.wikipedia.org/wiki/6502">6502 processor</a>.</p>
+
+	<p>ASAP is free software, you can redistribute it and/or modify it under the terms
+	of the <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt">GNU General Public License</a>.</p>
+
+	<p>Get ASAP for <a href="android.html">Android</a>,
+	<a href="windows.html">Windows</a>, <a href="macos.html">macOS</a>,
+	<a href="linux.html">Linux</a> or run right in your <a href="web.html">web browser</a>.
+	On iOS, ASAP is integrated into <a href="https://yoyofr.blogspot.com/p/modizer.html">Modizer</a>.</p>
+	<p>You can listen to <a href="http://asma.atari.org/">Atari SAP Music Archive (ASMA)</a>
+	which is a collection of over 8000 songs with over 200 hours of total playback time. Enjoy!</p>
+</page>

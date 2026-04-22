@@ -1,7 +1,7 @@
 /*
  * asap2wav.cs - converter of ASAP-supported formats to WAV files
  *
- * Copyright (C) 2008-2012  Piotr Fusik
+ * Copyright (C) 2008-2025  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -31,6 +31,7 @@ public class Asap2Wav
 	static string OutputFilename = null;
 	static bool OutputHeader = true;
 	static int Song = -1;
+	static int SampleRate = 44100;
 	static ASAPSampleFormat Format = ASAPSampleFormat.S16LE;
 	static int Duration = -1;
 	static int MuteMask = 0;
@@ -43,11 +44,13 @@ public class Asap2Wav
 			"SAP, CMC, CM3, CMR, CMS, DMC, DLT, MPT, MPD, RMT, TMC, TM8, TM2 or FC.\n" +
 			"Options:\n" +
 			"-o FILE     --output=FILE      Set output file name\n" +
+			"-o -        --output=-         Write to standard output\n" +
 			"-s SONG     --song=SONG        Select subsong number (zero-based)\n" +
 			"-t TIME     --time=TIME        Set output length (MM:SS format)\n" +
 			"-b          --byte-samples     Output 8-bit samples\n" +
 			"-w          --word-samples     Output 16-bit samples (default)\n" +
 			"            --raw              Output raw audio (no WAV header)\n" +
+			"-R RATE     --sample-rate=RATE Set output sample rate to RATE Hz\n" +
 			"-m CHANNELS --mute=CHANNELS    Mute POKEY chanels (1-8)\n" +
 			"-h          --help             Display this information\n" +
 			"-v          --version          Display version information\n"
@@ -57,6 +60,11 @@ public class Asap2Wav
 	static void SetSong(string s)
 	{
 		Song = int.Parse(s);
+	}
+
+	static void SetSampleRate(string s)
+	{
+		SampleRate = int.Parse(s);
 	}
 
 	static void SetTime(string s)
@@ -76,13 +84,9 @@ public class Asap2Wav
 
 	static void ProcessFile(string inputFilename)
 	{
-		byte[] module = new byte[ASAPInfo.MaxModuleLength];
-		int moduleLen;
-		using (Stream s = File.OpenRead(inputFilename)) {
-			moduleLen = s.Read(module, 0, module.Length);
-		}
 		ASAP asap = new ASAP();
-		asap.Load(inputFilename, module, moduleLen);
+		asap.SetSampleRate(SampleRate);
+		asap.LoadFiles(inputFilename, new FileSystemLoader());
 		ASAPInfo info = asap.GetInfo();
 		if (Song < 0)
 			Song = info.GetDefaultSong();
@@ -97,7 +101,7 @@ public class Asap2Wav
 			int i = inputFilename.LastIndexOf('.');
 			OutputFilename = inputFilename.Substring(0, i + 1) + (OutputHeader ? "wav" : "raw");
 		}
-		using (Stream s = File.Create(OutputFilename)) {
+		using (Stream s = OutputFilename == "-" ? Console.OpenStandardOutput() : File.Create(OutputFilename)) {
 			byte[] buffer = new byte[8192];
 			int nBytes;
 			if (OutputHeader) {
@@ -141,6 +145,10 @@ public class Asap2Wav
 				Format = ASAPSampleFormat.S16LE;
 			else if (arg == "--raw")
 				OutputHeader = false;
+			else if (arg == "-R")
+				SetSampleRate(args[++i]);
+			else if (arg.StartsWith("--sample-rate"))
+				SetSampleRate(arg.Substring(13));
 			else if (arg == "-m")
 				SetMuteMask(args[++i]);
 			else if (arg.StartsWith("--mute="))

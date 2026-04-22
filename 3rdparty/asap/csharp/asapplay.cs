@@ -1,7 +1,7 @@
 /*
  * asapplay.cs - .NET ASAP player
  *
- * Copyright (C) 2010-2012  Piotr Fusik
+ * Copyright (C) 2010-2025  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -36,12 +36,7 @@ public class ASAPWavStream : Stream
 
 	public ASAPWavStream(string inputFilename, int song, int duration)
 	{
-		byte[] module = new byte[ASAPInfo.MaxModuleLength];
-		int moduleLen;
-		using (Stream s = File.OpenRead(inputFilename)) {
-			moduleLen = s.Read(module, 0, module.Length);
-		}
-		Asap.Load(inputFilename, module, moduleLen);
+		Asap.LoadFiles(inputFilename, new FileSystemLoader());
 		ASAPInfo info = Asap.GetInfo();
 		if (song < 0)
 			song = info.GetDefaultSong();

@@ -1,4 +1,4 @@
-MOC_INCLUDE = ../moc-2.4.4
+MOC_INCLUDE = ../moc-2.5.0
 MOC_PLUGIN_DIR = /usr/local/lib/moc/decoder_plugins
 
 # no user-configurable paths below this line
@@ -11,7 +11,7 @@ asap-moc: libasap_decoder.so
 .PHONY: asap-moc
 
 libasap_decoder.so: $(call src,moc/libasap_decoder.c asap.[ch])
-	$(CC) -I$(MOC_INCLUDE)
+	$(DO_CC) -I$(MOC_INCLUDE)
 CLEAN += libasap_decoder.so
 
 install-moc: libasap_decoder.so

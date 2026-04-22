@@ -1,5 +1,5 @@
 /*
-ZXTune foobar2000 decoder component by djdron (C) 2013 - 2020
+ZXTune foobar2000 decoder component by djdron (C) 2013 - 2026
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace ZXTune
 {
-extern std::vector<PlayerPlugin::Ptr> player_plugins;
+const std::vector<PlayerPlugin::Ptr>& PlayerPlugins();
 }
 //namespace ZXTune
 
@@ -361,8 +361,8 @@ void input_zxtune::decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort
 	if(props && Parameters::FindValue(*props, Module::ATTR_TYPE, type))
 	{
 		using namespace ZXTune;
-		auto it = std::find_if(player_plugins.begin(), player_plugins.end(), [&type](const PlayerPlugin::Ptr& p) { return p->Id() == type; });
-		if(it != player_plugins.end())
+		auto it = std::find_if(PlayerPlugins().begin(), PlayerPlugins().end(), [&type](const PlayerPlugin::Ptr& p) { return p->Id() == type; });
+		if(it != PlayerPlugins().end())
 		{
 			console::formatter out;
 			auto it_desc = (*it)->Description();

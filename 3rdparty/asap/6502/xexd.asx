@@ -14,15 +14,14 @@ main
 	ldx	#29
 	sta:rpl	^00,x-
 	ert	*!=$13a
-	sta	^2e
-	ldx	#8
+	ldx	#$0f
 init_pokey_1
 	sta	$d210,x
 	sta	$d200,x
 	dex:bpl	init_pokey_1
 	lda	#3
 	sta	$d21f
-	sta	$d200
+	sta	$d20f
 
 ; TODO: support 400/800/600XL
 	mva	#$fe	^31

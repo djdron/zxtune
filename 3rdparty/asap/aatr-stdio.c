@@ -1,7 +1,7 @@
 /*
  * aatr-stdio.c - another ATR file extractor
  *
- * Copyright (C) 2012-2013  Piotr Fusik
+ * Copyright (C) 2012-2019  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -23,63 +23,63 @@
 
 #include <stdio.h>
 #include "aatr-stdio.h"
+#include "aatr.c"
 
-static cibool AATRStdio_Read(void *obj, int offset, const unsigned char *buffer, int length)
+typedef struct {
+	AATR base;
+	FILE *fp;
+} AATRStdio;
+
+static bool AATRStdio_Read(const AATR *self, int offset, uint8_t *buffer, int length)
 {
-	FILE *fp = (FILE *) obj;
+	FILE *fp = ((AATRStdio *) self)->fp;
 	return fseek(fp, offset, SEEK_SET) == 0
-		&& fread((void *) buffer, length, 1, fp) == 1;
+		&& fread(buffer, length, 1, fp) == 1;
 }
 
-AATR *AATRStdio_New(FILE *fp)
+AATR *AATRStdio_New(const char *filename)
 {
-	AATR *aatr = AATR_New();
-	RandomAccessInputStream content;
-	if (aatr == NULL)
-		return NULL;
-	content.obj = fp;
-	content.func = AATRStdio_Read;
-	if (!AATR_Open(aatr, content)) {
-		AATR_Delete(aatr);
-		return NULL;
-	}
-	return aatr;
-}
-
-int AATRStdio_ReadFile(const char *atr_filename, const char *inside_filename, unsigned char *buffer, int length)
-{
-	FILE *fp = fopen(atr_filename, "rb");
-	AATR *aatr;
+	FILE *fp = fopen(filename, "rb");
 	if (fp == NULL)
-		return -1;
-	aatr = AATRStdio_New(fp);
-	if (aatr == NULL) {
+		return NULL;
+	AATRStdio *self = (AATRStdio *) malloc(sizeof(AATRStdio));
+	if (self == NULL) {
 		fclose(fp);
-		return -1;
+		return NULL;
 	}
-	length = AATR_ReadFile(aatr, inside_filename, buffer, length);
-	AATR_Delete(aatr);
+	static const AATRVtbl vtbl = { AATRStdio_Read };
+	self->base.vtbl = &vtbl;
+	self->fp = fp;
+	if (!AATR_Open(&self->base)) {
+		free(self);
+		fclose(fp);
+		return NULL;
+	}
+	return &self->base;
+}
+
+void AATRStdio_Delete(AATR *self)
+{
+	FILE *fp = ((AATRStdio *) self)->fp;
+	free(self);
 	fclose(fp);
-	return length;
 }
 
 #if 0
 int main(int argc, char **argv)
 {
-	FILE *fp = fopen("C:\\0\\a8\\asap\\TMC2.atr", "rb");
-	AATR *aatr;
-	if (fp == NULL)
+	AATR *disk = AATRStdio_New("C:\\0\\a8\\SV2K12_STUFF_AtariDOS.atr");
+	AATRRecursiveLister *lister = AATRRecursiveLister_New();
+	AATRFileStream *stream = AATRFileStream_New();
+	if (disk == NULL || lister == NULL || stream == NULL)
 		return 1;
-	aatr = AATRStdio_New(fp);
-	if (aatr == NULL)
-		return 1;
+	AATRRecursiveLister_Open(lister, disk);
 	for (;;) {
-		const char *current_filename = AATR_NextFile(aatr);
-		int length;
+		const char *current_filename = AATRRecursiveLister_NextFile(lister);
 		if (current_filename == NULL)
 			break;
-		length = AATR_ReadCurrentFile(aatr, NULL, 60000);
-		printf("%s (%d)\n", current_filename, length);
+		AATRFileStream_Open(stream, AATRRecursiveLister_GetDirectory(lister));
+		printf("%s (%d)\n", current_filename, AATRFileStream_GetLength(stream));
 	}
 	return 0;
 }

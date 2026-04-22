@@ -1,7 +1,7 @@
 /*
  * xmp-asap.c - ASAP plugin for XMPlay
  *
- * Copyright (C) 2010-2012  Piotr Fusik
+ * Copyright (C) 2010-2026  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -42,9 +42,22 @@ static BYTE module[ASAPInfo_MAX_MODULE_LENGTH];
 static int module_len;
 ASAP *asap;
 
+static void GetBool(const char *key, bool *value)
+{
+	int i =*value;
+	xmpfreg->GetInt("ASAP", key, &i);
+	*value = i != 0;
+}
+
+static void SetBool(const char *key, bool value)
+{
+	int i = value;
+	xmpfreg->SetInt("ASAP", key, &i);
+}
+
 void onUpdatePlayingInfo(void)
 {
-	xmpfreg->SetInt("ASAP", "PlayingInfo", &playing_info);
+	SetBool("PlayingInfo", playing_info);
 }
 
 static void WINAPI ASAP_ShowInfo()
@@ -61,9 +74,10 @@ static void WINAPI ASAP_About(HWND win)
 static void WINAPI ASAP_Config(HWND win)
 {
 	if (settingsDialog(hInst, win)) {
+		xmpfreg->SetInt("ASAP", "SampleRate", &sample_rate);
 		xmpfreg->SetInt("ASAP", "SongLength", &song_length);
 		xmpfreg->SetInt("ASAP", "SilenceSeconds", &silence_seconds);
-		xmpfreg->SetInt("ASAP", "PlayLoops", &play_loops);
+		SetBool("PlayLoops", play_loops);
 		xmpfreg->SetInt("ASAP", "MuteMask", &mute_mask);
 	}
 }
@@ -73,69 +87,101 @@ static BOOL WINAPI ASAP_CheckFile(const char *filename, XMPFILE file)
 	return ASAPInfo_IsOurFile(filename);
 }
 
-static void GetTag(const char *src, char **dest)
+static char *Append(char *dest, const char *src)
 {
-	int len;
-	if (src[0] == '\0')
-		return;
-	len = strlen(src) + 1;
-	*dest = xmpfmisc->Alloc(len);
-	memcpy(*dest, src, len);
+	size_t len = strlen(src) + 1;
+	memcpy(dest, src, len);
+	return dest + len;
 }
 
-static void GetTags(const ASAPInfo *info, char *tags[8])
+static char *AppendTag(char *dest, const char *key, const char *value)
 {
-	GetTag(ASAPInfo_GetTitle(info), tags);
-	GetTag(ASAPInfo_GetAuthor(info), tags + 1);
-	GetTag(ASAPInfo_GetDate(info), tags + 3);
-	GetTag("ASAP", tags + 7);
-}
-
-static void GetTotalLength(const ASAPInfo *info, float *length)
-{
-	int total_duration = 0;
-	int song;
-	for (song = 0; song < ASAPInfo_GetSongs(info); song++) {
-		int duration = getSongDuration(info, song);
-		if (duration < 0) {
-			*length = 0;
-			return;
-		}
-		total_duration += duration;
+	if (value[0] != '\0') {
+		dest = Append(dest, key);
+		dest = Append(dest, value);
 	}
-	*length = total_duration / 1000.0;
+	return dest;
+}
+
+static char *GetTags(const ASAPInfo *info)
+{
+	const char *title = ASAPInfo_GetTitle(info);
+	const char *author = ASAPInfo_GetAuthor(info);
+	const char *date = ASAPInfo_GetDate(info);
+	int length = 8 + 1 + 4 + 1 + 1;
+	if (title[0] != '\0')
+		length += 5 + 1 + strlen(title) + 1;
+	if (author[0] != '\0')
+		length += 6 + 1 + strlen(author) + 1;
+	if (date[0] != '\0')
+		length += 4 + 1 + strlen(date) + 1;
+	char *tags = (char *) xmpfmisc->Alloc(length);
+	char *dest = AppendTag(tags, "filetype", "ASAP");
+	dest = AppendTag(dest, "title", title);
+	dest = AppendTag(dest, "artist", author);
+	dest = AppendTag(dest, "date", date);
+	*dest = '\0';
+	return tags;
 }
 
 static void PlaySong(int song)
 {
 	int duration = playSong(song);
 	if (duration >= 0)
-		xmpfin->SetLength(duration / 1000.0, TRUE);
+		xmpfin->SetLength(duration / 1000.0f, TRUE);
 	setPlayingSong(NULL, song);
 }
 
-static BOOL WINAPI ASAP_GetFileInfo(const char *filename, XMPFILE file, float *length, char *tags[8])
+static DWORD WINAPI ASAP_GetFileInfo(const char *filename, XMPFILE file, float **length, char **tags)
 {
 	BYTE module[ASAPInfo_MAX_MODULE_LENGTH];
 	int module_len = xmpffile->Read(file, module, sizeof(module));
 	ASAPInfo *info = ASAPInfo_New();
 	if (info == NULL)
-		return FALSE;
+		return 0;
 	if (!ASAPInfo_Load(info, filename, module, module_len)) {
 		ASAPInfo_Delete(info);
-		return FALSE;
+		return 0;
 	}
-	if (length != NULL)
-		GetTotalLength(info, length);
-	GetTags(info, tags);
+	int songs = ASAPInfo_GetSongs(info);
+	if (length != NULL) {
+		float *lengths = (float *) xmpfmisc->Alloc(songs * sizeof(float));
+		for (int song = 0; song < songs; song++) {
+			int duration = getSongDuration(info, song);
+			lengths[song] = duration < 0 ? 0 : duration / 1000.0f;
+		}
+		*length = lengths;
+	}
+	if (tags != NULL)
+		*tags = GetTags(info);
 	ASAPInfo_Delete(info);
-	return TRUE;
+	return songs + XMPIN_INFO_NOSUBTAGS;
+}
+
+typedef struct {
+	int (*load)(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length);
+} ASAPFileLoaderVtbl;
+
+struct ASAPFileLoader {
+	const ASAPFileLoaderVtbl *vtbl;
+};
+
+static int ASAPFileLoader_Load(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length)
+{
+	XMPFILE file = xmpffile->Open(filename);
+	if (file == NULL)
+		return -1;
+	length = xmpffile->Read(file, buffer, length);
+	xmpffile->Close(file);
+	return length;
 }
 
 static DWORD WINAPI ASAP_Open(const char *filename, XMPFILE file)
 {
 	module_len = xmpffile->Read(file, module, sizeof(module));
-	if (!ASAP_Load(asap, filename, module, module_len))
+	static const ASAPFileLoaderVtbl loader_vtbl = { ASAPFileLoader_Load };
+	static const ASAPFileLoader loader = { &loader_vtbl };
+	if (!ASAP_LoadWithExtraFiles(asap, filename, module, module_len, &loader))
 		return 0;
 	setPlayingSong(filename, 0);
 	PlaySong(0);
@@ -148,15 +194,14 @@ static void WINAPI ASAP_Close()
 
 static void WINAPI ASAP_SetFormat(XMPFORMAT *form)
 {
-	form->rate = ASAP_SAMPLE_RATE;
+	form->rate = ASAP_GetSampleRate(asap);
 	form->chan = ASAPInfo_GetChannels(ASAP_GetInfo(asap));
 	form->res = BITS_PER_SAMPLE / 8;
 }
 
-static BOOL WINAPI ASAP_GetTags(char *tags[8])
+static char *WINAPI ASAP_GetTags()
 {
-	GetTags(ASAP_GetInfo(asap), tags);
-	return TRUE;
+	return GetTags(ASAP_GetInfo(asap));
 }
 
 static void WINAPI ASAP_GetInfoText(char *format, char *length)
@@ -171,7 +216,7 @@ static void WINAPI ASAP_GetGeneralInfo(char *buf)
 	const char *s = ASAPInfo_GetDate(info);
 	if (s[0] != '\0')
 		buf += sprintf(buf, "Date\t%s\r", s);
-	s = ASAPInfo_GetOriginalModuleExt(info, module, module_len);
+	s = ASAPInfo_GetOriginalModuleExt(info);
 	if (s != NULL)
 		buf += sprintf(buf, "Composed in\t%s\r", ASAPInfo_GetExtDescription(s));
 	*buf = '\0';
@@ -212,20 +257,17 @@ static void WINAPI ASAP_GetMessage(char *buf)
 {
 	const ASTIL *astil = getPlayingASTIL();
 	char *p = buf;
-	int i;
 	p = appendStil(p, "STIL file", ASTIL_GetStilFilename(astil));
 	p = appendStil(p, "Title", ASTIL_GetTitle(astil));
 	p = appendStil(p, "Author", ASTIL_GetAuthor(astil));
 	p = appendStil(p, "Directory comment", ASTIL_GetDirectoryComment(astil));
 	p = appendStil(p, "File comment", ASTIL_GetFileComment(astil));
 	p = appendStil(p, "Song comment", ASTIL_GetSongComment(astil));
-	for (i = 0; ; i++) {
+	for (int i = 0; ; i++) {
 		const ASTILCover *cover = ASTIL_GetCover(astil, i);
-		int startSeconds;
-		const char *s;
 		if (cover == NULL)
 			break;
-		startSeconds = ASTILCover_GetStartSeconds(cover);
+		int startSeconds = ASTILCover_GetStartSeconds(cover);
 		if (startSeconds >= 0) {
 			int endSeconds = ASTILCover_GetEndSeconds(cover);
 			if (endSeconds >= 0)
@@ -235,7 +277,7 @@ static void WINAPI ASAP_GetMessage(char *buf)
 		}
 		else
 			*p++ = 'C';
-		s = ASTILCover_GetTitleAndSource(cover);
+		const char *s = ASTILCover_GetTitleAndSource(cover);
 		p = appendStil(p, "overs", s[0] != '\0' ? s : "<?>");
 		p = appendStil(p, "by", ASTILCover_GetArtist(cover));
 		p = appendStil(p, "Comment", ASTILCover_GetComment(cover));
@@ -246,14 +288,13 @@ static void WINAPI ASAP_GetMessage(char *buf)
 
 static double WINAPI ASAP_SetPosition(DWORD pos)
 {
-	int song = pos - XMPIN_POS_SUBSONG;
-	if (song >= 0 && song < ASAPInfo_GetSongs(ASAP_GetInfo(asap))) {
-		PlaySong(song);
+	if ((pos & XMPIN_POS_SUBSONG) != 0) {
+		PlaySong(LOWORD(pos));
 		return 0;
 	}
 	// TODO: XMPIN_POS
 	ASAP_Seek(asap, pos);
-	return pos / 1000.0;
+	return pos / 1000.0f;
 }
 
 static double WINAPI ASAP_GetGranularity()
@@ -266,8 +307,7 @@ static DWORD WINAPI ASAP_Process(float *buf, DWORD count)
 	/* Quick and dirty hack... Need to support floats directly... */
 	short *buf2 = (short *) buf;
 	DWORD n = ASAP_Generate(asap, (unsigned char *) buf2, count * sizeof(short), ASAPSampleFormat_S16_L_E) >> 1;
-	int i;
-	for (i = n; --i >= 0; )
+	for (int i = n; --i >= 0; )
 		buf[i] = buf2[i] / 32767.0;
 	return n;
 }
@@ -275,14 +315,15 @@ static DWORD WINAPI ASAP_Process(float *buf, DWORD count)
 static void WINAPI ASAP_GetSamples(char *buf)
 {
 	const ASAPInfo *info = ASAP_GetInfo(asap);
-	const char *s = ASAPInfo_GetInstrumentName(info, module, module_len, 0);
-	if (s != NULL) {
+	int offset = ASAPInfo_GetInstrumentNamesOffset(info, module, module_len);
+	if (offset > 0) {
 		int i = 0;
 		buf += sprintf(buf, "instrument list:\r\n");
 		do {
-			buf += sprintf(buf, "%03d\t%s\r\n", i, s);
-			s = ASAPInfo_GetInstrumentName(info, module, module_len, ++i);
-		} while (s != NULL);
+			const char *s = (const char *) module + offset;
+			buf += sprintf(buf, "%03d\t%s\r\n", ++i, s);
+			offset += strnlen(s, module_len - offset) + 1;
+		} while (offset < module_len);
 		buf[-2] = '\0'; /* chomp trailing \r\n */
 	}
 }
@@ -290,8 +331,18 @@ static void WINAPI ASAP_GetSamples(char *buf)
 static DWORD WINAPI ASAP_GetSubSongs(float *length)
 {
 	const ASAPInfo *info = ASAP_GetInfo(asap);
-	GetTotalLength(info, length);
-	return ASAPInfo_GetSongs(info);
+	int songs = ASAPInfo_GetSongs(info);
+	int total_duration = 0;
+	for (int song = 0; song < songs; song++) {
+		int duration = getSongDuration(info, song);
+		if (duration < 0) {
+			*length = 0;
+			return songs;
+		}
+		total_duration += duration;
+	}
+	*length = total_duration / 1000.0f;
+	return songs;
 }
 
 __declspec(dllexport) XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
@@ -299,7 +350,7 @@ __declspec(dllexport) XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc
 	static XMPIN xmpin = {
 		0,
 		"ASAP",
-		"ASAP\0sap/cmc/cm3/cmr/cms/dmc/dlt/mpt/mpd/rmt/tmc/tm8/tm2/fc",
+		"ASAP\0sap/cmc/cm3/cmr/cms/dmc/dlt/mpt/md1/md2/mpd/rmt/tmc/tm8/tm2/fc/d15/d8",
 		ASAP_About,
 		ASAP_Config,
 		ASAP_CheckFile,
@@ -324,7 +375,7 @@ __declspec(dllexport) XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL
 	};
 	static const XMPSHORTCUT info_shortcut = {
-		0x10000, "ASAP - File information", ASAP_ShowInfo
+		0x10000, "ASAP - File information", { ASAP_ShowInfo }
 	};
 
 	if (face != XMPIN_FACE)
@@ -338,11 +389,12 @@ __declspec(dllexport) XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc
 	asap = ASAP_New();
 
 	xmpfmisc->RegisterShortcut(&info_shortcut);
+	xmpfreg->GetInt("ASAP", "SampleRate", &sample_rate);
 	xmpfreg->GetInt("ASAP", "SongLength", &song_length);
 	xmpfreg->GetInt("ASAP", "SilenceSeconds", &silence_seconds);
-	xmpfreg->GetInt("ASAP", "PlayLoops", &play_loops);
+	GetBool("PlayLoops", &play_loops);
 	xmpfreg->GetInt("ASAP", "MuteMask", &mute_mask);
-	xmpfreg->GetInt("ASAP", "PlayingInfo", &playing_info);
+	GetBool("PlayingInfo", &playing_info);
 	return &xmpin;
 }
 

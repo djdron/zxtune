@@ -1,111 +1,114 @@
 GIT = git
-TAR = tar
+TAR = /usr/bin/tar
 UNIX2DOS = $(DO)unix2dos <$< >$@
 GREP = @grep -H
 
 # no user-configurable paths below this line
 
-VERSION = 3.2.0
+VERSION = 8.0.0
 
 ifndef DO
 $(error Use "Makefile" instead of "release.mk")
 endif
 
 dist: \
-	release/asap-$(VERSION)-air.air \
 	release/asap-$(VERSION)-android.apk \
-	release/asap-$(VERSION)-java.zip \
 	release/asap-$(VERSION)-web.zip \
-	release/asap-$(VERSION)-win32.msi \
 	release/asap-$(VERSION)-win32.zip \
-	release/asap-$(VERSION)-win64.msi \
-	release/asap-$(VERSION)-wince-arm.cab \
-	release/asap-$(VERSION)-wince-arm.zip \
+	release/asap-$(VERSION)-win64.zip \
+	release/signed-msi \
 	release/foo_asap-$(VERSION).fb2k-component \
 	srcdist
 .PHONY: dist
 
-srcdist: $(srcdir)MANIFEST $(srcdir)README.html $(srcdir)asap.c $(srcdir)asap.h $(ASM6502_OBX)
+srcdist: $(srcdir)MANIFEST $(srcdir)asap.c $(srcdir)asap.h $(ASM6502_OBX)
 	$(RM) release/asap-$(VERSION).tar.gz && $(TAR) -c --numeric-owner --owner=0 --group=0 --mode=644 -T MANIFEST --transform=s,,asap-$(VERSION)/, | $(SEVENZIP) -tgzip -si release/asap-$(VERSION).tar.gz
 .PHONY: srcdist
 
 $(srcdir)MANIFEST:
 	$(DO)if test -e $(srcdir).git; then \
 		($(GIT) ls-files | grep -vF .gitignore \
-			&& echo MANIFEST && echo README.html && echo asap.c && echo asap.h \
-			&& for obx in $(ASM6502_OBX); do echo $$obx; done) | sort -u >$@; \
+			&& echo MANIFEST && echo asap.c && echo asap.h \
+			&& for obx in $(ASM6502_OBX); do echo $$obx; done) | /usr/bin/sort -u >$@; \
 	fi
 .PHONY: $(srcdir)MANIFEST
 
-release/asap-$(VERSION)-java.zip: release/COPYING.txt release/README_Java.html \
-	java/asap2wav.jar java/j2me/asap_midlet.jad java/j2me/asap_midlet.jar java/asap.jar
+release/asap-$(VERSION)-web.zip: release/COPYING.txt \
+	javascript/asap.js $(srcdir)javascript/asapweb.js
 	$(MAKEZIP)
 
-release/asap-$(VERSION)-web.zip: release/COPYING.txt release/README_Web.html \
-	flash/asap.swf java/asap_applet.jar javascript/asap.js $(srcdir)javascript/asapweb.js $(srcdir)javascript/binaryHttpRequest.js csharp/SilverASAP.xap
+release/asap-$(VERSION)-win32.zip: release/COPYING.txt $(srcdir)win32/shellex/ASAPShellEx.propdesc \
+	$(addprefix win32/,asapconv.exe asapscan.exe wasap.exe in_asap.dll foo_asap.dll apokeysnd.dll xmp-asap.dll bass_asap.dll ASAPShellEx.dll libasap_plugin.dll signed)
 	$(MAKEZIP)
 
-release/asap-$(VERSION)-win32.zip: release/COPYING.txt release/README_Windows.html \
-	$(addprefix win32/,asapconv.exe asapscan.exe wasap.exe in_asap.dll foo_asap.dll gspasap.dll asap_dsf.dll install_dsf.bat uninstall_dsf.bat ASAP_Apollo.dll apokeysnd.dll xbmc_asap.dll xmp-asap.dll bass_asap.dll ASAPShellEx.dll asapplug.dll libasap_plugin.dll libgstasapdec.dll)
+release/asap-$(VERSION)-win64.zip: release/COPYING.txt $(srcdir)win32/shellex/ASAPShellEx.propdesc \
+	$(addprefix win32/x64/,asapconv.exe asapscan.exe wasap.exe foo_asap.dll bass_asap.dll ASAPShellEx.dll libasap_plugin.dll) win32/signed
 	$(MAKEZIP)
 
-release/asap-$(VERSION)-wince-arm.zip: release/COPYING.txt release/README_WindowsCE.html \
-	win32/wince/wasap.exe win32/wince/gspasap.dll
-	$(MAKEZIP)
+release/foo_asap-$(VERSION).fb2k-component: win32/foo_asap.dll win32/x64/foo_asap.dll win32/signed
+	$(DO)$(RM) $@ && $(SEVENZIP) -tzip $@ -imr!./win32/foo_asap.dll
 
-release/foo_asap-$(VERSION).fb2k-component: win32/foo_asap.dll
-	$(MAKEZIP)
-
-release/asap-vlc-$(VERSION)-osx.dmg: release/osx/libasap_plugin.dylib release/osx/plugins
-	$(DO)hdiutil create -volname asap-vlc-$(VERSION)-osx -srcfolder release/osx -imagekey zlib-level=9 -ov $@
+release/asap-$(VERSION)-macos.dmg: release/osx/libasap_plugin.dylib release/osx/plugins release/osx/asapconv release/osx/bin
+ifdef FOX_CODESIGNING_IDENTITY
+	codesign --options runtime -f -s $(FOX_CODESIGNING_IDENTITY) release/osx/libasap_plugin.dylib
+	codesign --options runtime -f -s $(FOX_CODESIGNING_IDENTITY) release/osx/asapconv
+endif
+	$(DO)hdiutil create -volname asap-$(VERSION)-macos -srcfolder release/osx -format UDBZ -fs HFS+ -imagekey bzip2-level=3 -ov $@
+	/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit --keychain-profile foxnotary $@
 
 release/osx/libasap_plugin.dylib: libasap_plugin.dylib
-	$(COPY) && chmod 644 $@
+	$(DO)strip -o $@ -x $< && chmod 644 $@
 CLEANDIR += release/osx
 
 release/osx/plugins:
 	$(DO)ln -s /Applications/VLC.app/Contents/MacOS/plugins $@
 
+release/osx/asapconv: $(call src,asapconv.c asap-stdio.[ch] asap.[ch])
+	$(OSX_CC)
+
+release/osx/bin:
+	$(DO)ln -s /usr/local/bin $@
+
 deb:
 	debuild -b -us -uc
 .PHONY: deb
+
+deb64:
+	scp release/asap-$(VERSION).tar.gz vm:.
+	ssh vm 'rm -rf asap-$(VERSION) && tar xf asap-$(VERSION).tar.gz && make -C asap-$(VERSION) deb'
+	scp vm:asap_$(VERSION)-1_amd64.deb release/
+	scp vm:asap-dev_$(VERSION)-1_amd64.deb release/
+	scp vm:asap-vlc_$(VERSION)-1_amd64.deb release/
+	scp vm:asap-xmms2_$(VERSION)-1_amd64.deb release/
+.PHONY: deb64
+
+rpm64:
+	scp release/asap-$(VERSION).tar.gz vm:.
+	ssh vm 'rpmbuild -tb asap-$(VERSION).tar.gz'
+	scp vm:rpmbuild/RPMS/x86_64/asap-$(VERSION)-1.x86_64.rpm release/
+	scp vm:rpmbuild/RPMS/x86_64/asap-devel-$(VERSION)-1.x86_64.rpm release/
+	scp vm:rpmbuild/RPMS/x86_64/asap-vlc-$(VERSION)-1.x86_64.rpm release/
+	scp vm:rpmbuild/RPMS/x86_64/asap-xmms2-$(VERSION)-1.x86_64.rpm release/
+.PHONY: rpm64
+
+mac:
+	scp release/asap-$(VERSION).tar.gz wiesmac:.
+	ssh wiesmac 'security unlock-keychain login.keychain && rm -rf asap-$(VERSION) && tar xf asap-$(VERSION).tar.gz && make -C asap-$(VERSION) release/asap-$(VERSION)-macos.dmg'
+	scp wiesmac:asap-$(VERSION)/release/asap-$(VERSION)-macos.dmg release/
+.PHONY: mac
 
 release/COPYING.txt: $(srcdir)COPYING
 	$(UNIX2DOS)
 CLEAN += release/COPYING.txt
 
-release/README_Web.html: $(call src,README USAGE-WEB CREDITS)
-	$(call ASCIIDOC,-a toc -a asapweb)
-CLEAN += release/README_Web.html
-
-release/README_Java.html: $(call src,README java/USAGE CREDITS)
-	$(call ASCIIDOC,-a asapjava)
-CLEAN += release/README_Java.html
-
-release/README_JavaScript.html: $(call src,README javascript/USAGE CREDITS)
-	$(call ASCIIDOC,-a asapjavascript)
-CLEAN += release/README_JavaScript.html
-
-release/README_Windows.html: $(call src,README win32/USAGE CREDITS)
-	$(call ASCIIDOC,-a asapwin)
-CLEAN += release/README_Windows.html
-
-release/README_WindowsCE.html: $(call src,README win32/wince/USAGE CREDITS)
-	$(call ASCIIDOC,-a asapwince)
-CLEAN += release/README_WindowsCE.html
-
 version:
 	@echo ./release/release.mk: VERSION=$(VERSION)
-	$(GREP) -m 1 ^ASAP $(srcdir)NEWS
-	$(GREP) "<since>" $(srcdir)PORTS.xml | sort -ru | head -1
+	$(GREP) -m 1 version= $(srcdir)www/news.xml
+	$(GREP) "<since>" $(srcdir)PORTS.xml | /usr/bin/sort -ru | head -1
 	$(GREP) Version: $(srcdir)asap.spec
 	$(GREP) -m 1 ^asap $(srcdir)debian/changelog
-	$(GREP) "int Version" $(srcdir)asapinfo.ci
+	$(GREP) "int Version" $(srcdir)asapinfo.fu
 	$(GREP) "VERSION =" $(srcdir)chksap.pl
-	$(GREP) "Version=" $(srcdir)csharp/winrt/AppxManifest.xml
 	$(GREP) android:versionName $(srcdir)java/android/AndroidManifest.xml
-	$(GREP) about_title $(srcdir)java/android/res/values/strings.xml
-	$(GREP) MIDlet-Version $(srcdir)java/j2me/MANIFEST.MF
-	$(GREP) version $(srcdir)javascript/air/AIRASAP-app.xml
 	$(GREP) ", v" $(srcdir)win32/rmt/apokeysnd_dll.c
 .PHONY: version

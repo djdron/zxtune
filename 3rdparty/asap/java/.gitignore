@@ -1,0 +1,7 @@
+*.jad
+*.jar
+classes
+/doc
+/obx
+/src
+/xex

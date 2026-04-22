@@ -1,7 +1,7 @@
 /*
  * PlayerService.java - ASAP for Android
  *
- * Copyright (C) 2010-2014  Piotr Fusik
+ * Copyright (C) 2010-2026  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -24,115 +24,149 @@
 package net.sf.asap;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.Service;
+import android.app.SearchManager;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.Cursor;
+import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.media.MediaMetadata;
+import android.media.browse.MediaBrowser;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
-import android.os.Binder;
+import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
-import android.os.IBinder;
-import android.telephony.PhoneStateListener;
-import android.telephony.TelephonyManager;
-import android.widget.MediaController;
+import android.provider.OpenableColumns;
+import android.service.media.MediaBrowserService;
 import android.widget.Toast;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class PlayerService extends Service implements Runnable, MediaController.MediaPlayerControl
+public class PlayerService extends MediaBrowserService implements Runnable, AudioManager.OnAudioFocusChangeListener
 {
 	// User interface -----------------------------------------------------------------------------------------
 
-	private NotificationManager notMan;
-	private static final int NOTIFICATION_ID = 1;
-
-	@Override
-	public void onCreate()
-	{
-		notMan = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-	}
-
-	private void startForegroundCompat(int id, Notification notification)
-	{
-		if (!Util.invokeMethod(this, "startForeground", id, notification)) {
-			// Fall back on the old API.
-			Util.invokeMethod(this, "setForeground", true);
-			notMan.notify(id, notification);
-		}
-	}
-
-	private void stopForegroundCompat(int id)
-	{
-		if (!Util.invokeMethod(this, "stopForeground", true)) {
-			// Fall back on the old API.
-			// Cancel before changing the foreground state, since we could be killed at that point.
-			notMan.cancel(id);
-			Util.invokeMethod(this, "setForeground", false);
-		}
-	}
+	static final String ACTION_PLAY = "asap.intent.action.PLAY";
+	static final String ACTION_PAUSE = "asap.intent.action.PAUSE";
+	static final String ACTION_NEXT = "asap.intent.action.NEXT";
+	static final String ACTION_PREVIOUS = "asap.intent.action.PREVIOUS";
 
 	private final Handler toastHandler = new Handler();
 
 	private void showError(final int messageId)
 	{
-		toastHandler.post(new Runnable() {
-			public void run() {
-				Toast.makeText(PlayerService.this, messageId, Toast.LENGTH_SHORT).show();
-			}
-		});
+		toastHandler.post(() -> Toast.makeText(PlayerService.this, messageId, Toast.LENGTH_SHORT).show());
 	}
 
-	private void showInfo()
+	private PendingIntent activityIntent;
+	private MediaSession mediaSession;
+
+	private NotificationManager getNotificationManager()
 	{
-		sendBroadcast(new Intent(Player.ACTION_SHOW_INFO));
+		return (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 	}
 
-	private void showNotification()
+	private Notification.Action getNotificationAction(int icon, int titleResource, String action)
 	{
-		PendingIntent contentIntent = PendingIntent.getActivity(this, 0, new Intent(this, Player.class), 0);
+		PendingIntent intent = PendingIntent.getService(this, 0, new Intent(action, null, this, PlayerService.class), PendingIntent.FLAG_IMMUTABLE);
+		return new Notification.Action(icon, getString(titleResource), intent);
+	}
+
+	private String getDisplayTitle()
+	{
 		String title = info.getTitleOrFilename();
-		Notification notification = new Notification(R.drawable.icon, title, System.currentTimeMillis());
-		notification.flags |= Notification.FLAG_ONGOING_EVENT;
-		notification.setLatestEventInfo(this, title, info.getAuthor(), contentIntent);
-		startForegroundCompat(NOTIFICATION_ID, notification);
+		int songs = info.getSongs();
+		if (songs > 1)
+			return getString(R.string.title_format, title, song + 1, songs);
+		return title;
+	}
+
+	private void showNotification(boolean start)
+	{
+		Notification.Builder builder;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			final String CHANNEL_ID = "NOW_PLAYING";
+			if (start) {
+				NotificationChannel channel = new NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW);
+				getNotificationManager().createNotificationChannel(channel);
+			}
+			builder = new Notification.Builder(this, CHANNEL_ID);
+		}
+		else
+			builder = new Notification.Builder(this);
+		Notification notification = builder
+			.setSmallIcon(R.drawable.ic_notification)
+			.setContentTitle(getDisplayTitle())
+			.setContentText(info.getAuthor())
+			.setContentIntent(activityIntent)
+			.setStyle(new Notification.MediaStyle()
+				.setMediaSession(mediaSession.getSessionToken())
+				.setShowActionsInCompactView(0, 1, 2))
+			.setVisibility(Notification.VISIBILITY_PUBLIC)
+			.addAction(getNotificationAction(android.R.drawable.ic_media_previous, R.string.notification_previous, ACTION_PREVIOUS))
+			.addAction(isPaused()
+				? getNotificationAction(android.R.drawable.ic_media_play, R.string.notification_play, ACTION_PLAY)
+				: getNotificationAction(android.R.drawable.ic_media_pause, R.string.notification_pause, ACTION_PAUSE))
+			.addAction(getNotificationAction(android.R.drawable.ic_media_next, R.string.notification_next, ACTION_NEXT))
+			.build();
+		final int NOTIFICATION_ID = 1;
+		if (start)
+			startForeground(NOTIFICATION_ID, notification);
+		else
+			getNotificationManager().notify(NOTIFICATION_ID, notification);
+	}
+
+	private void setPlaybackState(int state, int position, float speed, long actions)
+	{
+		mediaSession.setPlaybackState(new PlaybackState.Builder()
+			.setState(state, position, speed)
+			.setActions(actions)
+			.build());
 	}
 
 
 	// Playlist -----------------------------------------------------------------------------------------------
 
-	static final String EXTRA_PLAYLIST = "asap.intent.extra.PLAYLIST";
-
 	private final ArrayList<Uri> playlist = new ArrayList<Uri>();
 
-	private void setPlaylist(final Uri uri, boolean shuffle)
+	private boolean setSearchPlaylist(String query)
 	{
+		FileInfo[] infos = FileInfo.listIndex(this, query);
+		if (infos.length == 0)
+			return false;
 		playlist.clear();
-		FileContainer container = new FileContainer() {
-				@Override
-				protected void onSongFile(String name, InputStream is) {
-					playlist.add(Util.buildUri(uri, name));
-				}
-			};
-		try {
-			container.list(uri, false, true);
-			if (shuffle)
-				Collections.shuffle(playlist);
-			else if (!Util.endsWithIgnoreCase(uri.toString(), ".m3u"))
-				Collections.sort(playlist);
+		for (FileInfo info : infos) {
+			if (info != FileInfo.SHUFFLE_ALL)
+				playlist.add(Util.getAsmaUri(info.filename));
 		}
-		catch (IOException ex) {
-			// playlist is not essential
+		return true;
+	}
+
+	private void setPlaylist(String query)
+	{
+		if ("asma".equals(uri.getScheme()) && setSearchPlaylist(query)) {
+			if (uri.getSchemeSpecificPart().isEmpty()) { // shuffle all
+				Collections.shuffle(playlist);
+				uri = playlist.get(0);
+			}
+		}
+		else {
+			playlist.clear();
+			playlist.add(uri);
 		}
 	}
 
@@ -141,347 +175,487 @@ public class PlayerService extends Service implements Runnable, MediaController.
 		return playlist.indexOf(uri);
 	}
 
-	private boolean loadFromPlaylist(int playlistIndex, int song)
-	{
-		return load(playlist.get(playlistIndex), song);
-	}
-
 
 	// Playback -----------------------------------------------------------------------------------------------
 
-	private Uri uri;
-	int song;
-	private static final int SONG_DEFAULT = -1;
-	private static final int SONG_LAST = -2;
-	private final ASAP asap = new ASAP();
-	ASAPInfo info;
-	private Thread thread;
-	private boolean paused;
-	private int seekPosition;
+	private static final int COMMAND_STOP = 0;
+	private static final int COMMAND_LOAD = 1;
+	private static final int COMMAND_PLAY = 2;
+	private static final int COMMAND_PAUSE = 3;
+	private static final int COMMAND_NEXT = 4;
+	private static final int COMMAND_PREV = 5;
+	private int command = COMMAND_STOP;
+	private Thread thread = null;
 
-	private void stop()
+	static final String METADATA_KEY_CHANNELS = "asap.media.metadata.CHANNELS";
+
+	private synchronized void setCommand(int command)
 	{
-		Thread t;
-		synchronized (this) {
-			t = thread;
-			if (t == null || t == Thread.currentThread())
-				return;
-			thread = null;
-			start();
-		}
-		try {
-			t.join();
-		}
-		catch (InterruptedException ex) {
+		this.command = command;
+		if (thread != null && thread.isAlive())
+			notify();
+		else {
+			thread = new Thread(this);
+			thread.start();
 		}
 	}
 
-	private boolean load(Uri uri, int song)
+	private void stop()
+	{
+		if (thread != null) {
+			setCommand(COMMAND_STOP);
+			try {
+				thread.join();
+			}
+			catch (InterruptedException ex) {
+			}
+			thread = null;
+		}
+	}
+
+	private Uri uri;
+	private int song;
+	private static final int SONG_DEFAULT = -1;
+	private static final int SONG_LAST = -2;
+	private int seekPosition;
+
+	private final ASAP asap = new ASAP();
+	private ASAPInfo info;
+
+	private boolean load()
 	{
 		// read file
-		if (!"file".equals(uri.getScheme())) {
-			showError(R.string.error_reading_file);
-			return false;
-		}
-		String filename = uri.getPath();
+		String filename;
+		boolean loop;
 		byte[] module = new byte[ASAPInfo.MAX_MODULE_LENGTH];
-		int moduleLen;
+		int moduleLen = 0;
 		try {
-			if (Util.endsWithIgnoreCase(filename, ".zip")) {
-				String zipFilename = filename;
-				filename = uri.getFragment();
-				moduleLen = Util.readAndClose(new ZipInputStream(zipFilename, filename), module);
-			}
-			else if (Util.endsWithIgnoreCase(filename, ".atr")) {
-				AATRStream stream = new AATRStream(filename);
-				filename = uri.getFragment();
-				try {
-					moduleLen = stream.open().readFile(filename, module, module.length);
-				}
-				finally {
-					stream.close();
-				}
-				if (moduleLen < 0)
-					throw new FileNotFoundException(filename);
+			InputStream stream;
+			if ("asma".equals(uri.getScheme())) {
+				filename = uri.getSchemeSpecificPart();
+				loop = false;
+				stream = getAssets().open(filename);
 			}
 			else {
-				moduleLen = Util.readAndClose(new FileInputStream(filename), module);
+				Cursor cursor = getContentResolver().query(uri, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null);
+				if (cursor == null) {
+					showError(R.string.error_reading_file);
+					return false;
+				}
+				try {
+					if (!cursor.moveToNext()) {
+						showError(R.string.error_reading_file);
+						return false;
+					}
+					filename = cursor.getString(0);
+				}
+				finally {
+					cursor.close();
+				}
+				loop = true;
+				stream = getContentResolver().openInputStream(uri);
 			}
+
+			try {
+				// Android 13: module = stream.readNBytes(ASAPInfo.MAX_MODULE_LENGTH);
+				for (;;) {
+					int i = stream.read(module, moduleLen, module.length - moduleLen);
+					if (i <= 0)
+						break;
+					moduleLen += i;
+				}
+			}
+			finally {
+				stream.close();
+			}
+			if (moduleLen == module.length)
+				throw new IOException();
 		}
 		catch (IOException ex) {
 			showError(R.string.error_reading_file);
 			return false;
 		}
 
-		// stop current playback
-		stop();
-
-		// No need to worry about synchronization, because at this point we are either:
-		// a. on the UI thread with no playback thread
-		// b. on the playback thread switching to the next song
-
 		// load into ASAP
+		int songs;
 		try {
 			asap.load(filename, module, moduleLen);
 			info = asap.getInfo();
+			songs = info.getSongs();
 			switch (song) {
 			case SONG_DEFAULT:
 				song = info.getDefaultSong();
 				break;
 			case SONG_LAST:
-				song = info.getSongs() - 1;
+				song = songs - 1;
 				break;
 			default:
 				break;
 			}
-			asap.playSong(song, info.getDuration(song));
+			asap.playSong(song, loop && songs == 1 ? -1 : info.getDuration(song));
 		}
-		catch (Exception ex) {
+		catch (ASAPFormatException|ASAPArgumentException ex) {
 			showError(R.string.invalid_file);
 			return false;
 		}
 
-		// start playback
-		this.uri = uri;
-		this.song = song;
-		paused = false;
-		seekPosition = -1;
-		showInfo();
-		if (thread == null) {
-			// we're on the UI thread - start the playback thread
-			thread = new Thread(this);
-			thread.start();
+		// put metadata into mediaSession
+		MediaMetadata.Builder metadata = new MediaMetadata.Builder()
+			.putString(MediaMetadata.METADATA_KEY_MEDIA_URI, uri.toString())
+			.putLong(METADATA_KEY_CHANNELS, info.getChannels())
+			.putString(MediaMetadata.METADATA_KEY_TITLE, info.getTitleOrFilename());
+		String author = info.getAuthor();
+		if (author.length() > 0)
+			metadata.putString(MediaMetadata.METADATA_KEY_ARTIST, author);
+		String date = info.getDate();
+		if (date.length() > 0)
+			metadata.putString(MediaMetadata.METADATA_KEY_DATE, date);
+		int duration = info.getDuration(song);
+		if (duration > 0)
+			metadata.putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
+		if (songs > 1) {
+			metadata.putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, song + 1);
+			metadata.putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, songs);
+		}
+		int year = info.getYear();
+		if (year > 0)
+			metadata.putLong(MediaMetadata.METADATA_KEY_YEAR, year);
+		mediaSession.setMetadata(metadata.build());
+		mediaSession.setActive(true);
+
+		return true;
+	}
+
+	private synchronized boolean handleLoadCommand()
+	{
+		switch (command) {
+		case COMMAND_LOAD:
+			return load();
+
+		case COMMAND_NEXT:
+			if (info != null && song >= 0 && song + 1 < info.getSongs())
+				song++;
+			else {
+				int playlistIndex = getPlaylistIndex();
+				if (playlistIndex < 0)
+					return false;
+				if (++playlistIndex >= playlist.size())
+					playlistIndex = 0;
+				song = 0;
+				uri = playlist.get(playlistIndex);
+			}
+			return load();
+
+		case COMMAND_PREV:
+			if (song > 0)
+				song--;
+			else {
+				int playlistIndex = getPlaylistIndex();
+				if (playlistIndex < 0)
+					return false;
+				if (playlistIndex == 0)
+					playlistIndex = playlist.size();
+				song = SONG_LAST;
+				uri = playlist.get(playlistIndex - 1);
+			}
+			return load();
+
+		default:
+			return false;
+		}
+	}
+
+	private final long COMMON_ACTIONS = PlaybackState.ACTION_PLAY_FROM_SEARCH | PlaybackState.ACTION_SEEK_TO | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SKIP_TO_NEXT;
+
+	private boolean handlePlayCommand(AudioTrack audioTrack)
+	{
+		int pos;
+		synchronized (this) {
+			if (command == COMMAND_PAUSE) {
+				setPlaybackState(PlaybackState.STATE_PAUSED, asap.getPosition(), 0, PlaybackState.ACTION_PLAY | COMMON_ACTIONS);
+				stopForeground(false);
+				showNotification(false);
+				audioTrack.pause();
+				releaseFocus();
+				for (;;) {
+					if (command == COMMAND_PLAY) {
+						if (gainFocus()) {
+							setPlaybackState(PlaybackState.STATE_PLAYING, asap.getPosition(), 1, PlaybackState.ACTION_PAUSE | COMMON_ACTIONS);
+							showNotification(true);
+							audioTrack.play();
+							break;
+						}
+						command = COMMAND_PAUSE;
+					}
+					else if (command != COMMAND_PAUSE)
+						break;
+					try {
+						wait();
+					}
+					catch (InterruptedException ex) {
+					}
+				}
+			}
+			if (command != COMMAND_PLAY) {
+				audioTrack.stop();
+				return false;
+			}
+
+			pos = seekPosition;
+			seekPosition = -1;
+		}
+		if (pos >= 0) {
+			if (pos < asap.getPosition())
+				setPlaybackState(PlaybackState.STATE_REWINDING, pos, -10, PlaybackState.ACTION_PAUSE | COMMON_ACTIONS);
+			else
+				setPlaybackState(PlaybackState.STATE_FAST_FORWARDING, pos, 10, PlaybackState.ACTION_PAUSE | COMMON_ACTIONS);
+			try {
+				asap.seek(pos);
+			}
+			catch (ASAPFormatException ex) {
+			}
+			setPlaybackState(PlaybackState.STATE_PLAYING, asap.getPosition(), 1, PlaybackState.ACTION_PAUSE | COMMON_ACTIONS);
 		}
 		return true;
 	}
 
-	boolean playNextSong()
+	private void playLoop()
 	{
-		if (song + 1 < info.getSongs())
-			return load(uri, song + 1);
-		int playlistIndex = getPlaylistIndex();
-		if (playlistIndex < 0)
-			return false;
-		if (++playlistIndex >= playlist.size())
-			playlistIndex = 0;
-		return loadFromPlaylist(playlistIndex, 0);
-	}
+		command = COMMAND_PLAY;
+		seekPosition = -1;
+		setPlaybackState(PlaybackState.STATE_PLAYING, asap.getPosition(), 1, PlaybackState.ACTION_PAUSE | COMMON_ACTIONS);
 
-	boolean playPreviousSong()
-	{
-		if (song > 0)
-			return load(uri, song - 1);
-		int playlistIndex = getPlaylistIndex();
-		if (playlistIndex < 0)
-			return false;
-		if (playlistIndex == 0)
-			playlistIndex = playlist.size();
-		return loadFromPlaylist(playlistIndex - 1, SONG_LAST);
+		int channelConfig = info.getChannels() == 1 ? AudioFormat.CHANNEL_OUT_MONO : AudioFormat.CHANNEL_OUT_STEREO;
+		int bufferLen = AudioTrack.getMinBufferSize(ASAP.SAMPLE_RATE, channelConfig, AudioFormat.ENCODING_PCM_16BIT) >> 1;
+		if (bufferLen < 16384)
+			bufferLen = 16384;
+		byte[] byteBuffer = new byte[bufferLen << 1];
+		short[] shortBuffer = new short[bufferLen];
+		AudioAttributes attributes = new AudioAttributes.Builder()
+			.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+			.setUsage(AudioAttributes.USAGE_MEDIA)
+			.build();
+		AudioFormat format = new AudioFormat.Builder()
+			.setChannelMask(channelConfig)
+			.setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+			.setSampleRate(ASAP.SAMPLE_RATE)
+			.build();
+		AudioTrack audioTrack = new AudioTrack(attributes, format, bufferLen << 1, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE);
+		audioTrack.play();
+
+		while (handlePlayCommand(audioTrack)) {
+			bufferLen = asap.generate(byteBuffer, byteBuffer.length, ASAPSampleFormat.S16_L_E) >> 1;
+			for (int i = 0; i < bufferLen; i++)
+				shortBuffer[i] = (short) ((byteBuffer[i << 1] & 0xff) | byteBuffer[i << 1 | 1] << 8);
+			audioTrack.write(shortBuffer, 0, bufferLen);
+			if (bufferLen < shortBuffer.length)
+				command = COMMAND_NEXT;
+		}
+		audioTrack.release();
 	}
 
 	public void run()
 	{
-		do {
-			showNotification();
-
-			int channelConfig = info.getChannels() == 1 ? AudioFormat.CHANNEL_CONFIGURATION_MONO : AudioFormat.CHANNEL_CONFIGURATION_STEREO;
-			int bufferLen = AudioTrack.getMinBufferSize(ASAP.SAMPLE_RATE, channelConfig, AudioFormat.ENCODING_PCM_16BIT) >> 1;
-			if (bufferLen < 16384)
-				bufferLen = 16384;
-			byte[] byteBuffer = new byte[bufferLen << 1];
-			short[] shortBuffer = new short[bufferLen];
-			AudioTrack audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, ASAP.SAMPLE_RATE, channelConfig, AudioFormat.ENCODING_PCM_16BIT, bufferLen << 1, AudioTrack.MODE_STREAM);
-			audioTrack.play();
-
-			do {
-				synchronized (this) {
-					if (paused) {
-						audioTrack.pause();
-						try {
-							wait();
-						}
-						catch (InterruptedException ex) {
-						}
-						audioTrack.play();
-					}
-
-					if (thread == null) {
-						audioTrack.stop();
-						stopForegroundCompat(NOTIFICATION_ID);
-						return;
-					}
-
-					int pos = seekPosition;
-					if (pos >= 0) {
-						seekPosition = -1;
-						try {
-							asap.seek(pos);
-						}
-						catch (Exception ex) {
-						}
-					}
-				}
-
-				bufferLen = asap.generate(byteBuffer, byteBuffer.length, ASAPSampleFormat.S16_L_E) >> 1;
-				for (int i = 0; i < bufferLen; i++)
-					shortBuffer[i] = (short) ((byteBuffer[i << 1] & 0xff) | byteBuffer[i << 1 | 1] << 8);
-				audioTrack.write(shortBuffer, 0, bufferLen);
-			} while (bufferLen == shortBuffer.length);
-
-			audioTrack.stop();
-		} while (playNextSong());
-
-		stopForegroundCompat(NOTIFICATION_ID);
-		thread = null;
+		if (!gainFocus())
+			return;
+		while (handleLoadCommand()) {
+			showNotification(true);
+			playLoop();
+		}
+		stopForeground(true);
+		releaseFocus();
 	}
 
 	private boolean isPaused()
 	{
-		return paused;
+		return command == COMMAND_PAUSE;
 	}
 
-	public boolean isPlaying()
+	private void pause()
 	{
-		return !paused;
+		setCommand(COMMAND_PAUSE);
 	}
 
-	public boolean canPause()
+	private void start()
 	{
-		return true;
+		setCommand(COMMAND_PLAY);
 	}
 
-	public boolean canSeekBackward()
+	private void playNextSong()
 	{
-		return false;
+		setCommand(COMMAND_NEXT);
 	}
 
-	public boolean canSeekForward()
+	private void playPreviousSong()
 	{
-		return false;
+		setCommand(COMMAND_PREV);
 	}
 
-	public int getBufferPercentage()
-	{
-		return 100;
-	}
-
-	public synchronized void pause()
-	{
-		paused = true;
-	}
-
-	public synchronized void start()
-	{
-		paused = false;
-		notify();
-	}
-
-	synchronized void togglePause()
-	{
-		if (paused)
-			start();
-		else
-			pause();
-	}
-
-	public int getDuration()
-	{
-		if (song < 0)
-			return -1;
-		return info.getDuration(song);
-	}
-
-	public int getCurrentPosition()
-	{
-		return asap.getPosition();
-	}
-
-	public synchronized void seekTo(int pos)
+	private synchronized void seekTo(int pos)
 	{
 		seekPosition = pos;
 		start();
 	}
 
-	public int getAudioSessionId()
+	@Override
+	public void onAudioFocusChange(int focusChange)
 	{
-		// API 9: return audioTrack != null ? audioTrack.getAudioSessionId() : 0;
-		return 0;
+		switch (focusChange) {
+		case AudioManager.AUDIOFOCUS_LOSS:
+		case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+			pause();
+			break;
+		case AudioManager.AUDIOFOCUS_GAIN:
+			start();
+			break;
+		default:
+			break;
+		}
 	}
 
-	private final BroadcastReceiver headsetReceiver = new BroadcastReceiver() {
+	private AudioManager getAudioManager()
+	{
+		return (AudioManager) getSystemService(AUDIO_SERVICE);
+	}
+
+	private boolean gainFocus()
+	{
+		return getAudioManager().requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+	}
+
+	private void releaseFocus()
+	{
+		getAudioManager().abandonAudioFocus(this);
+	}
+
+	private final MediaSession.Callback callback = new MediaSession.Callback() {
 		@Override
-		public void onReceive(Context context, Intent intent)
+		public void onPause()
 		{
-			if (intent.getIntExtra("state", -1) == 0) {
-				pause();
-				showInfo(); // just to update the MediaController
+			pause();
+		}
+
+		@Override
+		public void onPlay()
+		{
+			start();
+		}
+
+		@Override
+		public void onSeekTo(long pos)
+		{
+			seekTo((int) pos);
+		}
+
+		@Override
+		public void onSkipToNext()
+		{
+			playNextSong();
+		}
+
+		@Override
+		public void onSkipToPrevious()
+		{
+			playPreviousSong();
+		}
+
+		@Override
+		public void onPlayFromSearch(String query, Bundle extras)
+		{
+			if (setSearchPlaylist(query)) {
+				uri = playlist.get(0);
+				setCommand(COMMAND_LOAD);
 			}
 		}
 	};
 
-	private void registerMediaButtonEventReceiver(String methodName)
+	@Override
+	public void onCreate()
 	{
-		Object audioManager = getSystemService(AUDIO_SERVICE);
-		ComponentName eventReceiver = new ComponentName(getPackageName(), MediaButtonEventReceiver.class.getName());
-		Util.invokeMethod(audioManager, methodName, eventReceiver);
+		super.onCreate();
+		activityIntent = PendingIntent.getActivity(this, 0, new Intent(this, Player.class), PendingIntent.FLAG_IMMUTABLE);
+		mediaSession = new MediaSession(this, "ASAP");
+		mediaSession.setCallback(callback);
+		mediaSession.setSessionActivity(activityIntent);
+		mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+		setSessionToken(mediaSession.getSessionToken());
+		registerReceiver(becomingNoisyReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
 	}
 
-	@Override
-	public void onStart(Intent intent, int startId)
-	{
-		super.onStart(intent, startId);
-
-		registerReceiver(headsetReceiver, new IntentFilter(Intent.ACTION_HEADSET_PLUG));
-		registerMediaButtonEventReceiver("registerMediaButtonEventReceiver");
-
-		TelephonyManager telephony = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
-		telephony.listen(new PhoneStateListener() {
-				public void onCallStateChanged(int state, String incomingNumber) {
-					if (state == TelephonyManager.CALL_STATE_RINGING)
-						pause();
-				}
-			}, PhoneStateListener.LISTEN_CALL_STATE);
-
-		Uri uri = intent.getData();
-		String playlistUri = intent.getStringExtra(EXTRA_PLAYLIST);
-		if (playlistUri != null)
-			setPlaylist(Uri.parse(playlistUri), false);
-		else if ("file".equals(uri.getScheme())) {
-			if (ASAPInfo.isOurFile(uri.toString()))
-				setPlaylist(Util.getParent(uri), false);
-			else {
-				setPlaylist(uri, true);
-				uri = playlist.get(0);
-			}
+	private final BroadcastReceiver becomingNoisyReceiver = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent)
+		{
+			pause();
 		}
-		load(uri, SONG_DEFAULT);
+	};
+
+	private static final Pattern fragmentPattern = Pattern.compile("/(.+?)(?:/(\\d{1,3}))?");
+
+	@Override
+	public int onStartCommand(Intent intent, int flags, int startId)
+	{
+		switch (intent.getAction()) {
+		case Intent.ACTION_VIEW:
+			song = SONG_DEFAULT;
+			uri = intent.getData();
+			switch (uri.getScheme()) {
+			case "http":
+			case "https":
+				String fragment = uri.getFragment();
+				if (fragment != null) {
+					Matcher m = fragmentPattern.matcher(fragment);
+					if (m.matches()) {
+						uri = Util.getAsmaUri(m.group(1));
+						String songString = m.group(2);
+						if (songString != null)
+							song = Integer.parseInt(songString) - 1;
+					}
+				}
+				break;
+			default:
+				break;
+			}
+			setPlaylist(intent.getStringExtra(SearchManager.QUERY));
+			setCommand(COMMAND_LOAD);
+			break;
+		case ACTION_PLAY:
+			start();
+			break;
+		case ACTION_PAUSE:
+			pause();
+			break;
+		case ACTION_NEXT:
+			playNextSong();
+			break;
+		case ACTION_PREVIOUS:
+			playPreviousSong();
+			break;
+		default:
+			break;
+		}
+		return START_NOT_STICKY;
 	}
 
 	@Override
 	public void onDestroy()
 	{
-		super.onDestroy();
 		stop();
-		registerMediaButtonEventReceiver("unregisterMediaButtonEventReceiver");
-		unregisterReceiver(headsetReceiver);
+
+		unregisterReceiver(becomingNoisyReceiver);
+
+		mediaSession.release();
 	}
-
-
-	// Player.java interface ----------------------------------------------------------------------------------
-
-	class LocalBinder extends Binder
-	{
-		PlayerService getService()
-		{
-			return PlayerService.this;
-		}
-	}
-
-	private final IBinder binder = new LocalBinder();
 
 	@Override
-	public IBinder onBind(Intent intent)
+	public BrowserRoot onGetRoot(String clientPackageName, int clientUid, Bundle rootHints)
 	{
-		return binder;
+		return new BrowserRoot("ASAP", null);
+	}
+
+	@Override
+	public void onLoadChildren(String parentId, Result<List<MediaBrowser.MediaItem>> result)
+	{
+		result.sendResult(null);
 	}
 }

@@ -1,45 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-	package="net.sf.asap" android:versionCode="320" android:versionName="3.2.0" android:installLocation="auto">
-	<uses-sdk android:minSdkVersion="4" android:targetSdkVersion="19" />
-	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-	<uses-permission android:name="android.permission.READ_PHONE_STATE" />
-	<application android:label="@string/app_name" android:icon="@drawable/icon" android:description="@string/app_description" android:theme="@style/Theme">
-		<activity android:name=".FileSelector" android:label="@string/app_name">
+	package="net.sf.asap" android:versionCode="800" android:versionName="8.0.0" android:installLocation="auto">
+	<uses-sdk android:minSdkVersion="21" android:targetSdkVersion="36" />
+	<uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+	<application android:label="@string/app_name" android:description="@string/app_description"
+		android:theme="@style/Theme" android:icon="@drawable/icon" android:banner="@drawable/banner" >
+		<activity android:name=".Player" android:exported="true">
 			<intent-filter>
 				<action android:name="android.intent.action.MAIN" />
+				<action android:name="android.intent.action.SEARCH" />
 				<category android:name="android.intent.category.LAUNCHER" />
+				<category android:name="android.intent.category.LEANBACK_LAUNCHER" />
 			</intent-filter>
-		</activity>
-		<activity android:name=".Player" android:label="@string/play_in_asap" android:launchMode="singleTop" android:configChanges="mcc|mnc|keyboard|keyboardHidden|orientation|screenSize">
-			<intent-filter>
+			<intent-filter android:autoVerify="true">
 				<action android:name="android.intent.action.VIEW" />
 				<category android:name="android.intent.category.DEFAULT" />
 				<category android:name="android.intent.category.BROWSABLE" />
-				<data android:mimeType="*/*" />
-				<data android:scheme="file" android:host="*" />
-				<data android:pathPattern=".*\\.sap" />
-				<data android:pathPattern=".*\\.cmc" />
-				<data android:pathPattern=".*\\.cm3" />
-				<data android:pathPattern=".*\\.cmr" />
-				<data android:pathPattern=".*\\.cms" />
-				<data android:pathPattern=".*\\.dmc" />
-				<data android:pathPattern=".*\\.dlt" />
-				<data android:pathPattern=".*\\.mpt" />
-				<data android:pathPattern=".*\\.mpd" />
-				<data android:pathPattern=".*\\.rmt" />
-				<data android:pathPattern=".*\\.tmc" />
-				<data android:pathPattern=".*\\.tm8" />
-				<data android:pathPattern=".*\\.tm2" />
-				<data android:pathPattern=".*\\.fc" />
-				<data android:pathPattern=".*\\.atr" />
+				<data android:scheme="http" />
+				<data android:scheme="https" />
+				<data android:host="asma.atari.org" android:path="/asmadb/" />
 			</intent-filter>
+			<meta-data android:name="android.app.searchable" android:resource="@xml/searchable" />
 		</activity>
-		<service android:name=".PlayerService" android:label="@string/player_service" />
-		<receiver android:name=".MediaButtonEventReceiver">
+		<provider android:name=".ArchiveSuggestionsProvider" android:authorities="net.sf.asap.ArchiveSuggestionsProvider" />
+		<service android:name=".PlayerService" android:exported="true" android:foregroundServiceType="mediaPlayback">
 			<intent-filter>
-				<action android:name="android.intent.action.MEDIA_BUTTON" />
+				<action android:name="android.media.browse.MediaBrowserService" />
 			</intent-filter>
-		</receiver>
+		</service>
 	</application>
 </manifest>

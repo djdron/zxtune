@@ -9,8 +9,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-include_directories(${Boost_INCLUDE_DIR})
-add_definitions(-DHAVE_BOOST)
 add_definitions(-DNO_DEBUG_LOGS)
 add_definitions(-DFMT_DEPRECATED_HEAVY_CORE)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
@@ -43,10 +41,15 @@ cmake_path(SET SOURCES_ROOTX NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 cmake_path(GET SOURCES_ROOTX PARENT_PATH SOURCES_ROOT)
 add_definitions(-DSOURCES_ROOT="${SOURCES_ROOT}")
 
+if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+add_compile_options(-Wno-deprecated-literal-operator -Wno-gnu-string-literal-operator-template)
+endif()
+
 if(MSVC)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-add_compile_options(-Wno-deprecated-literal-operator -Wno-gnu-string-literal-operator-template -Wno-microsoft-include -Wno-deprecated-non-prototype)
+add_compile_options(-Wno-microsoft-include -Wno-deprecated-non-prototype)
 add_compile_options(-Wno-bool-operation -Wno-unused-but-set-variable -Wno-unused-variable -Wno-misleading-indentation -Wno-unused-function)
+add_compile_options(-Wno-inconsistent-missing-override -Wno-overloaded-virtual -Wno-unused-value -Wno-reorder-ctor -Wno-nontrivial-memcall)
 add_compile_options(/showFilenames)
 endif()
 
@@ -113,7 +116,6 @@ add_subdirectory("../../src/tools" "tools")
 
 file(GLOB SRCS_CXX "src/*.cpp")
 file(GLOB SRCS_H "src/*.h")
-file(GLOB RES_RC "src/*.rc")
 
 set(LIBS asap gme he ht hvl lazyusf2 lhasa mgba ogg openmpt opus sidplayfp snesspc sseqplayer v2m vgm vio2sf vorbis xmp z80ex zlib analysis binary binary_compression binary_format core core_plugins_archives core_plugins_players dbg devices_aym devices_beeper devices_dac devices_fm devices_saa devices_z80 formats_archived formats_archived_multitrack formats_chiptune formats_packed formats_multitrack l10n_stub module_conversion module_players module_properties parameters platform_version sound strings tools)
 
@@ -147,6 +149,9 @@ set(FOOBAR_SDK_LIBRARIES
 	debug "${FOOBAR_SDK_ROOT}/libPPUI/${ARCH}Debug/libPPUI.lib"
 )
 
+file(GLOB SRCS_WIN32 "src/win32/*.h" "src/win32/*.cpp")
+file(GLOB RES_WIN32 "src/win32/*.rc")
+
 elseif(APPLE)
 
 set(FOOBAR_SDK_LIBRARIES
@@ -162,10 +167,14 @@ set(FOOBAR_SDK_LIBRARIES
 	debug "${FOOBAR_SDK_ROOT}/pfc/build/Debug/libpfc-Mac.a"
 )
 
+file(GLOB SRCS_MAC "src/mac/*.h" "src/mac/*.mm")
+file(GLOB RES_MAC "src/mac/*.xib")
+
 endif(WIN32)
 
-add_library(foo_input_zxtune MODULE ${SRCS_CXX} ${SRCS_H} ${RES_RC})
+add_library(foo_input_zxtune MODULE ${SRCS_CXX} ${SRCS_H} ${SRCS_WIN32} ${RES_WIN32} ${SRCS_MAC} ${RES_MAC})
 target_link_libraries(foo_input_zxtune ${LIBS} ${FOOBAR_SDK_LIBRARIES})
+
 if(APPLE)
 set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0)
 target_link_libraries(foo_input_zxtune "-framework CoreFoundation" "-framework Cocoa")
@@ -177,6 +186,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 	MACOSX_BUNDLE_GUI_IDENTIFIER com.djdron.foo-input-zxtune
 	MACOSX_BUNDLE_ICON_FILE AppIcon
 	MACOSX_BUNDLE_SHORT_VERSION_STRING "0.0.10"
+	RESOURCE "${RES_MAC}"
 	XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
 	XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED NO
 	XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.djdron.foo-input-zxtune"

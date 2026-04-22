@@ -1,7 +1,7 @@
 /*
  * asapweb.js - pure JavaScript ASAP for web browsers
  *
- * Copyright (C) 2009-2012  Piotr Fusik
+ * Copyright (C) 2009-2025  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -21,54 +21,144 @@
  * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-var asap = {
-	timerId : null,
-	onLoad : new Function(),
-	onPlaybackEnd : new Function(),
-	stop : function()
+import { ASAP, ASAPSampleFormat } from "./asap.js";
+
+class ASAPFileBag
+{
+	files;
+
+	constructor(files)
 	{
-		if (window.asap.timerId) {
-			clearInterval(window.asap.timerId);
-			window.asap.timerId = null;
+		this.files = files;
+	}
+
+	load(filename, buffer, length)
+	{
+		if (!this.files.hasOwnProperty(filename))
+			return -1;
+		const source = this.files[filename];
+		if (length > source.length)
+			length = source.length;
+		buffer.set(source);
+		return length;
+	}
+}
+
+export const asapWeb = {
+	stop()
+	{
+		if (this.processor) {
+			this.processor.disconnect();
+			delete this.processor;
 		}
 	},
-	play : function(filename, module, song)
+
+	playContent(filename, content, song)
 	{
-		var asap = new ASAP();
-		asap.load(filename, module, module.length);
-		var info = asap.getInfo();
-		if (song == null)
-			song = info.getDefaultSong();
-		asap.playSong(song, info.getDuration(song));
-
-		var buffer = new Array(8192);
-
-		function audioCallback(samplesRequested)
-		{
-			buffer.length = asap.generate(buffer, samplesRequested, ASAPSampleFormat.U8);
-			for (var i = 0; i < buffer.length; i++)
-				buffer[i] = (buffer[i] - 128) / 128;
-			if (buffer.length == 0) {
-				window.asap.stop();
-				window.asap.onPlaybackEnd();
+		const asap = new ASAP();
+		try {
+			if (content instanceof Uint8Array)
+				asap.load(filename, content, content.length);
+			else {
+				const loader = new ASAPFileBag(content);
+				content = content[filename];
+				asap.loadWithExtraFiles(filename, content, content.length, loader);
 			}
-			return buffer;
+			const info = asap.getInfo();
+			if (song === undefined)
+				song = info.getDefaultSong();
+			asap.playSong(song, -1);
 		}
-		function failureCallback()
-		{
-			alert("Your browser doesn't support JavaScript audio");
-		}
-		var audio = new XAudioServer(info.getChannels(), ASAP.SAMPLE_RATE, 8192, 16384, audioCallback, 1, failureCallback);
-		function heartbeat()
-		{
-			audio.executeCallback();
+		catch (e) {
+			alert(e.message);
+			return;
 		}
 
-		window.asap.stop();
-		window.asap.author = info.getAuthor();
-		window.asap.title = info.getTitle();
-		window.asap.date = info.getDate();
-		window.asap.onLoad();
-		window.asap.timerId = setInterval(heartbeat, 50);
+		this.stop();
+		const length = 4096;
+		const channels = asap.getInfo().getChannels();
+		const buffer = new Uint8Array(length * channels);
+
+		const AudioContext = window.AudioContext || window.webkitAudioContext;
+		if (this.context)
+			this.context.close();
+		this.context = new AudioContext({ sampleRate : ASAP.SAMPLE_RATE });
+		if (typeof(this.onUpdate) == "function")
+			this.context.onstatechange = this.onUpdate;
+		this.processor = this.context.createScriptProcessor(length, 0, channels);
+		this.processor.onaudioprocess = e => {
+			asap.generate(buffer, length * channels, ASAPSampleFormat.U8);
+			for (let c = 0; c < channels; c++) {
+				const output = e.outputBuffer.getChannelData(c);
+				for (let i = 0; i < length; i++)
+					output[i] = (buffer[i * channels + c] - 128) / 128;
+			}
+			if (typeof(this.onUpdate) == "function")
+				this.onUpdate();
+		};
+		this.processor.connect(this.context.destination);
+		this.asap = asap;
+		if (typeof(this.onUpdate) == "function")
+			this.onUpdate();
+	},
+
+	togglePause()
+	{
+		if (this.context) {
+			switch (this.context.state) {
+			case "running":
+				this.context.suspend();
+				return true;
+			case "suspended":
+				this.context.resume();
+				return false;
+			default:
+				break;
+			}
+		}
+		return null;
+	},
+
+	isPaused()
+	{
+		if (this.context) {
+			switch (this.context.state) {
+			case "running":
+				return false;
+			case "suspended":
+				return true;
+			default:
+				break;
+			}
+		}
+		return null;
+	},
+
+	playUrl(url, song)
+	{
+		const request = new XMLHttpRequest();
+		request.open("GET", url, true);
+		request.responseType = "arraybuffer";
+		request.onload = e => {
+			if (request.status == 200 || request.status == 0)
+				this.playContent(url, new Uint8Array(request.response), song);
+		};
+		request.send();
+	},
+
+	playFile(file)
+	{
+		const reader = new FileReader();
+		reader.onload = e => this.playContent(file.name, new Uint8Array(e.target.result));
+		reader.readAsArrayBuffer(file);
+	},
+
+	seek(position)
+	{
+		if (!this.context)
+			return;
+		this.context.suspend();
+		this.asap.seek(position);
+		this.context.resume();
 	}
 };

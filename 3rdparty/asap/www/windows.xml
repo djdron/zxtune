@@ -1,0 +1,71 @@
+﻿<page title="Windows">
+	<h2>Windows</h2>
+	<p>On 64-bit Windows 11/10/8/7/Vista/XP download <download prefix="asap-" suffix="-win64.msi" />.
+	Starting from ASAP 8.0.0, you need only the 64-bit installer.</p>
+	<p>If you have a retrocomputer with 32-bit Windows, download <download prefix="asap-" suffix="-win32.msi" />.</p>
+
+	<h2>foobar2000</h2>
+	<p><a href="https://www.foobar2000.org/">foobar2000</a> is the recommended player.
+	The ASAP installer detects it and installs a suitable plugin.
+	If you want to install just the foobar2000 plugin and nothing else, there's an alternative download:
+	<download prefix="foo_asap-" suffix=".fb2k-component" />.</p>
+	<p>foobar2000 can play directly from ZIP files, so you don't even need to unpack them.
+	The plugin also supports ATR disk images. You can also convert, e.g. to MP3.</p>
+	<p>Some files contain <a href="formats.html#subsongs">subsongs</a>
+	and they appear as separate playlist entries, with same author and title, just different durations.
+	To add a subsong column, right-click the column header and select "Columns / More...",
+	then "Add new" in "Custom columns". Type "Subsong" as the name and "%subsong%" as the pattern.
+	Then right-click the column header and select "Columns / Subsong".</p>
+	<p>To view and edit metadata, select "View / ASAP info". This doesn't work inside ZIP archives.</p>
+	<img src="foobar2000.png" alt="foobar2000" />
+
+	<h2>XMPlay</h2>
+	<p><a href="https://www.un4seen.com/xmplay.html">XMPlay</a> is a player supporting MOD and similar formats out of the box.
+	The ASAP plugin can display RMT instrument names. If you want to use the "File information" window
+	(to edit tags or convert between SAP and other formats), assign a shortcut to it from within XMPlay options.</p>
+	<img src="xmplay.png" alt="XMPlay" />
+
+	<h2>Winamp</h2>
+	<p><a href="https://www.winamp.com/">Winamp</a> is a pure old-school classic! Believe it or not, it does work on Windows 10.
+	The ASAP plugin supports ATR disk images.</p>
+	<img src="winamp.png" alt="Winamp" />
+
+	<h2>BASS / AIMP</h2>
+	<p><a href="https://www.un4seen.com/bass.html">BASS</a> is a component that provides audio playback
+	in <a href="https://www.aimp.ru/">AIMP</a> and <a href="https://www.un4seen.com/bass_showcase.php">other players</a>.
+	The ASAP installer detects AIMP. For other players, modify the install directory.</p>
+	<img src="aimp.png" alt="AIMP" />
+
+	<h2>VLC</h2>
+	<p><a href="https://www.videolan.org/vlc/">VLC</a> is a popular video player that plays audio as well.
+	It provides limited support for the SAP file format out of the box (no digitized sounds, buggy emulation).
+	For best experience, install the ASAP plugin.</p>
+	<img src="vlc.png" alt="VLC" />
+
+	<h2>Raster Music Tracker</h2>
+	<p><a href="http://raster.infos.cz/atari/rmt/rmt.htm">RMT</a> is a chiptune editor running on Windows.
+	For better emulation of the POKEY chip, install the ASAP plugin.</p>
+
+	<h2>WASAP</h2>
+	<p>WASAP is a tiny standalone player. When you run it, an "Open file" dialog appears.
+	Simply select the file you want to listen to. WASAP is later controlled by its red tray icon.
+	When you hover the mouse pointer over the icon, the name of the loaded file appears.
+	To open another file, left-click the tray icon. The other options are
+	available in the menu which appears when you right-click the icon.</p>
+	<p>Because of limited functionality of WASAP (for instance, no playlist),
+	it's recommended to use the previously described players instead.</p>
+	<img src="wasap.png" alt="WASAP" />
+
+	<h2>Windows Explorer</h2>
+	<p>The Windows Explorer extension provides no playback, only metadata display and editor.</p>
+	<img src="shellex.png" alt="Windows Explorer" />
+
+	<h2>asapconv</h2>
+	<p>For command-line conversions (e.g. to WAV or between SAP and the tracker formats)
+	and editing the metadata, use asapconv. Run the program from the command prompt to see the syntax.
+	The <code>-o/--output</code> option selects the output format and is mandatory.</p>
+
+	<h2>Manual installation</h2>
+	<p>If you are allergic to installers, download <download prefix="asap-" suffix="-win64.zip" />
+	or <download prefix="asap-" suffix="-win32.zip" /> and extract the files to proper locations.</p>
+</page>

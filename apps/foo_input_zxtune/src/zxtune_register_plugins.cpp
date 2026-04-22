@@ -1,5 +1,5 @@
 /*
-ZXTune foobar2000 decoder component by djdron (C) 2013 - 2020
+ZXTune foobar2000 decoder component by djdron (C) 2013 - 2026
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,7 +42,8 @@ void RegisterArchivePlugins(ArchivePluginsRegistrator& registrator)
 }
 
 //non-filtered plugins list to display in preferences
-std::vector<PlayerPlugin::Ptr> player_plugins;
+static std::vector<PlayerPlugin::Ptr> player_plugins;
+const std::vector<PlayerPlugin::Ptr>& PlayerPlugins() { return player_plugins; }
 bool PlayerPluginEnabled(const PlayerPlugin::Ptr& pp);
 
 class PlayerPluginsFilter : public PlayerPluginsRegistrator

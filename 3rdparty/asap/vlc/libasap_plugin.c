@@ -1,7 +1,7 @@
 /*
  * libasap_plugin.c - ASAP plugin for VLC
  *
- * Copyright (C) 2012  Piotr Fusik
+ * Copyright (C) 2012-2025  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -26,6 +26,7 @@
 #define MODULE_STRING  "asap"
 
 #include <stdarg.h>
+#include <stdbool.h>
 
 #include <vlc_common.h>
 #include <vlc_input.h>
@@ -68,16 +69,16 @@ static int Demux(demux_t *demux)
 	return 1;
 }
 
-static cibool PlaySong(demux_t *demux, demux_sys_t *sys, int song)
+static bool PlaySong(demux_t *demux, demux_sys_t *sys, int song)
 {
 	const ASAPInfo *info = ASAP_GetInfo(sys->asap);
 	int duration = ASAPInfo_GetDuration(info, song);
 	if (!ASAP_PlaySong(sys->asap, song, duration))
-		return FALSE;
+		return false;
 	sys->duration = duration;
 	demux->info.i_title = song;
 	demux->info.i_update |= INPUT_UPDATE_TITLE;
-	return TRUE;
+	return true;
 }
 
 static int Control(demux_t *demux, int query, va_list args)
@@ -162,6 +163,29 @@ static int Control(demux_t *demux, int query, va_list args)
 	}
 }
 
+#ifdef vlc_stream_NewURL /* VLC 3.0+ */
+
+typedef struct {
+	int (*load)(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length);
+} ASAPFileLoaderVtbl;
+
+struct ASAPFileLoader {
+	const ASAPFileLoaderVtbl *vtbl;
+	vlc_object_t *obj;
+};
+
+static int loader_load(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length)
+{
+	stream_t *s = vlc_stream_NewURL(self->obj, filename);
+	if (s == NULL)
+		return -1;
+	length = (int) vlc_stream_Read(s, buffer, length);
+	vlc_stream_Delete(s);
+	return length;
+}
+
+#endif
+
 static int Open(vlc_object_t *obj)
 {
 	demux_t *demux = (demux_t *) obj;
@@ -173,7 +197,13 @@ static int Open(vlc_object_t *obj)
 	uint8_t *module = (uint8_t *) malloc(module_len);
 	if (unlikely(module == NULL))
 		return VLC_ENOMEM;
-	if (stream_Read(demux->s, module, module_len) < module_len) {
+	if (
+#ifdef vlc_stream_NewURL /* VLC 3.0+ */
+		vlc_stream_Read
+#else
+		stream_Read
+#endif
+			(demux->s, module, module_len) < module_len) {
 		free(module);
 		return VLC_EGENERIC;
 	}
@@ -190,7 +220,14 @@ static int Open(vlc_object_t *obj)
 		free(module);
 		return VLC_ENOMEM;
 	}
-	if (!ASAP_Load(sys->asap, NULL, module, module_len)) {
+#ifdef vlc_stream_NewURL /* VLC 3.0+ */
+	static const ASAPFileLoaderVtbl loader_vtbl = { loader_load };
+	const ASAPFileLoader loader = { &loader_vtbl, obj };
+	if (!ASAP_LoadWithExtraFiles(sys->asap, demux->s->psz_url, module, module_len, &loader))
+#else
+	if (!ASAP_Load(sys->asap, demux->psz_file, module, module_len))
+#endif
+	{
 		ASAP_Delete(sys->asap);
 		free(sys);
 		free(module);

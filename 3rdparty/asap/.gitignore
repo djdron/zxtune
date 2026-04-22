@@ -1,0 +1,11 @@
+*.a
+*.dll
+*.exe
+*.o
+*.so
+/aatr.c
+/aatr.h
+/asap-asapscan.c
+/asap-asapscan.h
+/MANIFEST
+/gmon.out

@@ -11,25 +11,25 @@ ASM6502_PLAYERS_OBX = $(ASM6502_PLAYERS:%=6502/%.obx)
 ASM6502_OBX = $(ASM6502_PLAYERS_OBX) 6502/xexb.obx 6502/xexd.obx 6502/xexinfo.obx
 
 6502/cmc.obx: $(srcdir)6502/cmc.asx
-	$(XASM) -d CM3=0 -d CMR=0
+	$(XASM) -d CM3=0 -d CMR=0 -l 6502/cmc.lst
 
 6502/cm3.obx: $(srcdir)6502/cmc.asx
-	$(XASM) -d CM3=1 -d CMR=0
+	$(XASM) -d CM3=1 -d CMR=0 -l 6502/cm3.lst
 
 6502/cmr.obx: $(srcdir)6502/cmc.asx
-	$(XASM) -d CM3=0 -d CMR=1
+	$(XASM) -d CM3=0 -d CMR=1 -l 6502/cmr.lst
 
 6502/dlt.obx: $(srcdir)6502/dlt.as8
-	$(MADS) -c
+	$(MADS) -c -l
 
 6502/rmt4.obx: $(srcdir)6502/rmt.asx
-	$(XASM) -d STEREOMODE=0
+	$(XASM) -d STEREOMODE=0 -l 6502/rmt4.lst
 
 6502/rmt8.obx: $(srcdir)6502/rmt.asx
-	$(XASM) -d STEREOMODE=1
+	$(XASM) -d STEREOMODE=1 -l 6502/rmt8.lst
 
 6502/fc.obx: $(srcdir)6502/fc.as8
-	$(MADS)
+	$(MADS) -l
 
 6502/xexinfo.obx: $(srcdir)6502/xexinfo.asx
 	$(XASM) -d TEST=0 -l

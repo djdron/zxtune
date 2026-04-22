@@ -1,4 +1,5 @@
-// XMPlay plugin functions header (c) 2004-2007 Ian Luck
+// XMPlay plugin functions header
+// new plugins can be submitted to plugins@xmplay.com
 
 #pragma once
 
@@ -10,8 +11,8 @@ typedef unsigned __int64 QWORD;
 extern "C" {
 #endif
 
-// Note all texts are UTF-8 on WinNT based systems, and ANSI on Win9x
-#define Utf2Uni(src,slen,dst,dlen) MultiByteToWideChar(CP_UTF8,0,src,slen,dst,dlen) // convert UTF-8 to Unicode
+// Note all XMPlay texts are UTF-8 on WinNT based systems and ANSI on Win9x
+#define Utf2Uni(src,slen,dst,dlen) MultiByteToWideChar(CP_UTF8,0,src,slen,dst,dlen) // convert UTF-8 to UTF-16
 
 typedef void *(WINAPI *InterfaceProc)(DWORD face); // XMPlay interface retrieval function received by plugin
 
@@ -25,9 +26,10 @@ typedef void *(WINAPI *InterfaceProc)(DWORD face); // XMPlay interface retrieval
 #define XMPCONFIG_NET_RESTRICT	1
 #define XMPCONFIG_NET_RECONNECT	2
 #define XMPCONFIG_NET_PROXY		3
-#define XMPCONFIG_NET_PROXYCONF	4
+#define XMPCONFIG_NET_PROXYCONF	4 // pointer to string
 #define XMPCONFIG_NET_TIMEOUT	5
 #define XMPCONFIG_NET_PREBUF	6
+#define XMPCONFIG_OUTPUT		7 // pointer to XMPFORMAT (version 3.6)
 
 #define XMPINFO_TEXT_GENERAL	0 // General info text
 #define XMPINFO_TEXT_MESSAGE	1 // Message info text
@@ -45,16 +47,24 @@ typedef void *XMPFILE;
 #define XMPFILE_TYPE_NETFILE	2 // file on the 'net
 #define XMPFILE_TYPE_NETSTREAM	3 // 'net stream (unknown length)
 
+typedef void (WINAPI *XMPSHORTCUTPROC)();
+typedef void (WINAPI *XMPSHORTCUTPROCEX)(DWORD id);
+
 typedef struct {
 	DWORD id;				// must be unique and >=0x10000
 	const char *text;		// description
-	void (WINAPI *proc)();	// handler
+	union {	// handler
+		XMPSHORTCUTPROC proc;
+		XMPSHORTCUTPROCEX procex; // if id&0x80000000
+	};
 } XMPSHORTCUT;
 
 typedef struct {
 	DWORD rate;		// sample rate
 	DWORD chan;		// channels
-	DWORD res;		// bytes per sample (1=8-bit,2=16-bit,3=24-bit,4=float,0=undefined)
+	WORD res;		// bytes per sample (1=8-bit,2=16-bit,3=24-bit,4=float,0=undefined)
+// version 3.8.4
+	WORD chanmask;	// SPEAKER flags (0=default)
 } XMPFORMAT;
 
 typedef struct {
@@ -62,6 +72,27 @@ typedef struct {
 	const char *title;
 	const char *performer;
 } XMPCUE;
+
+#define TAG_FORMATTED_TITLE		(char*)-1 // formatted track title
+#define TAG_FILENAME			(char*)-2 // filename
+#define TAG_TRACK_TITLE			(char*)-3 // stream track (or CUE sheet) title
+#define TAG_LENGTH				(char*)-4 // length in seconds
+#define TAG_SUBSONGS			(char*)-5 // subsong count
+#define TAG_SUBSONG				(char*)-6 // separated subsong (number/total)
+#define TAG_RATING				(char*)-7 // user rating
+#define TAG_TRACK_URL			(char*)-8 // stream track URL
+#define TAG_TITLE				(char*)0 // = "title"
+#define TAG_ARTIST				(char*)1 // = "artist"
+#define TAG_ALBUM				(char*)2 // = "album"
+#define TAG_DATE				(char*)3 // = "date"
+#define TAG_TRACK				(char*)4 // = "title"
+#define TAG_GENRE				(char*)5 // = "genre"
+#define TAG_COMMENT				(char*)6 // = "comment"
+#define TAG_FILETYPE			(char*)7 // = "filetype"
+
+/*
+	Non-"const" pointers returned by these functions should be freed via XMPFUNC_MISC:Free when done with them.
+*/
 
 typedef struct { // miscellaneous functions
 	DWORD (WINAPI *GetVersion)(); // get XMPlay version (eg. 0x03040001 = 3.4.0.1)
@@ -76,12 +107,15 @@ typedef struct { // miscellaneous functions
 	void (WINAPI *RefreshInfo)(DWORD mode); // refresh info displays (XMPINFO_REFRESH_xxx flags)
 	char *(WINAPI *GetInfoText)(DWORD mode); // get info window text (XMPINFO_TEXT_xxx)
 	char *(WINAPI *FormatInfoText)(char *buf, const char *name, const char *value); // format text for info window (tabs & new-lines)
-	char *(WINAPI *GetTag)(int tag); // get a current track's tag
-		//tags: 0=title,1=artist,2=album,3=year,4=track,5=genre,6=comment,7=filetype, -1=formatted title,-2=filename,-3=track/cue title
+	char *(WINAPI *GetTag)(const char *tag); // get a current track's tag (tag name or TAG_xxx)
 	BOOL (WINAPI *RegisterShortcut)(const XMPSHORTCUT *cut); // add a shortcut
 	BOOL (WINAPI *PerformShortcut)(DWORD id); // perform a shortcut action
 // version 3.4.0.14
 	const XMPCUE *(WINAPI *GetCue)(DWORD cue); // get a cue entry (0=image, 1=1st track)
+// version 3.8
+	BOOL (WINAPI *DDE)(const char *command); // execute a DDE command without using DDE
+// version 3.8.2
+	char *(WINAPI *ProcessID3v2)(const BYTE *id3v2, DWORD size); // process ID3v2 tag block
 } XMPFUNC_MISC;
 
 typedef struct { // "registry" functions
@@ -98,20 +132,33 @@ typedef struct { // file functions
 	XMPFILE (WINAPI *OpenMemory)(const void *buf, DWORD len); // open a file from memory
 	void (WINAPI *Close)(XMPFILE file); // close an opened file
 	DWORD (WINAPI *GetType)(XMPFILE file); // return XMPFILE_TYPE_xxx
-	DWORD (WINAPI *GetSize)(XMPFILE file); // file size
+	union {
+		DWORD (WINAPI *GetSize)(XMPFILE file); // file size
+		QWORD (WINAPI *GetSize64)(XMPFILE file); // file size (64-bit) in version 3.8.2
+	};
 	const char *(WINAPI *GetFilename)(XMPFILE file); // filename
 	const void *(WINAPI *GetMemory)(XMPFILE file); // memory location (XMPFILE_TYPE_MEMORY)
 	DWORD (WINAPI *Read)(XMPFILE file, void *buf, DWORD len); // read from file
 	BOOL (WINAPI *Seek)(XMPFILE file, DWORD pos); // seek in file
-	DWORD (WINAPI *Tell)(XMPFILE file); // get current file pos
+	union {
+		DWORD (WINAPI *Tell)(XMPFILE file); // get current file pos
+		QWORD (WINAPI *Tell64)(XMPFILE file); // get current file pos (64-bit) in version 3.8.2
+	};
 	// net-only stuff
 	void (WINAPI *NetSetRate)(XMPFILE file, DWORD rate); // set bitrate in bytes/sec (decides buffer size)
-	BOOL (WINAPI *NetIsActive)(XMPFILE file); // connection is still up?
+	int (WINAPI *NetIsActive)(XMPFILE file); // still connected? (1=connected, 2=seeking/reconnecting)
 	BOOL (WINAPI *NetPreBuf)(XMPFILE file); // pre-buffer data
 	DWORD (WINAPI *NetAvailable)(XMPFILE file); // get amount of data ready to go
 
 	char *(WINAPI *ArchiveList)(XMPFILE file); // get archive contents (series of NULL-terminated entries)
 	XMPFILE (WINAPI *ArchiveExtract)(XMPFILE file, const char *entry, DWORD len); // decompress file from archive
+
+// version 3.8.2
+	XMPFILE (WINAPI *OpenRange)(const char *filename, QWORD offset, QWORD length); // open a file range (length=0=to EOF)
+	BOOL (WINAPI *Seek64)(XMPFILE file, QWORD pos); // seek in file (64-bit)
+
+// version 4.0
+	QWORD (WINAPI *GetOffset)(XMPFILE file); // get start offset
 } XMPFUNC_FILE;
 
 typedef struct { // text functions - return new string in native form (UTF-8/ANSI)
@@ -128,6 +175,22 @@ typedef struct { // playback status functions
 	const XMPFORMAT *(WINAPI *GetFormat)(BOOL in); // get input/output sample format
 } XMPFUNC_STATUS;
 
+// The following Winamp messages are also supported by XMPlay (see Winamp SDK for descriptions)
+#define WM_WA_IPC WM_USER
+#define IPC_DELETE 101
+#define IPC_STARTPLAY 102   
+#define IPC_ISPLAYING 104
+#define IPC_GETOUTPUTTIME 105
+#define IPC_JUMPTOTIME 106
+#define IPC_SETPLAYLISTPOS 121
+#define IPC_SETVOLUME 122
+#define IPC_SETPANNING 123
+#define IPC_GETLISTLENGTH 124
+#define IPC_GETLISTPOS 125
+#define IPC_GETPLAYLISTFILE 211
+#define IPC_GETPLAYLISTTITLE 212
+#define IPC_GETINIFILE 334
+#define IPC_GETINIDIRECTORY 335
 
 #ifdef __cplusplus
 }

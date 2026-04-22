@@ -125,6 +125,11 @@ C<<"<?>">> should be used.
 If the value is unknown, it should not be empty or consist
 of only question marks - use C<<"<?>">> instead.
 
+=item B<NTSC tag with no FASTPLAY>
+
+For compatiblity with players that don't understand the NTSC tag,
+it should be accompanied by C<FASTPLAY 262>.
+
 =item B<SONGS 1 is superfluous>
 
 C<SONGS> tag with the argument of 1 is meaningless
@@ -296,7 +301,7 @@ use Getopt::Long;
 use Pod::Usage;
 use strict;
 
-my $VERSION = '3.2.0';
+my $VERSION = '8.0.0';
 my $asapscan = File::Spec->rel2abs('asapscan');
 my ($check, $fix, $stat) = (0, 0, 0);
 my ($progress, $time, $overwrite_time, $features, $help, $version) = (0, 0, 0, 0, 0, 0);
@@ -354,8 +359,7 @@ sub process($$) {
 		my @times;
 		for (split /[\x0D\x0A]+/, $hdr) {
 			my ($tag, $spaces1, $arg, $spaces2);
-			unless (($tag, $spaces1, $arg, $spaces2) =
-				/^([A-Z]+)(?:( +)(.+?))?( *)$/s) {
+			unless (($tag, $spaces1, $arg, $spaces2) = /^([A-Z]+)(?:( +)(.+?))?( *)$/s) {
 				$fatal{"unknown header line: $_"} = 1;
 				next;
 			}
@@ -480,14 +484,14 @@ sub process($$) {
 			}
 			$tags{$tag} = $arg;
 		}
-		$fatal{'invalid argument of DEFSONG'} = 1
-			if exists($tags{'SONGS'}) && $tags{'DEFSONG'} >= $tags{'SONGS'};
-		if (@times > ($tags{'SONGS'} || 1)) {
+		my $songs = $tags{'SONGS'} || 1;
+		$fatal{'invalid argument of DEFSONG'} = 1 if $tags{'DEFSONG'} >= $songs;
+		if (@times > $songs) {
 			splice @times, $tags{'SONGS'} || 1;
 			$fixed{'more TIME tags than songs'} = 1;
 		}
-		elsif (@times < ($tags{'SONGS'} || 1)) {
-			$fatal{'missing TIME tags'} = 1;
+		elsif (@times < $songs && !$fix) {
+			$fixed{'missing TIME tags'} = 1;
 		}
 		if (exists($tags{'TYPE'})) {
 			my $type = $tags{'TYPE'};
@@ -501,7 +505,11 @@ sub process($$) {
 		else {
 			$fatal{'missing TYPE tag'} = 1;
 		}
-		++$types{$tags{'TYPE'}}{exists($tags{'STEREO'})?'stereo':'mono'};
+		if (exists($tags{'NTSC'}) && !exists($tags{'FASTPLAY'})) {
+			$tags{'FASTPLAY'} = '262';
+			$fixed{'NTSC tag with no FASTPLAY'} = 1;
+		}
+		++$types{$tags{'TYPE'}}{exists($tags{'STEREO'}) ? 'stereo' : 'mono'};
 		my $i = 0;
 		for (;;) {
 			my $bh = substr($bin, $i, 5);
@@ -534,21 +542,22 @@ sub process($$) {
 				$fixed{'FFFF inside binary part'} = 1;
 			}
 		}
-		if (%fixed || ($fix && $time && !@times) || $overwrite_time) {
+		my $fix_time = $overwrite_time || ($time && @times < $songs);
+		if (%fixed || ($fix && $fix_time)) {
 			if (%fatal) {
 				push @notfixed_messages,
-					"$fullpath (" . join('; ', sort(keys(%fixed))) . ")\n";
+					"$fullpath (" . join('; ', sort(keys(%fatal))) . ")\n";
 			}
 			else {
 				if ($fix) {
-					if (($time && !@times) || $overwrite_time) {
+					if ($fix_time) {
 						my $times = `$asapscan -t $filename`;
 						if (!$times) {
 							$fatal{'error running asapscan'} = 1;
 						}
 						elsif ($times =~ /^(?:TIME \d?\d:\d\d(?:\.\d\d\d?)?(?: LOOP)?\r?\n)+$/s) {
 							my @new_times = $times =~ /\d?\d:\d\d(?:\.\d\d\d?)?(?: LOOP)?/gs;
-							if (!@times) {
+							if (@times < @new_times) {
 								@times = @new_times;
 								$fixed{'added TIME tags'} = 1;
 							}

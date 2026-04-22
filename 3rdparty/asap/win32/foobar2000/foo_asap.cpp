@@ -1,10 +1,10 @@
 /*
  * foo_asap.cpp - ASAP plugin for foobar2000
  *
- * Copyright (C) 2006-2014  Piotr Fusik
+ * Copyright (C) 2006-2026  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
- * see http://asap.sourceforge.net
+ * see https://asap.sourceforge.net
  *
  * ASAP is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published
@@ -21,6 +21,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#define _WINSOCKAPI_ // prevents compilation errors
 #include <windows.h>
 #include <string.h>
 
@@ -29,13 +30,20 @@
 #include "info_dlg.h"
 #include "settings_dlg.h"
 
-#define UNICODE /* NOT for info_dlg.h */
 #include "foobar2000/SDK/foobar2000.h"
+#include "foobar2000/SDK/coreDarkMode.h"
 
 #define BITS_PER_SAMPLE    16
 #define BUFFERED_BLOCKS    1024
 
-/* Configuration --------------------------------------------------------- */
+// Configuration ---------------------------------------------------------
+
+static const GUID preferences_guid =
+	{ 0xf7c0a763, 0x7c20, 0x4b64, { 0x92, 0xbf, 0x11, 0xe5, 0x5d, 0x8, 0xe5, 0x53 } };
+
+static const GUID sample_rate_guid =
+	{ 0xb9eb92ed, 0x9172, 0x4b6f, { 0x84, 0x3a, 0xb3, 0x50, 0xcd, 0x22, 0x0f, 0x45 } };
+static cfg_int sample_rate(sample_rate_guid, ASAP_SAMPLE_RATE);
 
 static const GUID song_length_guid =
 	{ 0x810e12f0, 0xa695, 0x42d2, { 0xab, 0xc0, 0x14, 0x1e, 0xe5, 0xf3, 0xb3, 0xb7 } };
@@ -59,25 +67,53 @@ static cfg_bool playing_info_cfg(playing_info_guid, false);
 
 void onUpdatePlayingInfo()
 {
-	playing_info_cfg = playing_info != FALSE; /* avoid warning C4800 */
+	playing_info_cfg = playing_info;
 }
 
 
-/* Decoding -------------------------------------------------------------- */
+// Decoding --------------------------------------------------------------
 
-class input_asap
+static bool has_ext(const char *path, const char *ext)
 {
-	static input_asap *head;
-	input_asap *prev;
-	input_asap *next;
+	size_t len = strlen(path);
+	return len >= 4 && _stricmp(path + len - 4, ext) == 0;
+}
+
+struct ASAPFileLoaderVtbl
+{
+	int (*load)(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length);
+};
+
+struct ASAPFileLoader
+{
+	const ASAPFileLoaderVtbl *vtbl;
+	abort_callback &p_abort;
+	explicit ASAPFileLoader(abort_callback &p_abort);
+};
+
+static int ASAPFileLoader_Load(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length)
+{
+	try {
+		foobar2000_io::file_ptr fp;
+		filesystem::g_open_read(fp, filename, self->p_abort);
+		return static_cast<int>(fp->read(buffer, length, self->p_abort));
+	} catch (pfc::exception &) {
+		return -1;
+	}
+}
+
+static const ASAPFileLoaderVtbl ASAPFileLoader_vtbl = { ASAPFileLoader_Load };
+ASAPFileLoader::ASAPFileLoader(abort_callback &p_abort) : vtbl(&ASAPFileLoader_vtbl), p_abort(p_abort) {}
+
+class input_asap : public input_stubs
+{
 	service_ptr_t<file> m_file;
-	char *url;
+	char *url = nullptr;
 	BYTE module[ASAPInfo_MAX_MODULE_LENGTH];
 	int module_len;
-	ASAP *asap;
-	abort_callback *p_abort;
+	ASAP * const asap;
 
-	int get_song_duration(int song, bool play)
+	int get_song_duration(int song, bool play) const
 	{
 		const ASAPInfo *info = ASAP_GetInfo(asap);
 		int duration = ASAPInfo_GetDuration(info, song);
@@ -99,30 +135,21 @@ class input_asap
 			p_info.meta_set(p_name, p_value);
 	}
 
-	static const char *empty_if_null(const char *s)
+	static const char *meta_get(const file_info &p_info, const char *p_name)
 	{
-		return s != NULL ? s : "";
+		const char *s = p_info.meta_get(p_name, 0);
+		return s != nullptr ? s : "";
 	}
 
-	void write(int data)
+	void set_tags(const char *author, const char *title, const char *date)
 	{
-		BYTE b = static_cast<BYTE>(data);
-		m_file->write(&b, 1, *p_abort);
-	}
-
-	static void static_write(void *obj, int data)
-	{
-		static_cast<input_asap *>(obj)->write(data);
+		ASAPInfo *info = const_cast<ASAPInfo *>(ASAP_GetInfo(asap));
+		ASAPInfo_SetAuthor(info, author);
+		ASAPInfo_SetTitle(info, title);
+		ASAPInfo_SetDate(info, date);
 	}
 
 public:
-
-	static void g_set_mute_mask(int mask)
-	{
-		input_asap *p;
-		for (p = head; p != NULL; p = p->next)
-			ASAP_MutePokeyChannels(p->asap, mask);
-	}
 
 	static bool g_is_our_content_type(const char *p_content_type)
 	{
@@ -131,41 +158,43 @@ public:
 
 	static bool g_is_our_path(const char *p_path, const char *p_extension)
 	{
-		return ASAPInfo_IsOurFile(p_path) != 0;
+		return ASAPInfo_IsOurFile(p_path);
 	}
 
-	input_asap()
+	static GUID g_get_guid()
 	{
-		if (head != NULL)
-			head->prev = this;
-		prev = NULL;
-		next = head;
-		head = this;
-		url = NULL;
-		asap = ASAP_New();
+		static const GUID guid =
+			{ 0xe8790443, 0x3a6b, 0x47d9, { 0x80, 0x4c, 0x1, 0x58, 0x93, 0xbf, 0xfe, 0x96 } };
+		return guid;
+	}
+
+	static const char *g_get_name()
+	{
+		return "ASAP";
+	}
+
+	static GUID g_get_preferences_guid()
+	{
+		return preferences_guid;
+	}
+
+	input_asap() : asap(ASAP_New())
+	{
 	}
 
 	~input_asap()
 	{
-		ASAP_Delete(asap);
 		free(url);
-		if (prev != NULL)
-			prev->next = next;
-		if (next != NULL)
-			next->prev = prev;
-		if (head == this)
-			head = next;
+		ASAP_Delete(asap);
 	}
 
 	void open(service_ptr_t<file> p_filehint, const char *p_path, t_input_open_reason p_reason, abort_callback &p_abort)
 	{
 		switch (p_reason) {
-		case input_open_info_write: {
-				int len = strlen(p_path);
-				if (len < 4 || _stricmp(p_path + len - 4, ".sap") != 0)
-					throw exception_io_unsupported_format();
-			}
-			/* FALLTHROUGH */
+		case input_open_info_write:
+			if (!has_ext(p_path, ".sap"))
+				throw exception_io_unsupported_format();
+			[[fallthrough]];
 		case input_open_decode:
 			free(url);
 			url = strdup(p_path);
@@ -174,24 +203,25 @@ public:
 			break;
 		}
 		if (p_filehint.is_empty())
-			filesystem::g_open(p_filehint, p_path, filesystem::open_mode_read, p_abort);
+			filesystem::g_open_read(p_filehint, p_path, p_abort);
 		m_file = p_filehint;
-		module_len = m_file->read(module, sizeof(module), p_abort);
-		if (!ASAP_Load(asap, p_path, module, module_len))
+		module_len = static_cast<int>(m_file->read(module, sizeof(module), p_abort));
+		ASAPFileLoader loader { p_abort };
+		if (!ASAP_LoadWithExtraFiles(asap, p_path, module, module_len, &loader))
 			throw exception_io_unsupported_format();
 	}
 
-	t_uint32 get_subsong_count()
+	t_uint32 get_subsong_count() const
 	{
 		return ASAPInfo_GetSongs(ASAP_GetInfo(asap));
 	}
 
-	t_uint32 get_subsong(t_uint32 p_index)
+	t_uint32 get_subsong(t_uint32 p_index) const
 	{
 		return p_index;
 	}
 
-	void get_info(t_uint32 p_subsong, file_info &p_info, abort_callback &p_abort)
+	void get_info(t_uint32 p_subsong, file_info &p_info, abort_callback &p_abort) const
 	{
 		int duration = get_song_duration(p_subsong, false);
 		if (duration >= 0)
@@ -204,24 +234,26 @@ public:
 		meta_set(p_info, "date", ASAPInfo_GetDate(info));
 	}
 
-	t_filestats get_file_stats(abort_callback &p_abort)
+	t_filestats2 get_stats2(uint32_t f, abort_callback &p_abort) const
 	{
-		return m_file->get_stats(p_abort);
+		return m_file->get_stats2_(f, p_abort);
 	}
 
-	void decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort_callback &p_abort)
+	void decode_initialize(t_uint32 p_subsong, unsigned p_flags, abort_callback &p_abort) const
 	{
+		ASAP_SetSampleRate(asap, sample_rate);
 		int duration = get_song_duration(p_subsong, true);
 		if (!ASAP_PlaySong(asap, p_subsong, duration))
 			throw exception_io_unsupported_format();
-		ASAP_MutePokeyChannels(asap, mute_mask);
 		const char *filename = url;
 		if (foobar2000_io::_extract_native_path_ptr(filename))
 			setPlayingSong(filename, p_subsong);
 	}
 
-	bool decode_run(audio_chunk &p_chunk, abort_callback &p_abort)
+	bool decode_run(audio_chunk &p_chunk, abort_callback &p_abort) const
 	{
+		ASAP_MutePokeyChannels(asap, mute_mask);
+
 		int channels = ASAPInfo_GetChannels(ASAP_GetInfo(asap));
 		int buffered_bytes = BUFFERED_BLOCKS * channels * (BITS_PER_SAMPLE / 8);
 		BYTE buffer[BUFFERED_BLOCKS * 2 * (BITS_PER_SAMPLE / 8)];
@@ -230,61 +262,62 @@ public:
 			BITS_PER_SAMPLE == 8 ? ASAPSampleFormat_U8 : ASAPSampleFormat_S16_L_E);
 		if (buffered_bytes == 0)
 			return false;
-		p_chunk.set_data_fixedpoint(buffer, buffered_bytes, ASAP_SAMPLE_RATE,
+		p_chunk.set_data_fixedpoint(buffer, buffered_bytes, ASAP_GetSampleRate(asap),
 			channels, BITS_PER_SAMPLE,
 			channels == 2 ? audio_chunk::channel_config_stereo : audio_chunk::channel_config_mono);
 		return true;
 	}
 
-	void decode_seek(double p_seconds, abort_callback &p_abort)
+	void decode_seek(double p_seconds, abort_callback &p_abort) const
 	{
 		ASAP_Seek(asap, static_cast<int>(p_seconds * 1000));
 	}
 
-	bool decode_can_seek()
+	bool decode_can_seek() const
 	{
 		return true;
 	}
 
-	bool decode_get_dynamic_info(file_info &p_out, double &p_timestamp_delta)
+	bool decode_get_dynamic_info_track(file_info &p_out, double &p_timestamp_delta) const
 	{
-		return false;
-	}
-
-	bool decode_get_dynamic_info_track(file_info &p_out, double &p_timestamp_delta)
-	{
-		return false;
-	}
-
-	void decode_on_idle(abort_callback &p_abort)
-	{
-		m_file->on_idle(p_abort);
+		p_out.info_set_int("samplerate", ASAP_GetSampleRate(asap));
+		p_timestamp_delta = 0;
+		return true;
 	}
 
 	void retag_set_info(t_uint32 p_subsong, const file_info &p_info, abort_callback &p_abort)
 	{
-		ASAPInfo *info = const_cast<ASAPInfo *>(ASAP_GetInfo(asap));
-		ASAPInfo_SetAuthor(info, empty_if_null(p_info.meta_get("composer", 0)));
-		ASAPInfo_SetTitle(info, empty_if_null(p_info.meta_get("title", 0)));
-		ASAPInfo_SetDate(info, empty_if_null(p_info.meta_get("date", 0)));
+		set_tags(meta_get(p_info, "composer"), meta_get(p_info, "title"), meta_get(p_info, "date"));
 	}
 
 	void retag_commit(abort_callback &p_abort)
 	{
+		ASAPWriter *writer = ASAPWriter_New();
+		if (writer == nullptr)
+			throw exception_io_data();
+		const uint8_t *output = ASAPWriter_WriteSap(writer, ASAP_GetInfo(asap), module, module_len);
+		if (output == nullptr) {
+			ASAPWriter_Delete(writer);
+			throw exception_io_unsupported_format();
+		}
+
 		m_file.release();
 		filesystem::g_open(m_file, url, filesystem::open_mode_write_new, p_abort);
-		this->p_abort = &p_abort;
-		ByteWriter bw = { this, static_write };
-		if (!ASAPWriter_Write(url, bw, ASAP_GetInfo(asap), module, module_len, FALSE))
-			throw exception_io_unsupported_format();
+		m_file->write(output, ASAPWriter_GetOutputLength(writer), p_abort);
+		ASAPWriter_Delete(writer);
+	}
+
+	void remove_tags(abort_callback &p_abort)
+	{
+		set_tags("", "", "");
+		retag_commit(p_abort);
 	}
 };
 
-input_asap *input_asap::head = NULL;
 static input_factory_t<input_asap> g_input_asap_factory;
 
 
-/* Configuration --------------------------------------------------------- */
+// Configuration ---------------------------------------------------------
 
 static preferences_page_callback::ptr g_callback;
 
@@ -292,16 +325,16 @@ static INT_PTR CALLBACK settings_dialog_proc(HWND hDlg, UINT uMsg, WPARAM wParam
 {
 	switch (uMsg) {
 	case WM_INITDIALOG:
-		settingsDialogSet(hDlg, song_length, silence_seconds, play_loops, mute_mask);
+		settingsDialogSet(hDlg, sample_rate, song_length, silence_seconds, play_loops, mute_mask);
 		return TRUE;
 	case WM_COMMAND:
 		switch (wParam) {
 		case MAKEWPARAM(IDC_UNLIMITED, BN_CLICKED):
-			enableTimeInput(hDlg, FALSE);
+			enableTimeInput(hDlg, false);
 			g_callback->on_state_changed();
 			return TRUE;
 		case MAKEWPARAM(IDC_LIMITED, BN_CLICKED):
-			enableTimeInput(hDlg, TRUE);
+			enableTimeInput(hDlg, true);
 			setFocusAndSelect(hDlg, IDC_MINUTES);
 			g_callback->on_state_changed();
 			return TRUE;
@@ -314,6 +347,7 @@ static INT_PTR CALLBACK settings_dialog_proc(HWND hDlg, UINT uMsg, WPARAM wParam
 			g_callback->on_state_changed();
 			return TRUE;
 		}
+		case MAKEWPARAM(IDC_SAMPLERATE, CBN_SELCHANGE):
 		case MAKEWPARAM(IDC_MINUTES, EN_CHANGE):
 		case MAKEWPARAM(IDC_SECONDS, EN_CHANGE):
 		case MAKEWPARAM(IDC_SILSECONDS, EN_CHANGE):
@@ -341,10 +375,11 @@ static INT_PTR CALLBACK settings_dialog_proc(HWND hDlg, UINT uMsg, WPARAM wParam
 
 class preferences_page_instance_asap : public preferences_page_instance
 {
-	HWND m_parent;
-	HWND m_hWnd;
+	const HWND m_parent;
+	const HWND m_hWnd;
+	fb2k::CCoreDarkModeHooks m_dark;
 
-	int get_time_input()
+	int get_time_input() const
 	{
 		HWND hDlg = m_hWnd;
 		if (IsDlgButtonChecked(hDlg, IDC_UNLIMITED) == BST_CHECKED)
@@ -354,7 +389,7 @@ class preferences_page_instance_asap : public preferences_page_instance
 		return static_cast<int>(60 * minutes + seconds);
 	}
 
-	int get_silence_input()
+	int get_silence_input() const
 	{
 		HWND hDlg = m_hWnd;
 		if (IsDlgButtonChecked(hDlg, IDC_SILENCE) != BST_CHECKED)
@@ -362,12 +397,12 @@ class preferences_page_instance_asap : public preferences_page_instance
 		return GetDlgItemInt(hDlg, IDC_SILSECONDS, NULL, FALSE);
 	}
 
-	bool get_loops_input()
+	bool get_loops_input() const
 	{
 		return IsDlgButtonChecked(m_hWnd, IDC_LOOPS) == BST_CHECKED;
 	}
 
-	int get_mute_input()
+	int get_mute_input() const
 	{
 		HWND hDlg = m_hWnd;
 		int mask = 0;
@@ -379,40 +414,42 @@ class preferences_page_instance_asap : public preferences_page_instance
 
 public:
 
-	preferences_page_instance_asap(HWND parent) : m_parent(parent)
+	preferences_page_instance_asap(HWND parent) : m_parent(parent),
+		m_hWnd(CreateDialog(core_api::get_my_instance(), MAKEINTRESOURCE(IDD_SETTINGS), parent, ::settings_dialog_proc))
 	{
-		m_hWnd = CreateDialog(core_api::get_my_instance(), MAKEINTRESOURCE(IDD_SETTINGS), parent, ::settings_dialog_proc);
+		m_dark.AddDialogWithControls(m_hWnd);
 	}
 
-	virtual t_uint32 get_state()
+	t_uint32 get_state() override
 	{
-		if (song_length != get_time_input()
+		if (sample_rate != settingsGetSampleRate(m_hWnd)
+		 || song_length != get_time_input()
 		 || silence_seconds != get_silence_input()
 		 || play_loops != get_loops_input())
-			return preferences_state::changed /* | preferences_state::needs_restart_playback */ | preferences_state::resettable;
+			return preferences_state::changed /* | preferences_state::needs_restart_playback */ | preferences_state::resettable | preferences_state::dark_mode_supported;
 		if (mute_mask != get_mute_input())
-			return preferences_state::changed | preferences_state::resettable;
-		return preferences_state::resettable;
+			return preferences_state::changed | preferences_state::resettable | preferences_state::dark_mode_supported;
+		return preferences_state::resettable | preferences_state::dark_mode_supported;
 	}
 
-	virtual HWND get_wnd()
+	HWND get_wnd() override
 	{
 		return m_hWnd;
 	}
 
-	virtual void apply()
+	void apply() override
 	{
+		sample_rate = settingsGetSampleRate(m_hWnd);
 		song_length = get_time_input();
 		silence_seconds = get_silence_input();
 		play_loops = get_loops_input();
 		mute_mask = get_mute_input();
-		input_asap::g_set_mute_mask(mute_mask);
 		g_callback->on_state_changed();
 	}
 
-	virtual void reset()
+	void reset() override
 	{
-		settingsDialogSet(m_hWnd, -1, -1, FALSE, 0);
+		settingsDialogSet(m_hWnd, ASAP_SAMPLE_RATE, -1, -1, FALSE, 0);
 		g_callback->on_state_changed();
 	}
 };
@@ -421,32 +458,30 @@ class preferences_page_asap : public preferences_page_v3
 {
 public:
 
-	virtual preferences_page_instance::ptr instantiate(HWND parent, preferences_page_callback::ptr callback)
+	preferences_page_instance::ptr instantiate(HWND parent, preferences_page_callback::ptr callback) override
 	{
 		g_callback = callback;
 		return new service_impl_t<preferences_page_instance_asap>(parent);
 	}
 
-	virtual const char *get_name()
+	const char *get_name() override
 	{
 		return "ASAP";
 	}
 
-	virtual GUID get_guid()
+	GUID get_guid() override
 	{
-		static const GUID a_guid =
-			{ 0xf7c0a763, 0x7c20, 0x4b64, { 0x92, 0xbf, 0x11, 0xe5, 0x5d, 0x8, 0xe5, 0x53 } };
-		return a_guid;
+		return preferences_guid;
 	}
 
-	virtual GUID get_parent_guid()
+	GUID get_parent_guid() override
 	{
 		return guid_input;
 	}
 
-	virtual bool get_help_url(pfc::string_base &p_out)
+	bool get_help_url(pfc::string_base &p_out) override
 	{
-		p_out = "http://asap.sourceforge.net/";
+		p_out = "https://asap.sourceforge.net/";
 		return true;
 	}
 };
@@ -454,49 +489,48 @@ public:
 static service_factory_single_t<preferences_page_asap> g_preferences_page_asap_factory;
 
 
-/* File types ------------------------------------------------------------ */
-
-static const char * const names_and_masks[][2] = {
-	{ "Slight Atari Player", "*.SAP" },
-	{ "Chaos Music Composer", "*.CMC;*.CM3;*.CMR;*.CMS;*.DMC" },
-	{ "Delta Music Composer", "*.DLT" },
-	{ "Music ProTracker", "*.MPT;*.MPD" },
-	{ "Raster Music Tracker", "*.RMT" },
-	{ "Theta Music Composer 1.x", "*.TMC;*.TM8" },
-	{ "Theta Music Composer 2.x", "*.TM2" },
-	{ "Future Composer", "*.FC" }
-};
-
-#define N_FILE_TYPES (sizeof(names_and_masks) / sizeof(names_and_masks[0]))
+// File types ------------------------------------------------------------
 
 class input_file_type_asap : public service_impl_single_t<input_file_type>
 {
+	static constexpr const char *names_and_masks[][2] = {
+		{ "Slight Atari Player", "*.SAP" },
+		{ "Chaos Music Composer", "*.CMC;*.CM3;*.CMR;*.CMS;*.DMC" },
+		{ "Delta Music Composer", "*.DLT" },
+		{ "Music ProTracker", "*.MPT;*.MD1;*.MD2;*.MPD" },
+		{ "Raster Music Tracker", "*.RMT" },
+		{ "Theta Music Composer 1.x", "*.TMC;*.TM8" },
+		{ "Theta Music Composer 2.x", "*.TM2" },
+		{ "Future Composer", "*.FC" },
+		{ "Music ProTracker samples", "*.D15;*.D8" }
+	};
+
 public:
 
-	virtual unsigned get_count()
+	unsigned get_count() override
 	{
-		return N_FILE_TYPES;
+		return ARRAYSIZE(names_and_masks);
 	}
 
-	virtual bool get_name(unsigned idx, pfc::string_base &out)
+	bool get_name(unsigned idx, pfc::string_base &out) override
 	{
-		if (idx < N_FILE_TYPES) {
-			out = ::names_and_masks[idx][0];
+		if (idx < ARRAYSIZE(names_and_masks)) {
+			out = names_and_masks[idx][0];
 			return true;
 		}
 		return false;
 	}
 
-	virtual bool get_mask(unsigned idx, pfc::string_base &out)
+	bool get_mask(unsigned idx, pfc::string_base &out) override
 	{
-		if (idx < N_FILE_TYPES) {
-			out = ::names_and_masks[idx][1];
+		if (idx < ARRAYSIZE(names_and_masks)) {
+			out = names_and_masks[idx][1];
 			return true;
 		}
 		return false;
 	}
 
-	virtual bool is_associatable(unsigned idx)
+	bool is_associatable(unsigned idx) override
 	{
 		return true;
 	}
@@ -505,49 +539,62 @@ public:
 static service_factory_single_t<input_file_type_asap> g_input_file_type_asap_factory;
 
 
-/* Info window ----------------------------------------------------------- */
+// Info window -----------------------------------------------------------
+
+static std::unique_ptr<fb2k::CCoreDarkModeHooks> g_darkInfoDialog;
+
+extern "C" void setDarkInfoDialog(HWND hDlg)
+{
+	g_darkInfoDialog = std::make_unique<fb2k::CCoreDarkModeHooks>();
+	g_darkInfoDialog->AddDialogWithControls(hDlg);
+}
+
+extern "C" void releaseDarkInfoDialog()
+{
+	g_darkInfoDialog.reset();
+}
 
 class info_menu : public mainmenu_commands
 {
-	virtual t_uint32 get_command_count()
+	t_uint32 get_command_count() override
 	{
 		return 1;
 	}
 
-	virtual GUID get_command(t_uint32 p_index)
+	GUID get_command(t_uint32 p_index) override
 	{
 		static const GUID guid = { 0x15a24bcd, 0x176b, 0x4e15, { 0xbc, 0xb1, 0x24, 0xfd, 0x92, 0x67, 0xaf, 0x8f } };
 		return guid;
 	}
 
-	virtual void get_name(t_uint32 p_index, pfc::string_base &p_out)
+	void get_name(t_uint32 p_index, pfc::string_base &p_out) override
 	{
 		p_out = "ASAP info";
 	}
 
-	virtual bool get_description(t_uint32 p_index, pfc::string_base &p_out)
+	bool get_description(t_uint32 p_index, pfc::string_base &p_out) override
 	{
 		p_out = "Activates the ASAP File Information window.";
 		return true;
 	}
 
-	virtual GUID get_parent()
+	GUID get_parent() override
 	{
 		return mainmenu_groups::view;
 	}
 
-	virtual bool get_display(t_uint32 p_index, pfc::string_base &p_text, t_uint32 &p_flags)
+	bool get_display(t_uint32 p_index, pfc::string_base &p_text, t_uint32 &p_flags) override
 	{
 		p_flags = 0;
 		get_name(p_index, p_text);
 		return true;
 	}
 
-	virtual void execute(t_uint32 p_index, service_ptr_t<service_base> p_callback)
+	void execute(t_uint32 p_index, service_ptr_t<service_base> p_callback) override
 	{
 		if (p_index == 0) {
 			playing_info = playing_info_cfg;
-			const char *filename = NULL;
+			const char *filename = nullptr;
 			int song = -1;
 			metadb_handle_ptr item;
 			if (static_api_ptr_t<playlist_manager>()->activeplaylist_get_focus_item_handle(item) && item.is_valid()) {
@@ -565,70 +612,162 @@ class info_menu : public mainmenu_commands
 static mainmenu_commands_factory_t<info_menu> g_info_menu_factory;
 
 
-/* ATR filesystem -------------------------------------------------------- */
+// ATR filesystem --------------------------------------------------------
+
+class file_atr : public file_readonly
+{
+	AATRFileStream *stream = nullptr;
+
+public:
+
+	file_atr(const char *atr_filename, const char *inside_filename)
+	{
+		AATR *disk = AATRStdio_New(atr_filename);
+		if (disk == nullptr)
+			throw exception_io_data();
+		AATRDirectory *directory = AATRDirectory_New();
+		if (directory == nullptr) {
+			AATRStdio_Delete(disk);
+			throw exception_out_of_resources();
+		}
+		AATRDirectory_OpenRoot(directory, disk);
+		if (!AATRDirectory_FindEntryRecursively(directory, inside_filename) || AATRDirectory_IsEntryDirectory(directory)) {
+			AATRDirectory_Delete(directory);
+			AATRStdio_Delete(disk);
+			throw exception_io_not_found();
+		}
+		stream = AATRFileStream_New();
+		if (stream == nullptr) {
+			AATRDirectory_Delete(directory);
+			AATRStdio_Delete(disk);
+			throw exception_out_of_resources();
+		}
+		AATRFileStream_Open(stream, directory);
+		AATRDirectory_Delete(directory);
+	}
+
+	~file_atr()
+	{
+		if (stream != nullptr) {
+			AATR *disk = const_cast<AATR *>(AATRFileStream_GetDisk(stream));
+			AATRFileStream_Delete(stream);
+			AATRStdio_Delete(disk);
+		}
+	}
+
+	t_size read(void *p_buffer, t_size p_bytes, abort_callback &p_abort) override
+	{
+		int length = p_bytes < INT_MAX ? static_cast<int>(p_bytes) : INT_MAX;
+		int result = AATRFileStream_Read(stream, static_cast<byte *>(p_buffer), 0, length);
+		if (result < 0)
+			throw exception_io_data();
+		return result;
+	}
+
+	t_filesize get_size(abort_callback &p_abort) override
+	{
+		return AATRFileStream_GetLength(stream);
+	}
+
+	t_filesize get_position(abort_callback &p_abort) override
+	{
+		return AATRFileStream_GetPosition(stream);
+	}
+
+	void seek(t_filesize p_position, abort_callback &p_abort) override
+	{
+		int position = static_cast<int>(p_position);
+		if (position != p_position || !AATRFileStream_SetPosition(stream, position))
+			throw exception_io_seek_out_of_range();
+	}
+
+	bool can_seek() override
+	{
+		return true;
+	}
+
+	bool get_content_type(pfc::string_base &p_out) override
+	{
+		return false;
+	}
+
+	void reopen(abort_callback &p_abort) override
+	{
+		AATRFileStream_SetPosition(stream, 0);
+	}
+
+	bool is_remote() override
+	{
+		return false;
+	}
+};
 
 class archive_atr : public archive_impl
 {
 public:
 
-	virtual bool supports_content_types()
+	bool supports_content_types() override
 	{
 		return false;
 	}
 
-	virtual const char *get_archive_type()
+	const char *get_archive_type() override
 	{
 		return "atr";
 	}
 
-	virtual t_filestats get_stats_in_archive(const char *p_archive, const char *p_file, abort_callback &p_abort)
+	t_filestats2 get_stats2_in_archive(const char *p_archive, const char *p_file, unsigned s2flags, abort_callback &p_abort) override
 	{
-		int module_len = AATRStdio_ReadFile(p_archive, p_file, NULL, ASAPInfo_MAX_MODULE_LENGTH);
-		if (module_len < 0)
-			throw exception_io_not_found();
-		t_filestats stats = { module_len, filetimestamp_invalid };
+		t_filestats2 stats;
+		if (s2flags & stats2_size) {
+			service_impl_single_t<file_atr> f(p_archive, p_file);
+			stats.m_size = f.get_size(p_abort);
+		}
+		stats.set_file();
+		stats.set_hidden(false);
+		stats.set_system(false);
 		return stats;
 	}
 
-	virtual void open_archive(service_ptr_t<file> &p_out, const char *archive, const char *file, abort_callback &p_abort)
+	void open_archive(service_ptr_t<file> &p_out, const char *archive, const char *file, abort_callback &p_abort) override
 	{
-		BYTE module[ASAPInfo_MAX_MODULE_LENGTH];
-		int module_len = AATRStdio_ReadFile(archive, file, module, sizeof(module));
-		if (module_len < 0)
-			throw exception_io_not_found();
-		p_out = new service_impl_t<reader_membuffer_simple>(module, module_len);
+		p_out = new service_impl_t<file_atr>(archive, file);
 	}
 
-	virtual void archive_list(const char *path, const service_ptr_t<file> &p_reader, archive_callback &p_out, bool p_want_readers)
+	void archive_list(const char *path, const service_ptr_t<file> &p_reader, archive_callback &p_out, bool p_want_readers) override
 	{
 		if (!_extract_native_path_ptr(path))
 			throw exception_io_data();
-		FILE *fp = fopen(path, "rb");
-		if (fp == NULL)
+		AATR *disk = AATRStdio_New(path);
+		if (disk == nullptr)
 			throw exception_io_data();
-		AATR *aatr = AATRStdio_New(fp);
-		if (aatr == NULL) {
-			fclose(fp);
-			throw exception_io_data();
+		AATRRecursiveLister *lister = AATRRecursiveLister_New();
+		if (lister == nullptr) {
+			AATRStdio_Delete(disk);
+			throw exception_out_of_resources();
 		}
+		AATRRecursiveLister_Open(lister, disk);
 		pfc::string8_fastalloc url;
 		for (;;) {
-			const char *fn = AATR_NextFile(aatr);
-			if (fn == NULL)
+			const char *fn = AATRRecursiveLister_NextFile(lister);
+			if (fn == nullptr)
 				break;
 			t_filestats stats = { filesize_invalid, filetimestamp_invalid };
 			service_ptr_t<file> p_file;
 			if (p_want_readers) {
-				BYTE module[ASAPInfo_MAX_MODULE_LENGTH];
-				int module_len = AATR_ReadCurrentFile(aatr, module, sizeof(module));
-				p_file = new service_impl_t<reader_membuffer_simple>(module, module_len);
+				p_file = new service_impl_t<file_atr>(path, fn);
 			}
 			archive_impl::g_make_unpack_path(url, path, fn, "atr");
 			if (!p_out.on_entry(this, url, stats, p_file))
 				break;
 		}
-		AATR_Delete(aatr);
-		fclose(fp);
+		AATRRecursiveLister_Delete(lister);
+		AATRStdio_Delete(disk);
+	}
+
+	bool is_our_archive(const char *path) override
+	{
+		return has_ext(path, ".atr");
 	}
 };
 

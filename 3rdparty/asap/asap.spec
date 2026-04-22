@@ -1,13 +1,11 @@
 Name: asap
-Version: 3.2.0
+Version: 8.0.0
 Release: 1
 Summary: Player of Atari 8-bit music
 License: GPLv2+
-Group: Applications/Multimedia
-Source: http://prdownloads.sourceforge.net/asap/asap-%{version}.tar.gz
-URL: http://asap.sourceforge.net/
+Source: https://downloads.sourceforge.net/project/asap/asap/%{version}/asap-%{version}.tar.gz
+URL: https://asap.sourceforge.net/
 BuildRequires: gcc
-BuildRoot: %{_tmppath}/asap-root
 
 %description
 ASAP is a player of Atari 8-bit music for modern computers.
@@ -17,36 +15,12 @@ SAP, CMC, CM3, CMR, CMS, DMC, DLT, MPT, MPD, RMT, TMC, TM8, TM2, FC.
 
 %package devel
 Summary: Development library providing Atari 8-bit music emulation
-Group: Development/Libraries
 
 %description devel
 These are the files needed for compiling programs that use libasap.
 
-%package xmms
-Summary: ASAP plugin for XMMS
-Group: Applications/Multimedia
-Requires: xmms
-BuildRequires: xmms-devel
-
-%description xmms
-Provides playback of Atari 8-bit music in XMMS.
-Supports the following file formats:
-SAP, CMC, CM3, CMR, CMS, DMC, DLT, MPT, MPD, RMT, TMC, TM8, TM2, FC.
-
-%package gstreamer0.10
-Summary: ASAP plugin for GStreamer 0.10
-Group: Applications/Multimedia
-Requires: gstreamer >= 0.10.36
-Requires: gstreamer < 0.11
-BuildRequires: gstreamer-devel
-# 0.10.36 is the first version to properly recognize SAP files. This isn't required for the build.
-
-%description gstreamer0.10
-Provides playback of Atari 8-bit music in the SAP format in GStreamer-based players.
-
 %package vlc
 Summary: ASAP plugin for VLC
-Group: Applications/Multimedia
 Requires: vlc
 BuildRequires: vlc-devel
 
@@ -54,42 +28,80 @@ BuildRequires: vlc-devel
 Provides playback of Atari 8-bit music in VLC.
 Supports the following file formats: SAP, RMT, FC.
 
+%package xmms2
+Summary: ASAP plugin for XMMS2
+Requires: xmms2
+BuildRequires: xmms2-devel
+
+%description xmms2
+Provides playback of Atari 8-bit music (SAP format) in XMMS2.
+
 %prep
 %setup -q
 
 %build
-make asapconv libasap.a asap-xmms asap-gstreamer asap-vlc
+make CFLAGS="%{build_cflags}" LDFLAGS="%{build_ldflags}" asapconv libasap.a asap-vlc asap-xmms2
 
 %install
-rm -rf $RPM_BUILD_ROOT
-make DESTDIR=$RPM_BUILD_ROOT prefix=%{_prefix} install install-xmms install-gstreamer install-vlc
-
-%clean
-rm -rf $RPM_BUILD_ROOT
+make DESTDIR=%{buildroot} prefix=%{_prefix} libdir=%{_libdir} install install-vlc install-xmms2
 
 %files
-%defattr(-,root,root)
-%doc README.html
 %{_bindir}/asapconv
 
 %files devel
-%defattr(-,root,root)
 %{_includedir}/asap.h
 %{_libdir}/libasap.a
 
-%files xmms
-%defattr(-,root,root)
-%{_libdir}/xmms/Input/libasap-xmms.so
-
-%files gstreamer0.10
-%defattr(-,root,root)
-%{_libdir}/gstreamer-0.10/libgstasapdec.so
-
 %files vlc
-%defattr(-,root,root)
 %{_libdir}/vlc/plugins/demux/libasap_plugin.so
 
+%files xmms2
+%{_libdir}/xmms2/libxmms_asap.so
+
 %changelog
+* Mon Feb 16 2026 Piotr Fusik <fox@scene.pl>
+- 8.0.0-1
+
+* Sat Dec 20 2025 Piotr Fusik <fox@scene.pl>
+- 7.0.0-1
+
+* Sat Mar 9 2024 Piotr Fusik <fox@scene.pl>
+- 6.0.3-1
+
+* Mon Jan 22 2024 Piotr Fusik <fox@scene.pl>
+- 6.0.2-1
+
+* Fri Nov 17 2023 Piotr Fusik <fox@scene.pl>
+- 6.0.1-1
+
+* Thu Sep 21 2023 Piotr Fusik <fox@scene.pl>
+- 6.0.0-1
+
+* Wed Feb 8 2023 Piotr Fusik <fox@scene.pl>
+- 5.3.0-1
+
+* Wed Dec 8 2021 Piotr Fusik <fox@scene.pl>
+- 5.2.0-1
+
+* Tue Nov 30 2021 Piotr Fusik <fox@scene.pl>
+- Added the XMMS2 subpackage
+- Removed the XMMS subpackage
+
+* Fri Jul 9 2021 Piotr Fusik <fox@scene.pl>
+- 5.1.0-1
+
+* Sun Jan 19 2020 Piotr Fusik <fox@scene.pl>
+- 5.0.1-1
+
+* Thu Nov 21 2019 Piotr Fusik <fox@scene.pl>
+- 5.0.0-1
+
+* Thu Jan 10 2019 Piotr Fusik <fox@scene.pl>
+- 4.0.0-1
+
+* Sat Aug 12 2017 Piotr Fusik <fox@scene.pl>
+- Discontinued GStreamer
+
 * Mon Jun 23 2014 Piotr Fusik <fox@scene.pl>
 - 3.2.0-1
 

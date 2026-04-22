@@ -20,6 +20,7 @@
 #include "module/players/streaming.h"
 
 #include "binary/format_factories.h"
+#include "binary/input_stream.h"
 #include "core/core_parameters.h"
 #include "core/plugin_attrs.h"
 #include "debug/log.h"
@@ -143,16 +144,21 @@ namespace Module::ASAP
     Strings::Array GetInstruments(Binary::View data) const
     {
       Strings::Array instruments;
-      for (int idx = 0;; ++idx)
+      if (const auto offset = ::ASAPInfo_GetInstrumentNamesOffset(Info, data.As<unsigned char>(), data.Size());
+          offset != -1)
       {
-        if (const auto* const ins = ::ASAPInfo_GetInstrumentName(Info, data.As<unsigned char>(), data.Size(), idx))
+        Binary::DataInputStream stream(data.SubView(offset));
+        uint_t count = 0;
+        while (const auto rest = stream.GetRestSize())
         {
+          const auto ins = stream.ReadCString(rest);
           instruments.emplace_back(Strings::OptimizeAscii(ins));
+          if (!instruments.back().empty())
+          {
+            count = instruments.size();
+          }
         }
-        else
-        {
-          break;
-        }
+        instruments.resize(count);
       }
       return instruments;
     }
@@ -391,6 +397,10 @@ namespace Module::ASAP
       catch (const std::exception& e)
       {
         Dbg("Failed to create {}: {}", Desc.Id, e.what());
+      }
+      catch (const Error& e)
+      {
+        Dbg("Failed to create {}: {}", Desc.Id, e.ToString());
       }
       return {};
     }

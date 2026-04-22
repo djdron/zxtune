@@ -1,7 +1,7 @@
 /*
  * info_dlg.c - file information dialog box
  *
- * Copyright (C) 2007-2014  Piotr Fusik
+ * Copyright (C) 2007-2026  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -21,23 +21,11 @@
  * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#define _WIN32_WINNT 0x0600
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
-#include <tchar.h>
-#ifndef _WIN32_IE
-#define _WIN32_IE 0x400
-#endif
 #include <commctrl.h>
-
-#ifndef MCM_SETCURRENTVIEW
-/* missing in MinGW */
-#define MCMV_MONTH      0
-#define MCMV_YEAR       1
-#define MCMV_DECADE     2
-#define MCM_SETCURRENTVIEW 0x1020
-#define MonthCal_SetCurrentView(hmc, dwNewView)  (BOOL) SNDMSG(hmc, MCM_SETCURRENTVIEW, 0, (LPARAM)(dwNewView))
-#endif
 
 #include "asap.h"
 #include "astil.h"
@@ -46,63 +34,122 @@
 #include "aatr-stdio.h"
 #endif
 
-void combineFilenameExt(LPTSTR dest, LPCTSTR filename, LPCTSTR ext)
-{
-	int filenameChars = _tcsrchr(filename, '.') + 1 - filename;
-	memcpy(dest, filename, filenameChars * sizeof(_TCHAR));
-	_tcscpy(dest + filenameChars, ext);
-}
+typedef struct {
+	int (*load)(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length);
+} ASAPFileLoaderVtbl;
 
+struct ASAPFileLoader {
+	const ASAPFileLoaderVtbl *vtbl;
 #ifdef WINAMP
-LPCTSTR atrFilenameHash(LPCTSTR filename)
-{
-	for ( ; *filename != '\0'; filename++) {
-		if (_tcsnicmp(filename, _T(".atr#"), 5) == 0)
-			return filename + 4;
-	}
-	return NULL;
-}
+	AATR *disk;
 #endif
+};
 
-BOOL loadModule(LPCTSTR filename, BYTE *module, int *module_len)
+static int ASAPFileLoader_Load(const ASAPFileLoader *self, const char *filename, uint8_t *buffer, int length)
 {
-	HANDLE fh;
-	BOOL ok;
 #ifdef WINAMP
-	LPCTSTR hash = atrFilenameHash(filename);
-	if (hash != NULL && hash < filename + MAX_PATH) {
-		_TCHAR atr_filename[MAX_PATH];
-		memcpy(atr_filename, filename, (hash - filename) * sizeof(_TCHAR));
-		atr_filename[hash - filename] = '\0';
-		*module_len = AATRStdio_ReadFile(atr_filename, hash + 1, module, ASAPInfo_MAX_MODULE_LENGTH);
-		return *module_len >= 0;
+	if (self->disk != NULL) {
+		AATRDirectory *directory = AATRDirectory_New();
+		if (directory == NULL)
+			return -1;
+		AATRDirectory_OpenRoot(directory, self->disk);
+		int result = -1;
+		if (AATRDirectory_FindEntryRecursively(directory, filename) && !AATRDirectory_IsEntryDirectory(directory)) {
+			AATRFileStream *stream = AATRFileStream_New();
+			if (stream != NULL) {
+				AATRFileStream_Open(stream, directory);
+				result = AATRFileStream_Read(stream, buffer, 0, length);
+				AATRFileStream_Delete(stream);
+			}
+		}
+		AATRDirectory_Delete(directory);
+		return result;
 	}
 #endif
-	fh = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE fh = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (fh == INVALID_HANDLE_VALUE)
-		return FALSE;
-	ok = ReadFile(fh, module, ASAPInfo_MAX_MODULE_LENGTH, (LPDWORD) module_len, NULL);
+		return -1;
+	BOOL ok = ReadFile(fh, buffer, length, (LPDWORD) &length, NULL);
 	CloseHandle(fh);
+	return ok ? length : -1;
+}
+
+static ASAPFileLoader *ASAPFileLoader_Open(const char **filename)
+{
+	static const ASAPFileLoaderVtbl loader_vtbl = { ASAPFileLoader_Load };
+	static ASAPFileLoader loader = { &loader_vtbl };
+#ifdef WINAMP
+	loader.disk = NULL;
+	const char *f = *filename;
+	for (int i = 0; i < MAX_PATH - 4 && f[i] != '\0'; i++) {
+		if (_strnicmp(f + i, ".atr#", 5) == 0) {
+			i += 4;
+			char atr_filename[MAX_PATH];
+			memcpy(atr_filename, f, i);
+			atr_filename[i] = '\0';
+			AATR *disk = AATRStdio_New(atr_filename);
+			if (disk == NULL)
+				return NULL;
+			*filename = f + i + 1;
+			loader.disk = disk;
+			break;
+		}
+	}
+#endif
+	return &loader;
+}
+
+static void ASAPFileLoader_Close(ASAPFileLoader *self)
+{
+#ifdef WINAMP
+	if (self->disk != NULL)
+		AATRStdio_Delete(self->disk);
+#endif
+}
+
+static bool loadInfoInternal(ASAPInfo *info, const char *filename, uint8_t *module, int *module_len)
+{
+	ASAPFileLoader *loader = ASAPFileLoader_Open(&filename);
+	if (loader == NULL)
+		return false;
+	*module_len = ASAPFileLoader_Load(loader, filename, module, ASAPInfo_MAX_MODULE_LENGTH);
+	ASAPFileLoader_Close(loader);
+	return *module_len >= 0 && ASAPInfo_Load(info, filename, module, *module_len);
+}
+
+bool loadInfo(ASAPInfo *info, const char *filename)
+{
+	uint8_t module[ASAPInfo_MAX_MODULE_LENGTH];
+	int module_len;
+	return loadInfoInternal(info, filename, module, &module_len);
+}
+
+bool loadFiles(ASAP *asap, const char *filename)
+{
+	ASAPFileLoader *loader = ASAPFileLoader_Open(&filename);
+	if (loader == NULL)
+		return false;
+	bool ok = ASAP_LoadFiles(asap, filename, loader);
+	ASAPFileLoader_Close(loader);
 	return ok;
 }
 
 HWND infoDialog = NULL;
 
-#ifndef _UNICODE /* TODO */
-
-static _TCHAR playing_filename[MAX_PATH];
+static char playing_filename[MAX_PATH];
 static int playing_song = 0;
-BOOL playing_info = FALSE;
-static byte saved_module[ASAPInfo_MAX_MODULE_LENGTH];
+bool playing_info = false;
+static uint8_t saved_module[ASAPInfo_MAX_MODULE_LENGTH];
 static int saved_module_len;
 static ASAPInfo *edited_info = NULL;
 static int edited_song;
-static _TCHAR saved_author[ASAPInfo_MAX_TEXT_LENGTH + 1];
-static _TCHAR saved_title[ASAPInfo_MAX_TEXT_LENGTH + 1];
-static _TCHAR saved_date[ASAPInfo_MAX_TEXT_LENGTH + 1];
+static char saved_author[ASAPInfo_MAX_TEXT_LENGTH + 1];
+static char saved_title[ASAPInfo_MAX_TEXT_LENGTH + 1];
+static char saved_date[ASAPInfo_MAX_TEXT_LENGTH + 1];
+static bool saved_ntsc;
 static int saved_durations[ASAPInfo_MAX_SONGS];
-static cibool saved_loops[ASAPInfo_MAX_SONGS];
-static BOOL can_save;
+static bool saved_loops[ASAPInfo_MAX_SONGS];
+static bool can_save;
 static int invalid_fields;
 #define INVALID_FIELD_AUTHOR      1
 #define INVALID_FIELD_NAME        2
@@ -112,6 +159,11 @@ static int invalid_fields;
 static HWND monthcal = NULL;
 static WNDPROC monthcalOriginalWndProc;
 static ASTIL *astil = NULL;
+
+static void enableDlgItem(int id, bool enable)
+{
+	EnableWindow(GetDlgItem(infoDialog, id), enable);
+}
 
 static char *appendStilString(char *p, const char *s)
 {
@@ -159,13 +211,10 @@ static void updateTech(void)
 {
 	char buf[16000];
 	char *p = buf;
-	const char *ext;
-	int type;
-	int i;
-	ext = ASAPInfo_GetOriginalModuleExt(edited_info, saved_module, saved_module_len);
+	const char *ext = ASAPInfo_GetOriginalModuleExt(edited_info);
 	if (ext != NULL)
 		p += sprintf(p, "Composed in %s\r\n", ASAPInfo_GetExtDescription(ext));
-	i = ASAPInfo_GetSongs(edited_info);
+	int i = ASAPInfo_GetSongs(edited_info);
 	if (i > 1) {
 		p += sprintf(p, "SONGS %d\r\n", i);
 		i = ASAPInfo_GetDefaultSong(edited_info);
@@ -173,8 +222,8 @@ static void updateTech(void)
 			p += sprintf(p, "DEFSONG %d (song %d)\r\n", i, i + 1);
 	}
 	p += sprintf(p, ASAPInfo_GetChannels(edited_info) > 1 ? "STEREO\r\n" : "MONO\r\n");
-	p += sprintf(p, ASAPInfo_IsNtsc(edited_info) ? "NTSC\r\n" : "PAL\r\n");
-	type = ASAPInfo_GetTypeLetter(edited_info);
+	// p += sprintf(p, ASAPInfo_IsNtsc(edited_info) ? "NTSC\r\n" : "PAL\r\n");
+	int type = ASAPInfo_GetTypeLetter(edited_info);
 	if (type != 0)
 		p += sprintf(p, "TYPE %c\r\n", type);
 	p += sprintf(p, "FASTPLAY %d (%d Hz)\r\n", ASAPInfo_GetPlayerRateScanlines(edited_info), ASAPInfo_GetPlayerRateHz(edited_info));
@@ -189,37 +238,33 @@ static void updateTech(void)
 	if (i >= 0) {
 		while (p < buf + sizeof(buf) - 17 && i + 4 < saved_module_len) {
 			int start = saved_module[i] + (saved_module[i + 1] << 8);
-			int end;
 			if (start == 0xffff) {
 				i += 2;
 				start = saved_module[i] + (saved_module[i + 1] << 8);
 			}
-			end = saved_module[i + 2] + (saved_module[i + 3] << 8);
+			int end = saved_module[i + 2] + (saved_module[i + 3] << 8);
 			p += sprintf(p, "LOAD %04X-%04X\r\n", start, end);
 			i += 5 + end - start;
 		}
 	}
 	chomp(buf);
-	SendDlgItemMessage(infoDialog, IDC_TECHINFO, WM_SETTEXT, 0, (LPARAM) buf);
+	SendDlgItemMessageA(infoDialog, IDC_TECHINFO, WM_SETTEXT, 0, (LPARAM) buf);
 }
 
 static void updateStil(void)
 {
 	char buf[16000];
 	char *p = buf;
-	int i;
 	p = appendStil(p, "", ASTIL_GetTitle(astil));
 	p = appendStil(p, "by ", ASTIL_GetAuthor(astil));
 	p = appendStil(p, "Directory comment: ", ASTIL_GetDirectoryComment(astil));
 	p = appendStil(p, "File comment: ", ASTIL_GetFileComment(astil));
 	p = appendStil(p, "Song comment: ", ASTIL_GetSongComment(astil));
-	for (i = 0; ; i++) {
+	for (int i = 0; ; i++) {
 		const ASTILCover *cover = ASTIL_GetCover(astil, i);
-		int startSeconds;
-		const char *s;
 		if (cover == NULL)
 			break;
-		startSeconds = ASTILCover_GetStartSeconds(cover);
+		int startSeconds = ASTILCover_GetStartSeconds(cover);
 		if (startSeconds >= 0) {
 			int endSeconds = ASTILCover_GetEndSeconds(cover);
 			if (endSeconds >= 0)
@@ -229,15 +274,13 @@ static void updateStil(void)
 		}
 		else
 			*p++ = 'C';
-		s = ASTILCover_GetTitleAndSource(cover);
+		const char *s = ASTILCover_GetTitleAndSource(cover);
 		p = appendStil(p, "overs: ", s[0] != '\0' ? s : "<?>");
 		p = appendStil(p, "by ", ASTILCover_GetArtist(cover));
 		p = appendStil(p, "Comment: ", ASTILCover_GetComment(cover));
 	}
 	*p = '\0';
 	chomp(buf);
-#if 1
-	/* not compatible with Windows 9x */
 	if (ASTIL_IsUTF8(astil)) {
 		WCHAR wBuf[16000];
 		if (MultiByteToWideChar(CP_UTF8, 0, buf, -1, wBuf, 16000) > 0) {
@@ -245,94 +288,71 @@ static void updateStil(void)
 			return;
 		}
 	}
-#endif
-	SendDlgItemMessage(infoDialog, IDC_STILINFO, WM_SETTEXT, 0, (LPARAM) buf);
+	SendDlgItemMessageA(infoDialog, IDC_STILINFO, WM_SETTEXT, 0, (LPARAM) buf);
+}
+
+static void updateTime(void)
+{
+	unsigned char str[ASAPWriter_MAX_DURATION_LENGTH + 1];
+	int len = ASAPWriter_DurationToString(str, ASAPInfo_GetDuration(edited_info, edited_song));
+	str[len] = '\0';
+	SendDlgItemMessageA(infoDialog, IDC_TIME, WM_SETTEXT, 0, (LPARAM) str);
 }
 
 static void setEditedSong(int song)
 {
-	_TCHAR filename[MAX_PATH];
-	unsigned char str[ASAPWriter_MAX_DURATION_LENGTH + 1];
-	int len;
-
 	edited_song = song;
-	len = ASAPWriter_DurationToString(str, ASAPInfo_GetDuration(edited_info, song));
-	str[len] = '\0';
-	SendDlgItemMessage(infoDialog, IDC_TIME, WM_SETTEXT, 0, (LPARAM) str);
+	updateTime();
 	CheckDlgButton(infoDialog, IDC_LOOP, ASAPInfo_GetLoop(edited_info, song) ? BST_CHECKED : BST_UNCHECKED);
-	EnableWindow(GetDlgItem(infoDialog, IDC_LOOP), len > 0);
+	enableDlgItem(IDC_LOOP, ASAPInfo_GetDuration(edited_info, song) > 0);
 
-	SendDlgItemMessage(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) filename);
+	char filename[MAX_PATH];
+	SendDlgItemMessageA(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) filename);
 	ASTIL_Load(astil, filename, song);
-	SendDlgItemMessage(infoDialog, IDC_STILFILE, WM_SETTEXT, 0, (LPARAM) ASTIL_GetStilFilename(astil));
+	SendDlgItemMessageA(infoDialog, IDC_STILFILE, WM_SETTEXT, 0, (LPARAM) ASTIL_GetStilFilename(astil));
 	updateStil();
 }
 
-static void showEditTip(int nID, LPCTSTR title, LPCTSTR message)
+static void showEditTip(int nID, LPCWSTR title, LPCWSTR message)
 {
-#ifndef _UNICODE
-
-#ifndef EM_SHOWBALLOONTIP
-/* missing in MinGW */
-typedef struct
-{
-	DWORD cbStruct;
-	LPCWSTR pszTitle;
-	LPCWSTR pszText;
-	INT ttiIcon;
-} EDITBALLOONTIP;
-#define TTI_ERROR  3
-#define EM_SHOWBALLOONTIP  0x1503
-#endif
-	WCHAR wTitle[64];
-	WCHAR wMessage[64];
-	EDITBALLOONTIP ebt = { sizeof(EDITBALLOONTIP), wTitle, wMessage, TTI_ERROR };
-	if (MultiByteToWideChar(CP_ACP, 0, title, -1, wTitle, 64) <= 0
-	 || MultiByteToWideChar(CP_ACP, 0, message, -1, wMessage, 64) <= 0
-	 || !SendDlgItemMessage(infoDialog, nID, EM_SHOWBALLOONTIP, 0, (LPARAM) &ebt))
-
-#endif /* _UNICODE */
-
-		/* Windows before XP don't support balloon tips */
-		MessageBox(infoDialog, message, title, MB_OK | MB_ICONERROR);
+	EDITBALLOONTIP ebt = { sizeof(EDITBALLOONTIP), title, message, TTI_ERROR };
+	SendDlgItemMessageW(infoDialog, nID, EM_SHOWBALLOONTIP, 0, (LPARAM) &ebt);
 }
 
-static BOOL isExt(LPCTSTR filename, LPCTSTR ext)
+static bool isExt(const char *filename, const char *ext)
 {
-	return _tcsicmp(filename + _tcslen(filename) - 4, ext) == 0;
+	return _stricmp(filename + strlen(filename) - 4, ext) == 0;
 }
 
 static void setSaved(void)
 {
-	int i;
-	_tcscpy(saved_author, ASAPInfo_GetAuthor(edited_info));
-	_tcscpy(saved_title, ASAPInfo_GetTitle(edited_info));
-	_tcscpy(saved_date, ASAPInfo_GetDate(edited_info));
-	for (i = 0; i < ASAPInfo_GetSongs(edited_info); i++) {
+	strcpy(saved_author, ASAPInfo_GetAuthor(edited_info));
+	strcpy(saved_title, ASAPInfo_GetTitle(edited_info));
+	strcpy(saved_date, ASAPInfo_GetDate(edited_info));
+	saved_ntsc = ASAPInfo_IsNtsc(edited_info);
+	for (int i = 0; i < ASAPInfo_GetSongs(edited_info); i++) {
 		saved_durations[i] = ASAPInfo_GetDuration(edited_info, i);
 		saved_loops[i] = ASAPInfo_GetLoop(edited_info, i);
 	}
 }
 
-static BOOL infoChanged(void)
+static bool infoChanged(void)
 {
-	int i;
-	if (_tcscmp(ASAPInfo_GetAuthor(edited_info), saved_author) != 0)
-		return TRUE;
-	if (_tcscmp(ASAPInfo_GetTitle(edited_info), saved_title) != 0)
-		return TRUE;
-	if (_tcscmp(ASAPInfo_GetDate(edited_info), saved_date) != 0)
-		return TRUE;
-	for (i = 0; i < ASAPInfo_GetSongs(edited_info); i++) {
+	if (strcmp(ASAPInfo_GetAuthor(edited_info), saved_author) != 0
+	 || strcmp(ASAPInfo_GetTitle(edited_info), saved_title) != 0
+	 || strcmp(ASAPInfo_GetDate(edited_info), saved_date) != 0
+	 || ASAPInfo_IsNtsc(edited_info) != saved_ntsc)
+		return true;
+	for (int i = 0; i < ASAPInfo_GetSongs(edited_info); i++) {
 		if (ASAPInfo_GetDuration(edited_info, i) != saved_durations[i])
-			return TRUE;
+			return true;
 		if (saved_durations[i] >= 0 && ASAPInfo_GetLoop(edited_info, i) != saved_loops[i])
-			return TRUE;
+			return true;
 	}
-	return FALSE;
+	return false;
 }
 
-static void updateSaveButtons(int mask, BOOL ok)
+static void updateSaveButtons(int mask, bool ok)
 {
 	if (ok) {
 		invalid_fields &= ~mask;
@@ -341,19 +361,18 @@ static void updateSaveButtons(int mask, BOOL ok)
 	else
 		invalid_fields |= mask;
 	if (can_save)
-		EnableWindow(GetDlgItem(infoDialog, IDC_SAVE), ok && infoChanged());
-	EnableWindow(GetDlgItem(infoDialog, IDC_SAVEAS), ok);
+		enableDlgItem(IDC_SAVE, ok && infoChanged());
+	enableDlgItem(IDC_SAVEAS, ok);
 }
 
-static void updateInfoString(HWND hDlg, int nID, int mask, cibool (*func)(ASAPInfo *, LPCTSTR))
+static void updateInfoString(HWND hDlg, int nID, int mask, bool (*func)(ASAPInfo *, const char *))
 {
-	_TCHAR str[ASAPInfo_MAX_TEXT_LENGTH + 1];
-	BOOL ok;
-	SendDlgItemMessage(hDlg, nID, WM_GETTEXT, ASAPInfo_MAX_TEXT_LENGTH + 1, (LPARAM) str);
-	ok = func(edited_info, str);
+	char str[ASAPInfo_MAX_TEXT_LENGTH + 1];
+	SendDlgItemMessageA(hDlg, nID, WM_GETTEXT, ASAPInfo_MAX_TEXT_LENGTH + 1, (LPARAM) str);
+	bool ok = func(edited_info, str);
 	updateSaveButtons(mask, ok);
 	if (!ok)
-		showEditTip(nID, _T("Invalid characters"), _T("Avoid national characters and quotation marks"));
+		showEditTip(nID, L"Invalid characters", L"Avoid national characters and quotation marks");
 }
 
 static LRESULT CALLBACK MonthCalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -382,7 +401,7 @@ static void toggleCalendar(HWND hDlg)
 		icex.dwSize = sizeof(icex);
 		icex.dwICC = ICC_DATE_CLASSES;
 		InitCommonControlsEx(&icex);
-		monthcal = CreateWindowEx(0, MONTHCAL_CLASS, _T(""), WS_BORDER | WS_POPUP, 0, 0, 0, 0, hDlg, NULL, NULL, NULL);
+		monthcal = CreateWindowExA(0, MONTHCAL_CLASSA, "", WS_BORDER | WS_POPUP, 0, 0, 0, 0, hDlg, NULL, NULL, NULL); // TODO
 		/* subclass month calendar, so that it hides when looses focus */
 		monthcalOriginalWndProc = (WNDPROC) SetWindowLongPtr(monthcal, GWLP_WNDPROC, (LONG_PTR) MonthCalWndProc);
 	}
@@ -390,19 +409,17 @@ static void toggleCalendar(HWND hDlg)
 		ShowWindow(monthcal, SW_HIDE);
 	else {
 		RECT rc;
-		int x;
-		int y;
-		SYSTEMTIME st;
 		GetWindowRect(GetDlgItem(hDlg, IDC_PICKDATE), &rc);
-		x = rc.left;
-		y = rc.bottom;
+		int x = rc.left;
+		int y = rc.bottom;
 		MonthCal_GetMinReqRect(monthcal, &rc);
 		SetWindowPos(monthcal, NULL, x, y, rc.right, rc.bottom, SWP_SHOWWINDOW | SWP_NOZORDER);
 		y = ASAPInfo_GetYear(edited_info);
 		if (y > 0) {
-			DWORD view;
-			int month = ASAPInfo_GetMonth(edited_info);
+			SYSTEMTIME st;
 			st.wYear = y;
+			int month = ASAPInfo_GetMonth(edited_info);
+			DWORD view;
 			if (month > 0) {
 				int day = ASAPInfo_GetDayOfMonth(edited_info);
 				st.wMonth = month;
@@ -427,82 +444,92 @@ static void toggleCalendar(HWND hDlg)
 	}
 }
 
-static void saveByte(void *obj, int data)
+typedef struct {
+	bool (*save)(ASAPWriter *self, const char *filename, const uint8_t *buffer, int offset, int length);
+} ASAPWriterVtbl;
+
+static bool ASAPWriter_Save(ASAPWriter *self, const char *filename, const uint8_t *buffer, int offset, int length)
 {
-	putc(data, (FILE *) obj);
+	HANDLE fh = CreateFileA(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (fh == INVALID_HANDLE_VALUE)
+		return false;
+	bool ok = WriteFile(fh, buffer, length, (LPDWORD) &length, NULL) != 0;
+	CloseHandle(fh);
+	return ok;
 }
 
-static BOOL doSaveFile(LPCTSTR filename, BOOL tag)
+static bool doSaveFile(const char *filename, bool tag)
 {
-	FILE *fp = _tfopen(filename, _T("wb"));
-	ByteWriter bw;
-	if (fp == NULL)
-		return FALSE;
-	bw.obj = fp;
-	bw.func = saveByte;
-	if (!ASAPWriter_Write(filename, bw, edited_info, saved_module, saved_module_len, tag)) {
-		fclose(fp);
-		DeleteFile(filename);
-		return FALSE;
+	char sourceFilename[MAX_PATH];
+	SendDlgItemMessageA(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) sourceFilename);
+	const char *sourceFilenamePtr = sourceFilename;
+	ASAPFileLoader *loader = ASAPFileLoader_Open(&sourceFilenamePtr);
+	if (loader == NULL)
+		return false;
+	ASAPWriter *writer = ASAPWriter_New();
+	if (writer == NULL) {
+		ASAPFileLoader_Close(loader);
+		return false;
 	}
-	if (fclose(fp) != 0) {
-		DeleteFile(filename);
-		return FALSE;
-	}
-	return TRUE;
+	static const ASAPWriterVtbl writer_vtbl = { ASAPWriter_Save };
+	*(const ASAPWriterVtbl **) writer = &writer_vtbl;
+	ASAPWriter_SetInput(writer, sourceFilenamePtr, loader);
+	bool ok = ASAPWriter_Write(writer, filename, edited_info, saved_module, saved_module_len, tag);
+	ASAPWriter_Delete(writer);
+	ASAPFileLoader_Close(loader);
+	return ok;
 }
 
-static BOOL saveFile(LPCTSTR filename, BOOL tag)
+static bool saveFile(const char *filename, bool tag)
 {
-	BOOL isSap = isExt(filename, _T(".sap"));
+	bool isSap = isExt(filename, ".sap");
 	if (isSap) {
 		int song = ASAPInfo_GetSongs(edited_info);
 		while (--song >= 0 && ASAPInfo_GetDuration(edited_info, song) < 0);
 		while (--song >= 0) {
 			if (ASAPInfo_GetDuration(edited_info, song) < 0) {
-				MessageBox(infoDialog, _T("Cannot save file because time not set for all songs"), _T("Error"), MB_OK | MB_ICONERROR);
-				return FALSE;
+				MessageBoxA(infoDialog, "Cannot save file because time not set for all songs", "Error", MB_OK | MB_ICONERROR);
+				return false;
 			}
 		}
 	}
 	if (!doSaveFile(filename, tag)) {
-		MessageBox(infoDialog, _T("Cannot save file"), _T("Error"), MB_OK | MB_ICONERROR);
+		MessageBoxA(infoDialog, "Cannot save file", "Error", MB_OK | MB_ICONERROR);
 		// FIXME: delete file
-		return FALSE;
+		return false;
 	}
-	if (isSap)
+	if (isSap) {
 		setSaved();
-	return TRUE;
+		enableDlgItem(IDC_SAVE, false);
+	}
+	return true;
 }
 
-static BOOL saveInfo(void)
+static bool saveInfo(void)
 {
-	_TCHAR filename[MAX_PATH];
-	SendDlgItemMessage(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) filename);
-	return saveFile(filename, FALSE);
+	char filename[MAX_PATH];
+	SendDlgItemMessageA(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) filename);
+	return saveFile(filename, false);
 }
 
-static void addFilterExt(void *obj, const char *ext)
+static void setSaveFilters(char *p)
 {
-	LPTSTR p = *(LPTSTR *) obj;
-	p += _stprintf(p, _T("%s (*.%s)"), ASAPInfo_GetExtDescription(ext), ext) + 1;
-	p += _stprintf(p, _T("*.%s"), ext) + 1;
+	const char *exts[ASAPWriter_MAX_SAVE_EXTS];
+	int exts_len = ASAPWriter_GetSaveExts(exts, edited_info);
+	for (int i = 0; i < exts_len; i++) {
+		const char *ext = exts[i];
+		p += sprintf(p, "%s (*.%s)", ASAPInfo_GetExtDescription(ext), ext) + 1;
+		p += sprintf(p, "*.%s", ext) + 1;
+	}
 	*p = '\0';
-	*(LPTSTR *) obj = p;
 }
 
-static void setSaveFilters(LPTSTR p)
+static bool saveInfoAs(void)
 {
-	StringConsumer sc = { &p, addFilterExt };
-	ASAPWriter_EnumSaveExts(sc, edited_info, saved_module, saved_module_len);
-}
-
-static BOOL saveInfoAs(void)
-{
-	_TCHAR filename[MAX_PATH];
-	_TCHAR filter[1024];
-	OPENFILENAME ofn = {
-		sizeof(OPENFILENAME),
+	char filename[MAX_PATH];
+	char filter[1024];
+	OPENFILENAMEA ofn = {
+		sizeof(OPENFILENAMEA),
 		infoDialog,
 		0,
 		filter,
@@ -514,7 +541,7 @@ static BOOL saveInfoAs(void)
 		NULL,
 		0,
 		NULL,
-		_T("Select output file"),
+		"Select output file",
 		OFN_ENABLESIZING | OFN_EXPLORER | OFN_OVERWRITEPROMPT,
 		0,
 		0,
@@ -523,24 +550,23 @@ static BOOL saveInfoAs(void)
 		NULL,
 		NULL
 	};
-	LPTSTR ext;
-	BOOL tag = FALSE;
-	SendDlgItemMessage(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) filename);
-	ext = _tcsrchr(filename, '.');
+	bool tag = false;
+	setSaveFilters(filter);
+	SendDlgItemMessageA(infoDialog, IDC_FILENAME, WM_GETTEXT, MAX_PATH, (LPARAM) filename);
+	char *ext = strrchr(filename, '.');
 	if (ext != NULL) {
 		*ext = '\0';
 		ofn.lpstrDefExt = ext + 1;
 	}
-	setSaveFilters(filter);
-	if (!GetSaveFileName(&ofn))
-		return FALSE;
-	if (isExt(filename, _T(".xex"))) {
-		switch (MessageBox(infoDialog, _T("Do you want to display information during playback?"), _T("ASAP"), MB_YESNOCANCEL | MB_ICONQUESTION)) {
+	if (!GetSaveFileNameA(&ofn))
+		return false;
+	if (isExt(filename, ".xex")) {
+		switch (MessageBoxA(infoDialog, "Do you want to display information during playback?", "ASAP", MB_YESNOCANCEL | MB_ICONQUESTION)) {
 		case IDYES:
-			tag = TRUE;
+			tag = true;
 			break;
 		case IDCANCEL:
-			return FALSE;
+			return false;
 		default:
 			break;
 		}
@@ -562,6 +588,9 @@ static INT_PTR CALLBACK infoDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 {
 	switch (uMsg) {
 	case WM_INITDIALOG:
+#ifdef FOOBAR2000
+		setDarkInfoDialog(hDlg);
+#endif
 #ifdef PLAYING_INFO
 		CheckDlgButton(hDlg, IDC_PLAYING, playing_info ? BST_CHECKED : BST_UNCHECKED);
 #endif
@@ -595,27 +624,32 @@ static INT_PTR CALLBACK infoDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 		case MAKEWPARAM(IDC_TIME, EN_CHANGE):
 			{
 				char str[ASAPWriter_MAX_DURATION_LENGTH + 1];
-				int duration;
-				SendDlgItemMessage(hDlg, IDC_TIME, WM_GETTEXT, ASAPWriter_MAX_DURATION_LENGTH + 1, (LPARAM) str);
-				duration = ASAPInfo_ParseDuration(str);
+				SendDlgItemMessageA(hDlg, IDC_TIME, WM_GETTEXT, ASAPWriter_MAX_DURATION_LENGTH + 1, (LPARAM) str);
+				int duration = ASAPInfo_ParseDuration(str);
 				ASAPInfo_SetDuration(edited_info, edited_song, duration);
-				EnableWindow(GetDlgItem(infoDialog, IDC_LOOP), str[0] != '\0');
+				enableDlgItem(IDC_LOOP, str[0] != '\0');
 				updateSaveButtons(INVALID_FIELD_TIME | INVALID_FIELD_TIME_SHOW, duration >=0 || str[0] == '\0');
 			}
 			return TRUE;
 		case MAKEWPARAM(IDC_TIME, EN_KILLFOCUS):
 			if ((invalid_fields & INVALID_FIELD_TIME_SHOW) != 0) {
 				invalid_fields &= ~INVALID_FIELD_TIME_SHOW;
-				showEditTip(IDC_TIME, _T("Invalid format"), _T("Please type MM:SS.mmm"));
+				showEditTip(IDC_TIME, L"Invalid format", L"Please type MM:SS.mmm");
 			}
 			return TRUE;
 		case MAKEWPARAM(IDC_LOOP, BN_CLICKED):
 			ASAPInfo_SetLoop(edited_info, edited_song, IsDlgButtonChecked(hDlg, IDC_LOOP) == BST_CHECKED);
-			updateSaveButtons(0, TRUE);
+			updateSaveButtons(0, true);
+			return TRUE;
+		case MAKEWPARAM(IDC_NTSC, BN_CLICKED):
+			ASAPInfo_SetNtsc(edited_info, IsDlgButtonChecked(hDlg, IDC_NTSC) == BST_CHECKED);
+			updateTech();
+			updateTime();
+			updateSaveButtons(0, true);
 			return TRUE;
 		case MAKEWPARAM(IDC_SONGNO, CBN_SELCHANGE):
-			setEditedSong(SendDlgItemMessage(hDlg, IDC_SONGNO, CB_GETCURSEL, 0, 0));
-			updateSaveButtons(INVALID_FIELD_TIME | INVALID_FIELD_TIME_SHOW, TRUE);
+			setEditedSong((int) SendDlgItemMessage(hDlg, IDC_SONGNO, CB_GETCURSEL, 0, 0));
+			updateSaveButtons(INVALID_FIELD_TIME | INVALID_FIELD_TIME_SHOW, true);
 			return TRUE;
 		case MAKEWPARAM(IDC_SAVE, BN_CLICKED):
 			saveInfo();
@@ -625,7 +659,7 @@ static INT_PTR CALLBACK infoDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 			return TRUE;
 		case MAKEWPARAM(IDCANCEL, BN_CLICKED):
 			if (invalid_fields == 0 && infoChanged()) {
-				switch (MessageBox(hDlg, _T("Save changes?"), _T("ASAP"), MB_YESNOCANCEL | MB_ICONQUESTION)) {
+				switch (MessageBoxA(hDlg, "Save changes?", "ASAP", MB_YESNOCANCEL | MB_ICONQUESTION)) {
 				case IDYES:
 					if (!saveInfoAs())
 						return TRUE;
@@ -643,16 +677,19 @@ static INT_PTR CALLBACK infoDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 	case WM_NOTIFY: {
 			LPNMSELCHANGE psc = (LPNMSELCHANGE) lParam;
 			if (psc->nmhdr.hwndFrom == monthcal && psc->nmhdr.code == MCN_SELECT) {
-				_TCHAR str[32];
 				ShowWindow(monthcal, SW_HIDE);
-				_stprintf(str, _T("%02d/%02d/%d"), psc->stSelStart.wDay, psc->stSelStart.wMonth, psc->stSelStart.wYear);
-				SetDlgItemText(hDlg, IDC_DATE, str);
+				char str[32];
+				sprintf(str, "%02d/%02d/%d", psc->stSelStart.wDay, psc->stSelStart.wMonth, psc->stSelStart.wYear);
+				SetDlgItemTextA(hDlg, IDC_DATE, str);
 				ASAPInfo_SetDate(edited_info, str);
-				updateSaveButtons(INVALID_FIELD_DATE, TRUE);
+				updateSaveButtons(INVALID_FIELD_DATE, true);
 			}
 		}
 		break;
 	case WM_DESTROY:
+#ifdef FOOBAR2000
+		releaseDarkInfoDialog();
+#endif
 		if (monthcal != NULL) {
 			DestroyWindow(monthcal);
 			monthcal = NULL;
@@ -664,7 +701,7 @@ static INT_PTR CALLBACK infoDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 	return FALSE;
 }
 
-void showInfoDialog(HINSTANCE hInstance, HWND hwndParent, LPCTSTR filename, int song)
+void showInfoDialog(HINSTANCE hInstance, HWND hwndParent, const char *filename, int song)
 {
 	if (infoDialog == NULL)
 		infoDialog = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_INFO), hwndParent, infoDialogProc);
@@ -674,10 +711,8 @@ void showInfoDialog(HINSTANCE hInstance, HWND hwndParent, LPCTSTR filename, int 
 		updateInfoDialog(filename, song);
 }
 
-void updateInfoDialog(LPCTSTR filename, int song)
+void updateInfoDialog(const char *filename, int song)
 {
-	int songs;
-	int i;
 	if (infoDialog == NULL)
 		return;
 	if (edited_info == NULL) {
@@ -691,38 +726,39 @@ void updateInfoDialog(LPCTSTR filename, int song)
 	}
 	else if (infoChanged())
 		return;
-	if (!loadModule(filename, saved_module, &saved_module_len)
-	 || !ASAPInfo_Load(edited_info, filename, saved_module, saved_module_len)) {
+	if (!loadInfoInternal(edited_info, filename, saved_module, &saved_module_len)) {
 		closeInfoDialog();
 		return;
 	}
 	setSaved();
-	can_save = isExt(filename, _T(".sap"));
+	can_save = isExt(filename, ".sap");
 	invalid_fields = 0;
-	SendDlgItemMessage(infoDialog, IDC_FILENAME, WM_SETTEXT, 0, (LPARAM) filename);
-	SendDlgItemMessage(infoDialog, IDC_AUTHOR, WM_SETTEXT, 0, (LPARAM) saved_author);
-	SendDlgItemMessage(infoDialog, IDC_NAME, WM_SETTEXT, 0, (LPARAM) saved_title);
-	SendDlgItemMessage(infoDialog, IDC_DATE, WM_SETTEXT, 0, (LPARAM) saved_date);
-	SendDlgItemMessage(infoDialog, IDC_SONGNO, CB_RESETCONTENT, 0, 0);
-	songs = ASAPInfo_GetSongs(edited_info);
-	EnableWindow(GetDlgItem(infoDialog, IDC_SONGNO), songs > 1);
-	for (i = 1; i <= songs; i++) {
-		_TCHAR str[16];
-		_stprintf(str, _T("%d"), i);
-		SendDlgItemMessage(infoDialog, IDC_SONGNO, CB_ADDSTRING, 0, (LPARAM) str);
+	SendDlgItemMessageA(infoDialog, IDC_FILENAME, WM_SETTEXT, 0, (LPARAM) filename);
+	SendDlgItemMessageA(infoDialog, IDC_AUTHOR, WM_SETTEXT, 0, (LPARAM) saved_author);
+	SendDlgItemMessageA(infoDialog, IDC_NAME, WM_SETTEXT, 0, (LPARAM) saved_title);
+	SendDlgItemMessageA(infoDialog, IDC_DATE, WM_SETTEXT, 0, (LPARAM) saved_date);
+	SendDlgItemMessageA(infoDialog, IDC_SONGNO, CB_RESETCONTENT, 0, 0);
+	int songs = ASAPInfo_GetSongs(edited_info);
+	enableDlgItem(IDC_SONGNO, songs > 1);
+	for (int i = 1; i <= songs; i++) {
+		char str[16];
+		sprintf(str, "%d", i);
+		SendDlgItemMessageA(infoDialog, IDC_SONGNO, CB_ADDSTRING, 0, (LPARAM) str);
 	}
 	if (song < 0)
 		song = ASAPInfo_GetDefaultSong(edited_info);
 	SendDlgItemMessage(infoDialog, IDC_SONGNO, CB_SETCURSEL, song, 0);
 	setEditedSong(song);
-	EnableWindow(GetDlgItem(infoDialog, IDC_SAVE), FALSE);
+	CheckDlgButton(infoDialog, IDC_NTSC, ASAPInfo_IsNtsc(edited_info) ? BST_CHECKED : BST_UNCHECKED);
+	enableDlgItem(IDC_NTSC, ASAPInfo_CanSetNtsc(edited_info));
+	enableDlgItem(IDC_SAVE, false);
 	updateTech();
 }
 
-void setPlayingSong(LPCTSTR filename, int song)
+void setPlayingSong(const char *filename, int song)
 {
-	if (filename != NULL && _tcslen(filename) < MAX_PATH - 1)
-		_tcscpy(playing_filename, filename);
+	if (filename != NULL && strlen(filename) < MAX_PATH - 1)
+		strcpy(playing_filename, filename);
 	playing_song = song;
 	if (playing_info)
 		updateInfoDialog(playing_filename, song);
@@ -735,5 +771,3 @@ const ASTIL *getPlayingASTIL(void)
 	ASTIL_Load(astil, playing_filename, playing_song);
 	return astil;
 }
-
-#endif /* _UNICODE */

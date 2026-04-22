@@ -1,7 +1,7 @@
 /*
  * ASAP2WAV.java - converter of ASAP-supported formats to WAV files
  *
- * Copyright (C) 2007-2011  Piotr Fusik
+ * Copyright (C) 2007-2023  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -27,6 +27,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import net.sf.asap.ASAP;
+import net.sf.asap.ASAPArgumentException;
+import net.sf.asap.ASAPFormatException;
 import net.sf.asap.ASAPInfo;
 import net.sf.asap.ASAPSampleFormat;
 
@@ -35,7 +37,8 @@ public class ASAP2WAV
 	private static String outputFilename = null;
 	private static boolean outputHeader = true;
 	private static int song = -1;
-	private static int format = ASAPSampleFormat.S16_L_E;
+	private static int sampleRate = 44100;
+	private static ASAPSampleFormat format = ASAPSampleFormat.S16_L_E;
 	private static int duration = -1;
 	private static int muteMask = 0;
 
@@ -53,6 +56,7 @@ public class ASAP2WAV
 			"-b          --byte-samples     Output 8-bit samples\n" +
 			"-w          --word-samples     Output 16-bit samples (default)\n" +
 			"            --raw              Output raw audio (no WAV header)\n" +
+			"-R RATE     --sample-rate=RATE Set output sample rate to RATE Hz\n" +
 			"-m CHANNELS --mute=CHANNELS    Mute POKEY chanels (1-8)\n" +
 			"-h          --help             Display this information\n" +
 			"-v          --version          Display version information\n"
@@ -64,7 +68,12 @@ public class ASAP2WAV
 		song = Integer.parseInt(s);
 	}
 
-	private static void setTime(String s) throws Exception
+	private static void setSampleRate(String s)
+	{
+		sampleRate = Integer.parseInt(s);
+	}
+
+	private static void setTime(String s) throws ASAPFormatException
 	{
 		duration = ASAPInfo.parseDuration(s);
 	}
@@ -105,12 +114,13 @@ public class ASAP2WAV
 		return got;
 	}
 
-	private static void processFile(String inputFilename) throws Exception
+	private static void processFile(String inputFilename) throws IOException, ASAPFormatException, ASAPArgumentException
 	{
 		InputStream is = new FileInputStream(inputFilename);
 		byte[] module = new byte[ASAPInfo.MAX_MODULE_LENGTH];
 		int moduleLen = readAndClose(is, module);
 		ASAP asap = new ASAP();
+		asap.setSampleRate(sampleRate);
 		asap.load(inputFilename, module, moduleLen);
 		ASAPInfo info = asap.getInfo();
 		if (song < 0)
@@ -147,7 +157,7 @@ public class ASAP2WAV
 		duration = -1;
 	}
 
-	public static void main(String[] args) throws Exception
+	public static void main(String[] args) throws IOException, ASAPFormatException, ASAPArgumentException
 	{
 		boolean noInputFiles = true;
 		for (int i = 0; i < args.length; i++) {
@@ -174,6 +184,10 @@ public class ASAP2WAV
 				format = ASAPSampleFormat.S16_L_E;
 			else if (arg.equals("--raw"))
 				outputHeader = false;
+			else if (arg.equals("-R"))
+				setSampleRate(args[++i]);
+			else if (arg.startsWith("--sample-rate"))
+				setSampleRate(arg.substring(13));
 			else if (arg.equals("-m"))
 				setMuteMask(args[++i]);
 			else if (arg.startsWith("--mute="))

@@ -1,3 +1,83 @@
+asap (8.0.0-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Mon, 16 Feb 2026 13:29:25 +0100
+
+asap (7.0.0-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Sat, 20 Dec 2025 11:58:20 +0100
+
+asap (6.0.3-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Sat, 9 Mar 2024 11:40:11 +0100
+
+asap (6.0.2-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Mon, 22 Jan 2024 16:11:23 +0100
+
+asap (6.0.1-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Fri, 17 Nov 2023 08:37:02 +0100
+
+asap (6.0.0-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Thu, 21 Sep 2023 08:24:36 +0200
+
+asap (5.3.0-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Wed, 8 Feb 2023 17:53:02 +0100
+
+asap (5.2.0-1) UNRELEASED; urgency=low
+
+  * New release.
+  * Added XMMS2.
+
+ -- Piotr Fusik <fox@scene.pl>  Wed, 8 Dec 2021 10:08:56 +0100
+
+asap (5.1.0-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Fri, 9 Jul 2021 21:01:11 +0200
+
+asap (5.0.1-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Sun, 19 Jan 2020 18:46:41 +0100
+
+asap (5.0.0-1) UNRELEASED; urgency=low
+
+  * New release.
+
+ -- Piotr Fusik <fox@scene.pl>  Thu, 21 Nov 2019 10:12:29 +0100
+
+asap (4.0.0-2) UNRELEASED; urgency=low
+
+  * Fix VLC plugin location.
+
+ -- Piotr Fusik <fox@scene.pl>  Sun, 13 Jan 2019 14:26:27 +0100
+
+asap (4.0.0-1) UNRELEASED; urgency=low
+
+  * New release.
+  * Discontinued GStreamer.
+
+ -- Piotr Fusik <fox@scene.pl>  Thu, 10 Jan 2019 17:27:07 +0100
+
 asap (3.2.0-1) UNRELEASED; urgency=low
 
   * New release.

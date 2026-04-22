@@ -1,7 +1,7 @@
 /*
  * settings_dlg.h - settings dialog box
  *
- * Copyright (C) 2007-2011  Piotr Fusik
+ * Copyright (C) 2007-2023  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -22,6 +22,7 @@
  */
 
 #include <windows.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,27 +32,30 @@ extern "C" {
 #define DEFAULT_SILENCE_SECONDS  2
 
 #define IDD_SETTINGS   400
-#define IDC_UNLIMITED  401
-#define IDC_LIMITED    402
-#define IDC_MINUTES    403
-#define IDC_SECONDS    404
-#define IDC_SILENCE    405
-#define IDC_SILSECONDS 406
-#define IDC_LOOPS      407
-#define IDC_NOLOOPS    408
+#define IDC_SAMPLERATE 401
+#define IDC_UNLIMITED  402
+#define IDC_LIMITED    403
+#define IDC_MINUTES    404
+#define IDC_SECONDS    405
+#define IDC_SILENCE    406
+#define IDC_SILSECONDS 407
+#define IDC_LOOPS      408
+#define IDC_NOLOOPS    409
 #define IDC_MUTE1      411
 
 #ifdef FOOBAR2000
-void enableTimeInput(HWND hDlg, BOOL enable);
+void enableTimeInput(HWND hDlg, bool enable);
 void setFocusAndSelect(HWND hDlg, int nID);
-void settingsDialogSet(HWND hDlg, int song_length, int silence_seconds, BOOL play_loops, int mute_mask);
+void settingsDialogSet(HWND hDlg, int sample_rate, int song_length, int silence_seconds, bool play_loops, int mute_mask);
+int settingsGetSampleRate(HWND hDlg);
 #else
 extern ASAP *asap;
+extern int sample_rate;
 extern int song_length;
 extern int silence_seconds;
-extern BOOL play_loops;
+extern bool play_loops;
 extern int mute_mask;
-BOOL settingsDialog(HINSTANCE hInstance, HWND hwndParent);
+bool settingsDialog(HINSTANCE hInstance, HWND hwndParent);
 int getSongDurationInternal(const ASAPInfo *module_info, int song, ASAP *asap);
 #define getSongDuration(module_info, song)  getSongDurationInternal(module_info, song, NULL)
 int playSong(int song);

@@ -1,7 +1,7 @@
 /*
  * apokeysnd_dll.c - POKEY sound emulator for Raster Music Tracker
  *
- * Copyright (C) 2008-2014  Piotr Fusik
+ * Copyright (C) 2008-2026  Piotr Fusik
  *
  * This file is part of ASAP (Another Slight Atari Player),
  * see http://asap.sourceforge.net
@@ -30,7 +30,7 @@ __declspec(dllexport) void APokeySound_Initialize(bool stereo)
 {
 	PokeyPair_Delete(pokeys);
 	pokeys = PokeyPair_New();
-	PokeyPair_Initialize(pokeys, false, stereo);
+	PokeyPair_Initialize(pokeys, false, stereo, 44100);
 	PokeyPair_StartFrame(pokeys);
 }
 
@@ -41,7 +41,7 @@ __declspec(dllexport) void APokeySound_PutByte(int addr, int data)
 
 __declspec(dllexport) int APokeySound_GetRandom(int addr, int cycle)
 {
-	return PokeyPair_GetRandom(pokeys, addr, cycle);
+	return PokeyPair_Peek(pokeys, addr, cycle);
 }
 
 __declspec(dllexport) int APokeySound_Generate(int cycles, unsigned char *buffer, int depth)
@@ -54,7 +54,7 @@ __declspec(dllexport) int APokeySound_Generate(int cycles, unsigned char *buffer
 
 __declspec(dllexport) void APokeySound_About(const char **name, const char **author, const char **description)
 {
-	*name = "Another POKEY Sound Emulator, v3.2.0";
-	*author = "Piotr Fusik, (C) 2007-2014";
-	*description = "Part of ASAP, http://asap.sourceforge.net";
+	*name = "Another POKEY Sound Emulator, v8.0.0";
+	*author = "Piotr Fusik, (C) 2007-2026";
+	*description = "Part of ASAP, https://asap.sourceforge.net";
 }

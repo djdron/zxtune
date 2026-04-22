@@ -17,5 +17,10 @@
 				</enumeratedList>
 			</displayInfo>
 		</propertyDescription>
+		<propertyDescription name="ASAP.Date" formatID="{5AE26367-B5CF-444D-B163-2CBC99B41287}" propID="3">
+			<description>Creation date.</description>
+			<typeInfo type="String" isViewable="true" />
+			<labelInfo label="SAP Date" />
+		</propertyDescription>
 	</propertyDescriptionList>
 </schema>
